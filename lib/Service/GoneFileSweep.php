@@ -28,9 +28,9 @@ use Psr\Log\LoggerInterface;
  *
  * Before a pad goes the file cache is asked once more. A pad Etherpad no
  * longer has counts as gone; one Etherpad refuses to delete is tried again
- * an hour later; Etherpad not answering ends the run. With deleting off
- * nothing is deleted, but the rows keep waiting, so switching it on finds
- * them in place.
+ * an hour later; Etherpad not answering ends the run, and an hour of runs
+ * ended so is a warning (heldUp()). With deleting off nothing is deleted,
+ * but the rows keep waiting, so switching it on finds them in place.
  */
 class GoneFileSweep {
 	/** Rows a batch takes. */
@@ -44,6 +44,9 @@ class GoneFileSweep {
 
 	/** How long a file seen deleted for good may still be there before it counts as one whose deletion did not happen. */
 	private const STALE_AFTER_SECONDS = 60 * 60;
+
+	/** How long every run may end on Etherpad not answering before it is a warning, and again after each such span. */
+	private const UNANSWERED_WARNING_SECONDS = 60 * 60;
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -79,6 +82,7 @@ class GoneFileSweep {
 		}
 		$summary = ['checked' => 0, 'deleted' => 0];
 		if (!$this->appConfig->isDeletePadWithFileEnabled()) {
+			$this->heldUp(null, $now);
 			return $summary;
 		}
 		$budget ??= new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
@@ -88,6 +92,7 @@ class GoneFileSweep {
 		// Etherpad refused within the hour, finds them again in its next
 		// batch.
 		$tried = [];
+		$unanswered = null;
 		try {
 			for ($batch = 0; $batch < self::BATCHES; $batch++) {
 				$rows = $this->bindingService->findGone(self::LIMIT, $graceBy, $atOnce ? $now : $now - self::RETRY_REFUSED_SECONDS);
@@ -113,12 +118,40 @@ class GoneFileSweep {
 			// The run ends as for an outage, with the line that names the key.
 			$this->apiErrorLog->reportIfKeyRejected($e);
 		} catch (EtherpadClientException $e) {
-			$this->logger->info('Etherpad did not answer the sweep of files gone for good; it tries again next run.', [
-				'app' => 'etherpad_nextcloud',
-				...SafeError::context($e),
-			]);
+			$unanswered = $e;
 		}
+		$this->heldUp($unanswered, $now);
 		return $summary;
+	}
+
+	/**
+	 * The line of a run that ended on Etherpad not answering ($e), or of the
+	 * first that did not after such runs. One such run is an info line: the
+	 * next may get through. Every run ending so for an hour is a warning,
+	 * and again after each hour it lasts: nobody may be opening a pad, so no
+	 * answer of this app says Etherpad is down, while the pads of files
+	 * deleted for good wait. The hour is kept in the app config, which cron
+	 * shares with the web whatever the cache.
+	 */
+	private function heldUp(?EtherpadClientException $e, int $now): void {
+		$since = $this->appConfig->sweepUnansweredSince();
+		if ($e === null) {
+			if ($since !== 0) {
+				$this->appConfig->forgetSweepUnanswered();
+				$this->logger->info('The sweep of files gone for good no longer ends on Etherpad not answering.', ['app' => 'etherpad_nextcloud']);
+			}
+			return;
+		}
+		$context = ['app' => 'etherpad_nextcloud', ...SafeError::context($e)];
+		if ($since !== 0 && $now - $since >= self::UNANSWERED_WARNING_SECONDS) {
+			$this->appConfig->recordSweepUnansweredSince($now);
+			$this->logger->warning('Etherpad has not answered the sweep of files gone for good for an hour; the pads of files deleted for good wait until it does.', $context);
+			return;
+		}
+		if ($since === 0) {
+			$this->appConfig->recordSweepUnansweredSince($now);
+		}
+		$this->logger->info('Etherpad did not answer the sweep of files gone for good; it tries again next run.', $context);
 	}
 
 	/**

@@ -27,7 +27,7 @@ use Psr\Log\LoggerInterface;
 class GoneFileSweepTest extends TestCase {
 	private InMemoryBindingTable $db;
 	private FixedClock $clock;
-	/** @var array<string,bool> the app config the sweep reads */
+	/** @var array<string,bool|int> the app config the sweep reads and writes */
 	private array $config = [];
 	/** @var list<string> pads deleted in Etherpad */
 	private array $deletedPads = [];
@@ -35,6 +35,8 @@ class GoneFileSweepTest extends TestCase {
 	private array $padErrors = [];
 	/** @var list<array{string,string,int|null}> level, message and file of each line logged */
 	private array $lines = [];
+	/** @var list<string|null> the error each line logged names, by its class */
+	private array $errors = [];
 	/** @var (\Closure(): void)|null what deleting a pad takes, besides */
 	private ?\Closure $onDelete = null;
 	/** Whether Etherpad answers the question it always can. */
@@ -48,6 +50,7 @@ class GoneFileSweepTest extends TestCase {
 		$this->deletedPads = [];
 		$this->padErrors = [];
 		$this->lines = [];
+		$this->errors = [];
 		$this->answering = true;
 		$this->attempts = [];
 	}
@@ -137,6 +140,79 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([], $this->deletedPads);
 		$this->assertSame([11, 12], $this->fileIds());
 		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
+	}
+
+	/**
+	 * Every run ending on Etherpad not answering for an hour is a warning,
+	 * and again after each hour it lasts: with nobody opening a pad, nothing
+	 * else says Etherpad is down while the pads wait.
+	 */
+	public function testAnHourOfRunsEtherpadDoesNotAnswerIsAWarning(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$info = ['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null];
+		$warning = ['warning', 'Etherpad has not answered the sweep of files gone for good for an hour; the pads of files deleted for good wait until it does.', null];
+
+		$runs = [];
+		foreach ([0, 3599, 1, 3599, 1] as $later) {
+			$this->clock->advance($later);
+			$this->lines = [];
+			$this->sweep();
+			$runs[] = $this->lines;
+		}
+
+		$this->assertSame([[$info], [$info], [$warning], [$info], [$warning]], $runs);
+		$this->assertSame(EtherpadClientException::class, $this->errors[2]);
+		$this->assertSame([11], $this->fileIds());
+	}
+
+	/**
+	 * Any run that does not end on Etherpad not answering ends that hour,
+	 * with a line, and the next that does starts a new one.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('runsThatEndTheHour')]
+	public function testARunThatDoesNotEndOnEtherpadEndsTheHour(string $run): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$this->sweep();
+
+		$this->clock->advance(3000);
+		switch ($run) {
+			case 'deletes':
+				$this->padErrors = [];
+				$this->answering = true;
+				break;
+			case 'has nothing due':
+				$this->table([], []);
+				break;
+			case 'meets a rejected key':
+				$this->padErrors = ['pad-a' => new EtherpadKeyRejectedException('Etherpad API request failed: deletePad')];
+				break;
+			case 'has deleting off':
+				$this->config['delete_pad_with_file'] = false;
+				break;
+		}
+		$this->lines = [];
+		$this->sweep();
+		$this->assertContains(['info', 'The sweep of files gone for good no longer ends on Etherpad not answering.', null], $this->lines);
+
+		$this->config['delete_pad_with_file'] = true;
+		$this->table([self::row(2, 12, 'pad-b', seenAt: 100)], []);
+		$this->padErrors = ['pad-b' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$this->clock->advance(600);
+		$this->lines = [];
+		$this->sweep();
+		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines, 'a new hour');
+	}
+
+	/** @return iterable<string, array{string}> */
+	public static function runsThatEndTheHour(): iterable {
+		foreach (['deletes', 'has nothing due', 'meets a rejected key', 'has deleting off'] as $run) {
+			yield 'a run that ' . $run => [$run];
+		}
 	}
 
 	/**
@@ -342,10 +418,18 @@ class GoneFileSweepTest extends TestCase {
 		});
 		$config = $this->createMock(AppConfigService::class);
 		$config->method('isDeletePadWithFileEnabled')->willReturnCallback(fn (): bool => (bool)$this->config['delete_pad_with_file']);
+		$config->method('sweepUnansweredSince')->willReturnCallback(fn (): int => (int)($this->config['sweep_unanswered_since'] ?? 0));
+		$config->method('recordSweepUnansweredSince')->willReturnCallback(function (int $time): void {
+			$this->config['sweep_unanswered_since'] = $time;
+		});
+		$config->method('forgetSweepUnanswered')->willReturnCallback(function (): void {
+			unset($this->config['sweep_unanswered_since']);
+		});
 		$logger = $this->createMock(LoggerInterface::class);
 		foreach (['debug', 'info', 'warning', 'error'] as $level) {
 			$logger->method($level)->willReturnCallback(function (string $message, array $context) use ($level): void {
 				$this->lines[] = [$level, $message, $context['fileId'] ?? null];
+				$this->errors[] = $context['error'] ?? null;
 			});
 		}
 		$noCache = $this->createMock(ICacheFactory::class);
