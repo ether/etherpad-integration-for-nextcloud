@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\ICacheFactory;
@@ -30,6 +31,11 @@ use Psr\Log\LoggerInterface;
  * a legacy Ownpad migration, the trail docs/legacy-ownpad-migration.md
  * points admins to. At the level it deserves:
  *
+ * - This instance's Etherpad refusing this Nextcloud's API key: an error
+ *   once a minute for the instance, at debug for the rest of that minute.
+ *   It is answered as an outage, and logged as what it is, so an admin
+ *   looks at the key rather than at the network. The key is in none of
+ *   its messages: the client carries it as an ApiKey.
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
@@ -48,6 +54,7 @@ use Psr\Log\LoggerInterface;
  */
 final class ApiErrorLog {
 	private const QUIET_SECONDS = 60;
+	private const ETHERPAD_KEY_REFUSED = 'Etherpad refused this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
 	private const ETHERPAD_UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const ETHERPAD_REFUSED = 'Etherpad refused a request.';
 	private const PAD_LOST = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
@@ -65,7 +72,9 @@ final class ApiErrorLog {
 	public function report(\Throwable $e, array $context = [], ?string $failure = null): void {
 		$file = self::fileIn($context);
 		$context = ['app' => Application::APP_ID, ...$context, ...SafeError::context($e)];
-		if (EtherpadClientException::isEtherpadUnreachable($e)) {
+		if ($e instanceof EtherpadKeyRefusedException) {
+			$this->onceAMinute(self::ETHERPAD_KEY_REFUSED, 'key-refused', $context, asError: true);
+		} elseif (EtherpadClientException::isEtherpadUnreachable($e)) {
 			$this->onceAMinute(self::ETHERPAD_UNREACHABLE, 'unreachable', $context);
 		} elseif ($e instanceof EtherpadRefusedException) {
 			// Each file refused is a case of its own - a pad deleted in
@@ -129,11 +138,13 @@ final class ApiErrorLog {
 	}
 
 	/** @param array<string,mixed> $context */
-	private function onceAMinute(string $message, string $key, array $context): void {
-		if ($this->firstThisMinute($key)) {
-			$this->logger->warning($message, $context);
-		} else {
+	private function onceAMinute(string $message, string $key, array $context, bool $asError = false): void {
+		if (!$this->firstThisMinute($key)) {
 			$this->logger->debug($message, $context);
+		} elseif ($asError) {
+			$this->logger->error($message, $context);
+		} else {
+			$this->logger->warning($message, $context);
 		}
 	}
 

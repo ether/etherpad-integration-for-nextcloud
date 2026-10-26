@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
@@ -491,6 +492,11 @@ class EtherpadClient {
 			if ($tooLarge !== null) {
 				throw $tooLarge;
 			}
+			// A refused key keeps its type through the wrapping, which the
+			// connection test's hints read the messages of.
+			if ($e instanceof EtherpadKeyRefusedException) {
+				throw new EtherpadKeyRefusedException('Etherpad API request failed: ' . $method, 0, $e);
+			}
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
 		}
 
@@ -502,6 +508,11 @@ class EtherpadClient {
 		$code = (int)($decoded['code'] ?? -1);
 		if ($code !== 0) {
 			$message = (string)($decoded['message'] ?? 'Unknown Etherpad API error');
+			// Code 4 is Etherpad's for a key it does not take; Etherpad 2
+			// sends it with HTTP 401 or 403, which never get this far.
+			if ($code === 4) {
+				throw new EtherpadKeyRefusedException(sprintf('Etherpad API error (%s): %s', $method, $message));
+			}
 			throw new EtherpadRefusedException(sprintf('Etherpad API error (%s): %s', $method, $message));
 		}
 
@@ -559,6 +570,9 @@ class EtherpadClient {
 			throw $e;
 		}
 		$statusCode = $response->getStatusCode();
+		if ($statusCode === 401 || $statusCode === 403) {
+			throw new EtherpadKeyRefusedException('Etherpad API HTTP error (' . $statusCode . ')');
+		}
 		if ($statusCode >= 400) {
 			throw new EtherpadClientException('Etherpad API HTTP error (' . $statusCode . ')');
 		}
