@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
@@ -27,14 +28,20 @@ use Psr\Log\LoggerInterface;
 class GoneFileSweepTest extends TestCase {
 	private InMemoryBindingTable $db;
 	private FixedClock $clock;
-	/** @var array<string,bool> the app config the sweep reads */
+	/** @var array<string,bool|int> the app config the sweep reads and writes */
 	private array $config = [];
 	/** @var list<string> pads deleted in Etherpad */
 	private array $deletedPads = [];
 	/** @var array<string,\Throwable> what deleting a pad throws */
 	private array $padErrors = [];
+	/** Seconds a delete that throws takes first. */
+	private int $padErrorTakes = 0;
 	/** @var list<array{string,string,int|null}> level, message and file of each line logged */
 	private array $lines = [];
+	/** @var list<array<string,mixed>> the context of each line logged */
+	private array $contexts = [];
+	/** How often the sweep read when it last warned. */
+	private int $warnedAtReads = 0;
 	/** @var (\Closure(): void)|null what deleting a pad takes, besides */
 	private ?\Closure $onDelete = null;
 	/** Whether Etherpad answers the question it always can. */
@@ -47,7 +54,10 @@ class GoneFileSweepTest extends TestCase {
 		$this->config = ['delete_pad_with_file' => true];
 		$this->deletedPads = [];
 		$this->padErrors = [];
+		$this->padErrorTakes = 0;
 		$this->lines = [];
+		$this->contexts = [];
+		$this->warnedAtReads = 0;
 		$this->answering = true;
 		$this->attempts = [];
 	}
@@ -126,9 +136,9 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([['info', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 12]], $this->lines);
 	}
 
-	/** Etherpad not answering ends the run, with a line; the rows wait for the next. */
+	/** Etherpad not answering ends the run, with an info line; the rows wait for the next. */
 	public function testEtherpadNotAnsweringEndsTheRun(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: 100), self::row(2, 12, 'pad-b', seenAt: 101)], []);
+		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 600), self::row(2, 12, 'pad-b', seenAt: FixedClock::NOW - 599)], []);
 		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
@@ -137,6 +147,166 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([], $this->deletedPads);
 		$this->assertSame([11, 12], $this->fileIds());
 		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
+	}
+
+	/**
+	 * Etherpad not answering at a pad that has waited an hour past its due
+	 * is a warning, with how long, at most once an hour. The pad is 300 s
+	 * past due at first, then 3599 and 3600, 7199 and 7200: each side of
+	 * the hour, for the wait and for the time since the last warning. Only
+	 * a pad an hour past due has the sweep read when it last warned.
+	 */
+	public function testAPadWaitingAnHourOnEtherpadIsAWarningAtMostHourly(): void {
+		// Due 300 s after it was seen.
+		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 600)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$info = ['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null];
+		$warning = ['warning', 'Etherpad did not answer the sweep of files gone for good, and the pad it was deleting has waited an hour or more; it tries again next run.', 11];
+
+		$runs = [];
+		foreach ([0, 3299, 1, 3599, 1] as $later) {
+			$this->clock->advance($later);
+			$this->lines = [];
+			$this->contexts = [];
+			$this->sweep();
+			$runs[] = [$this->lines, array_map(static fn (array $context): array => array_intersect_key($context, ['app' => 0, 'error' => 0, 'waitedSeconds' => 0]), $this->contexts), $this->warnedAtReads];
+		}
+
+		$named = ['app' => 'etherpad_nextcloud', 'error' => EtherpadClientException::class];
+		$this->assertSame([
+			[[$info], [$named], 0],
+			[[$info], [$named], 0],
+			[[$warning], [$named + ['waitedSeconds' => 3600]], 1],
+			[[$info], [$named], 2],
+			[[$warning], [$named + ['waitedSeconds' => 7200]], 3],
+		], $runs);
+		$this->assertSame([11], $this->fileIds());
+	}
+
+	/**
+	 * It is the pad Etherpad did not answer at that counts: a run that
+	 * deleted a long-waiting pad before Etherpad stopped answering, at one
+	 * due five minutes ago, is an info line.
+	 */
+	public function testOnlyThePadEtherpadDidNotAnswerAtCounts(): void {
+		$this->table([self::row(1, 11, 'pad-old', seenAt: 100), self::row(2, 12, 'pad-new', seenAt: FixedClock::NOW - 600)], []);
+		$this->padErrors = ['pad-new' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+
+		$this->sweep();
+
+		$this->assertSame(['pad-old'], $this->deletedPads);
+		$this->assertSame([
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 11],
+			['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null],
+		], $this->lines);
+	}
+
+	/**
+	 * A pad put back after a refusal an hour ago has waited since its due,
+	 * not since the refusal.
+	 */
+	public function testAPadPutBackAfterARefusalHasWaitedSinceItsDue(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 7200, triedAt: FixedClock::NOW - 3600)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+
+		$this->sweep();
+
+		$this->assertSame(['warning'], array_column($this->lines, 0));
+		$this->assertSame(6900, $this->contexts[0]['waitedSeconds'] ?? null);
+	}
+
+	/**
+	 * A row that does not say when its file was seen deleted - findGone()
+	 * returns none, but an early version left some - has no wait to warn
+	 * of: Etherpad not answering at its pad is an info line.
+	 */
+	public function testAPadWithoutAKnownWaitIsAnInfoLine(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$bindings = new class($this->db, $this->clock) extends BindingService {
+			public function findGone(int $limit, int $graceBy, int $retryBy): array {
+				return [new Binding(11, 'pad-a', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE)];
+			}
+		};
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+
+		$this->sweep($bindings);
+
+		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
+	}
+
+	/**
+	 * When the sweep last warned is read only at a pad an hour past due: not
+	 * by a run with nothing due, nor by an admin's settle Etherpad does not
+	 * answer at a pad still in its grace.
+	 */
+	public function testWhenItLastWarnedIsReadOnlyAtAPadAnHourPastDue(): void {
+		$this->table([], []);
+		$this->sweep();
+		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 60)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$this->build()->run(atOnce: true);
+
+		$this->assertSame(['info'], array_column($this->lines, 0));
+		$this->assertSame(0, $this->warnedAtReads);
+	}
+
+	/**
+	 * A last warning later than now - a clock that ran ahead, a value set by
+	 * hand - counts as long past: the warning comes, and now is noted. One
+	 * at now itself is the hour just begun.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('lastWarnings')]
+	public function testOnlyALastWarningUpToNowSilencesTheSweep(int $last, string $level): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$this->config['sweep_warned_at'] = $last;
+
+		$this->sweep();
+
+		$this->assertSame([$level], array_column($this->lines, 0));
+		$this->assertSame(FixedClock::NOW, $this->config['sweep_warned_at']);
+	}
+
+	/** @return iterable<string, array{int, string}> */
+	public static function lastWarnings(): iterable {
+		yield 'now' => [FixedClock::NOW, 'info'];
+		yield 'a second ahead' => [FixedClock::NOW + 1, 'warning'];
+	}
+
+	/**
+	 * A delete Etherpad left unanswered with no time left in the run to ask
+	 * whether Etherpad answers at all counts as Etherpad not answering: the
+	 * pad keeps its row, and the run's line says it waits.
+	 */
+	public function testNoTimeLeftToAskCountsAsEtherpadNotAnswering(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		// Leaves a second of the run's twenty, less than a call is given.
+		$this->padErrorTakes = 19;
+
+		$this->sweep();
+
+		$this->assertSame([['warning', 'Etherpad did not answer the sweep of files gone for good, and the pad it was deleting has waited an hour or more; it tries again next run.', 11]], $this->lines);
+		$this->assertSame(['pending_delete'], array_values($this->states()));
+	}
+
+	/** An app config that cannot say when the sweep last warned does not keep it from warning. */
+	public function testAWarningDoesNotWaitOnTheAppConfig(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+		$this->config['sweep_warned_at'] = -1;
+
+		$this->sweep();
+		$this->sweep();
+
+		$this->assertSame(['warning', 'warning'], array_column($this->lines, 0));
 	}
 
 	/**
@@ -333,6 +503,7 @@ class GoneFileSweepTest extends TestCase {
 		$etherpad->method('deletePad')->willReturnCallback(function (string $padId): void {
 			$this->attempts[$padId] = ($this->attempts[$padId] ?? 0) + 1;
 			if (isset($this->padErrors[$padId])) {
+				$this->clock->advance($this->padErrorTakes);
 				throw $this->padErrors[$padId];
 			}
 			$this->deletedPads[] = $padId;
@@ -342,10 +513,21 @@ class GoneFileSweepTest extends TestCase {
 		});
 		$config = $this->createMock(AppConfigService::class);
 		$config->method('isDeletePadWithFileEnabled')->willReturnCallback(fn (): bool => (bool)$this->config['delete_pad_with_file']);
+		// -1 for an app config that fails.
+		$config->method('sweepWarnedAt')->willReturnCallback(function (): int {
+			$this->warnedAtReads++;
+			return ($this->config['sweep_warned_at'] ?? 0) === -1
+				? throw new \RuntimeException('connection lost')
+				: (int)($this->config['sweep_warned_at'] ?? 0);
+		});
+		$config->method('recordSweepWarnedAt')->willReturnCallback(function (int $time): void {
+			$this->config['sweep_warned_at'] = $time;
+		});
 		$logger = $this->createMock(LoggerInterface::class);
 		foreach (['debug', 'info', 'warning', 'error'] as $level) {
 			$logger->method($level)->willReturnCallback(function (string $message, array $context) use ($level): void {
 				$this->lines[] = [$level, $message, $context['fileId'] ?? null];
+				$this->contexts[] = $context;
 			});
 		}
 		$noCache = $this->createMock(ICacheFactory::class);

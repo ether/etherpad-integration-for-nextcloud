@@ -17,6 +17,8 @@ class AppConfigService {
 	public const DELETE_PAD_WITH_FILE = 'delete_pad_with_file';
 	/** The version of RegisterMimeType's repair of the .pad files that last finished in a run that found the mapping in place. */
 	public const PAD_FILES_MIME_VERSION = 'pad_files_mime_version';
+	/** When GoneFileSweep last warned of a pad waiting on Etherpad. */
+	public const SWEEP_WARNED_AT = 'sweep_warned_at';
 
 	public function __construct(
 		private IConfig $config,
@@ -96,6 +98,16 @@ class AppConfigService {
 
 	public function forgetPadFilesMimeVersion(): void {
 		$this->appConfig->deleteKey(Application::APP_ID, self::PAD_FILES_MIME_VERSION);
+	}
+
+	/** 0 where none is recorded. */
+	public function sweepWarnedAt(): int {
+		return $this->appConfig->getValueInt(Application::APP_ID, self::SWEEP_WARNED_AT, 0, true);
+	}
+
+	/** Lazy: only the sweep reads it, not every request. */
+	public function recordSweepWarnedAt(int $time): void {
+		$this->appConfig->setValueInt(Application::APP_ID, self::SWEEP_WARNED_AT, $time, true);
 	}
 
 	/**
