@@ -371,6 +371,56 @@ class PadCreationServiceTest extends TestCase {
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
+	/**
+	 * A template's pad Etherpad will not take the content for goes before
+	 * the failure does: no row names it, and the file is left unwritten.
+	 */
+	public function testATemplatesPadThatCannotBeSeededGoes(): void {
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+		$target->expects($this->never())->method('putContent');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('g.AbCdEfGh12345678$p-new');
+
+		$refused = new EtherpadClientException('Etherpad API request failed: setText');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('setHTML')->willThrowException(new EtherpadClientException('Etherpad API request failed: setHTML'));
+		$etherpadClient->method('setText')->willThrowException($refused);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.AbCdEfGh12345678');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		try {
+			$this->buildService(
+				padFileService: $padFileService,
+				bindingService: $bindingService,
+				etherpadClient: $etherpadClient,
+				bootstrap: $bootstrap,
+			)->materializeTemplateInto($target, $template, $this->materializeUser());
+			$this->fail('the seed\'s failure goes on');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame($refused, $e);
+		}
+	}
+
 	public function testATemplatesPadWhoseRevisionsEtherpadDoesNotSayStartsAtZero(): void {
 		// The template says "public", but the admin only offers protected —
 		// the pad and its binding must both end up protected.

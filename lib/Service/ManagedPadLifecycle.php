@@ -183,7 +183,8 @@ class ManagedPadLifecycle {
 	 * on, as no row names it yet. One that cannot be taken down is named in
 	 * the log, the only handle left on it.
 	 *
-	 * @param \Closure(): string $provision makes the pad (provisionFor()) and gives its id
+	 * @param \Closure(): string $provision makes a new pad (provisionFor()) and gives its id; never
+	 *   one that was there before, which a failed seed would take down, a group pad with its group
 	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
 	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
 	 */

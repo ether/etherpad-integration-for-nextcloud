@@ -155,7 +155,8 @@ class RestoreService {
 
 	/**
 	 * A new pad holding the file's snapshot, and the `.pad` content naming
-	 * it. A failure here removes the pad here; no row names it yet.
+	 * it. A seed that fails takes the pad down (provisionSeeded()); a later
+	 * failure here lets it go unless a row names it.
 	 *
 	 * @return array{string,string} the new pad's id, and the content that names it
 	 */

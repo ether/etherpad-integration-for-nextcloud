@@ -578,6 +578,8 @@ class ManagedPadLifecycleTest extends TestCase {
 			$client->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-new');
 			$client->method('setText')->willThrowException($refused);
 			$client->expects($this->once())->method($discard)->with($id);
+			// Made in this step, so its group holds nothing else to ask about.
+			$client->expects($this->never())->method('listPads');
 			$lifecycle = $this->lifecycle($client);
 
 			try {
@@ -602,12 +604,14 @@ class ManagedPadLifecycleTest extends TestCase {
 		$refused = new EtherpadClientException('Etherpad API request failed: setText');
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('setText')->willThrowException($refused);
-		$client->method('deletePad')->willThrowException(new EtherpadClientException('Etherpad API request failed: deletePad'));
+		$client->method('deletePad')->willThrowException(new \RuntimeException('Connection reset'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('warning')
 			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
-				static fn (array $context): bool => ($context['padId'] ?? null) === 'nc-pad' && ($context['fileId'] ?? null) === 7
+				static fn (array $context): bool => ($context['padId'] ?? null) === 'nc-pad'
+					&& ($context['fileId'] ?? null) === 7
+					&& ($context['error'] ?? null) === \RuntimeException::class
 			));
 
 		try {
@@ -616,5 +620,20 @@ class ManagedPadLifecycleTest extends TestCase {
 		} catch (EtherpadClientException $e) {
 			$this->assertSame($refused, $e);
 		}
+	}
+
+	/** The seed's own line, an HTML snapshot Etherpad refuses, names the file the step was for. */
+	public function testTheSeedSaysWhichFileItIsFor(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('setHTML')->willThrowException(new \RuntimeException('setHTML unsupported'));
+		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with('Could not import the HTML snapshot; falling back to plain text.', $this->callback(
+				static fn (array $context): bool => ($context['fileId'] ?? null) === 7
+			));
+
+		(new ManagedPadLifecycle($client, $logger))->provisionSeeded(static fn (): string => 'nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
 }

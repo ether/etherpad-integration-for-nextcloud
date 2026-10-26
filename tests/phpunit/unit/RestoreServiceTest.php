@@ -153,6 +153,29 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * A failure after the seed, building the content that names the new pad,
+	 * lets the pad go as well: no row names it yet.
+	 */
+	public function testRestoreLetsANewPadGoWhenItsContentCannotBeBuilt(): void {
+		$fileId = 96;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('padID does not exist'));
+		$etherpadClient->method('buildPadUrl')->willThrowException(new \RuntimeException('No Etherpad address'));
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->padFile($fileId, 'Restored.pad');
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
+	}
+
+	/**
 	 * Two restores of one file can both get as far as a replacement pad. The
 	 * row decides which of them writes; the other leaves the file to the
 	 * winner and takes its own pad with it.
