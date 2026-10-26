@@ -169,10 +169,10 @@ class GoneFileSweepTest extends TestCase {
 			$this->lines = [];
 			$this->contexts = [];
 			$this->sweep();
-			$runs[] = [$this->lines, array_map(static fn (array $context): array => array_intersect_key($context, ['error' => 0, 'waitedSeconds' => 0]), $this->contexts), $this->warnedAtReads];
+			$runs[] = [$this->lines, array_map(static fn (array $context): array => array_intersect_key($context, ['app' => 0, 'error' => 0, 'waitedSeconds' => 0]), $this->contexts), $this->warnedAtReads];
 		}
 
-		$named = ['error' => EtherpadClientException::class];
+		$named = ['app' => 'etherpad_nextcloud', 'error' => EtherpadClientException::class];
 		$this->assertSame([
 			[[$info], [$named], 0],
 			[[$info], [$named], 0],
