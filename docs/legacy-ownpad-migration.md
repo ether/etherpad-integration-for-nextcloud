@@ -28,6 +28,8 @@ This is a pure local re-bind. No remote pad is created, no content is copied; th
 - New YAML frontmatter is written referencing the same `pad_id`.
 - A binding row is inserted.
 
+Before a new binding row, the pad id has to be one Etherpad could hold - its own rule (`isValidPadId`): an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 characters without `$` - and a group pad has to be in the group it names (`listPads`). Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad.") and leaves the `.pad` file untouched.
+
 ### Same origin — claim-collision rule
 
 If the pad-id is already bound to another Nextcloud file, the unique constraint on `oc_etherpad_bindings.pad_id` prevents a second binding row. The migration handles the conflict explicitly:

@@ -121,6 +121,9 @@ class PadLegacyMigrationService {
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
+			if (!PadId::isValid($sourcePadId)) {
+				throw new LegacyPadNotFoundException('The legacy .pad file names a pad id Etherpad accepts for no pad.');
+			}
 			// After the refusal: asking first would answer three ways and
 			// make this an existence oracle on a privileged API.
 			$this->assertGroupPadExists($sourcePadId);

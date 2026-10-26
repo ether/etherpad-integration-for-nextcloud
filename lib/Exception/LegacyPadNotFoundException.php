@@ -11,9 +11,9 @@ namespace OCA\EtherpadNextcloud\Exception;
 
 /**
  * A legacy Ownpad file naming a group pad its Etherpad group does not
- * have: the migration refuses it. A format problem to everything that
- * catches those, with a sentence of its own for the reader, since the
- * file itself is well-formed.
+ * have, or an id Etherpad accepts for no pad at all: the migration refuses
+ * it. A format problem to everything that catches those, with a sentence
+ * of its own for the reader, since the file itself is well-formed.
  */
 final class LegacyPadNotFoundException extends PadFileFormatException {
 }

@@ -102,30 +102,30 @@ class PadLegacyMigrationServiceTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('inferAccessModeFromPadId')
-			->with('g.abc$team-meeting')
+			->with('g.abcdefghijklmnop$team-meeting')
 			->willReturn(BindingService::ACCESS_PROTECTED);
 		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abc$team-meeting');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abcdefghijklmnop$team-meeting');
 		// The pad a legacy file names has to be in the group it names.
-		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$team-meeting']);
+		$etherpadClient->method('listPads')->with('g.abcdefghijklmnop')->willReturn(['g.abcdefghijklmnop$team-meeting']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
 		$binding->expects($this->once())
 			->method('createBinding')
-			->with(303, 'g.abc$team-meeting', BindingService::ACCESS_PROTECTED);
+			->with(303, 'g.abcdefghijklmnop$team-meeting', BindingService::ACCESS_PROTECTED);
 
 		$this->buildService(
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 		)->migrate('alice', $file, [
-			'url' => 'https://pad.our-server.test/p/g.abc$team-meeting',
-			'pad_id' => 'g.abc$team-meeting',
+			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$team-meeting',
+			'pad_id' => 'g.abcdefghijklmnop$team-meeting',
 		]);
 	}
 
@@ -144,12 +144,12 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abc$x');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abcdefghijklmnop$x');
 		// The pad a legacy file names has to be in the group it names.
-		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$x']);
+		$etherpadClient->method('listPads')->with('g.abcdefghijklmnop')->willReturn(['g.abcdefghijklmnop$x']);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByPadId')->willReturn(new Binding(fileId: 999, padId: 'g.abc$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 999, padId: 'g.abcdefghijklmnop$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
 
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -164,8 +164,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			resolver: $resolver,
 		)->migrate('alice', $file, [
-			'url' => 'https://pad.our-server.test/p/g.abc$x',
-			'pad_id' => 'g.abc$x',
+			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
+			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
 	}
 
@@ -187,9 +187,9 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.x$y');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.xxxxxxxxxxxxxxxx$y');
 		// The pad a legacy file names has to be in the group it names.
-		$etherpadClient->method('listPads')->with('g.x')->willReturn(['g.x$y']);
+		$etherpadClient->method('listPads')->with('g.xxxxxxxxxxxxxxxx')->willReturn(['g.xxxxxxxxxxxxxxxx$y']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
@@ -204,8 +204,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 		)->migrate('alice', $file, [
-			'url' => 'https://pad.our-server.test/p/g.x$y',
-			'pad_id' => 'g.x$y',
+			'url' => 'https://pad.our-server.test/p/g.xxxxxxxxxxxxxxxx$y',
+			'pad_id' => 'g.xxxxxxxxxxxxxxxx$y',
 		]);
 
 		$this->assertSame(['createBinding', 'putContent'], $callOrder);
@@ -280,8 +280,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->expects($this->once())
 			->method('listPads')
-			->with('g.VICTIMGROUPID12')
-			->willReturn(['g.VICTIMGROUPID12$their-real-pad']);
+			->with('g.VICTIMGROUPID123')
+			->willReturn(['g.VICTIMGROUPID123$their-real-pad']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->expects($this->never())->method('createBinding');
@@ -295,9 +295,48 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 		)->migrate('mallory', $file, [
-			'url' => 'https://pad.our-server.test/p/g.VICTIMGROUPID12$made-up',
-			'pad_id' => 'g.VICTIMGROUPID12$made-up',
+			'url' => 'https://pad.our-server.test/p/g.VICTIMGROUPID123$made-up',
+			'pad_id' => 'g.VICTIMGROUPID123$made-up',
 		]);
+	}
+
+	/**
+	 * An id Etherpad accepts for no pad - a group of fifteen characters, a
+	 * name past fifty - names nothing to bind: refused before Etherpad is
+	 * asked, the file left as it is.
+	 */
+	public function testSameOriginRefusesAPadIdEtherpadAcceptsForNoPad(): void {
+		foreach (['g.VICTIMGROUPID12$notes', str_repeat('a', 51)] as $padId) {
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(507);
+			$file->expects($this->never())->method('putContent');
+
+			$padFileService = $this->createMock(PadFileService::class);
+			$padFileService->method('inferAccessModeFromPadId')->willReturn(str_starts_with($padId, 'g.') ? BindingService::ACCESS_PROTECTED : BindingService::ACCESS_PUBLIC);
+
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+			$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+			$etherpadClient->expects($this->never())->method('listPads');
+
+			$binding = $this->createMock(BindingService::class);
+			$binding->method('findByPadId')->willReturn(null);
+			$binding->expects($this->never())->method('createBinding');
+
+			try {
+				$this->buildService(
+					binding: $binding,
+					padFileService: $padFileService,
+					etherpadClient: $etherpadClient,
+				)->migrate('mallory', $file, [
+					'url' => 'https://pad.our-server.test/p/' . $padId,
+					'pad_id' => $padId,
+				]);
+				$this->fail($padId . ': refused');
+			} catch (LegacyPadNotFoundException) {
+				$this->addToAssertionCount(1);
+			}
+		}
 	}
 
 	/** Fails closed: a read that did not answer is not permission to bind. */
@@ -321,8 +360,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $this->createMock(PadFileService::class),
 			etherpadClient: $etherpadClient,
 		)->migrate('alice', $file, [
-			'url' => 'https://pad.our-server.test/p/g.abc$x',
-			'pad_id' => 'g.abc$x',
+			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
+			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
 	}
 
@@ -342,10 +381,10 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
 		// The pad is real and in its group — what refuses this migration is
 		// the other file's binding, not the group check.
-		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$x']);
+		$etherpadClient->method('listPads')->with('g.abcdefghijklmnop')->willReturn(['g.abcdefghijklmnop$x']);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByPadId')->willReturn(new Binding(fileId: 888, padId: 'g.abc$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 888, padId: 'g.abcdefghijklmnop$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
 
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -361,8 +400,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			resolver: $resolver,
 		)->migrate('alice', $file, [
-			'url' => 'https://pad.our-server.test/p/g.abc$x',
-			'pad_id' => 'g.abc$x',
+			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
+			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
 	}
 
@@ -400,10 +439,10 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		$etherpadClient->method('listPads')->willReturn(['g.ourgroup$notes']);
+		$etherpadClient->method('listPads')->willReturn(['g.ourgroup00000000$notes']);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByPadId')->willReturn(new Binding(fileId: 204, padId: 'g.ourgroup$notes', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 204, padId: 'g.ourgroup00000000$notes', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
 		$file->expects($this->once())->method('putContent');
 
@@ -413,8 +452,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
 		)->migrate('alice', $file, [
-			'url' => 'https://pad.our-server.test/p/g.ourgroup$notes',
-			'pad_id' => 'g.ourgroup$notes',
+			'url' => 'https://pad.our-server.test/p/g.ourgroup00000000$notes',
+			'pad_id' => 'g.ourgroup00000000$notes',
 		]);
 	}
 
@@ -459,8 +498,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
 		)->migrate('mallory', $file, [
-			'url' => 'https://pad.our-server.test/p/g.someone-elses$notes',
-			'pad_id' => 'g.someone-elses$notes',
+			'url' => 'https://pad.our-server.test/p/g.someoneelses0000$notes',
+			'pad_id' => 'g.someoneelses0000$notes',
 		]);
 	}
 
