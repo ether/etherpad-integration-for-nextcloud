@@ -28,10 +28,23 @@ class PadIdTest extends TestCase {
 		yield 'a group pad without a name' => ['g.AbCdEfGh12345678$', false];
 		yield 'a second $' => ['g.AbCdEfGh12345678$a$b', false];
 		yield 'a $ in a public name' => ['a$b', false];
+		yield 'a colon' => ['a:b', false];
+		yield 'a colon in a group pad' => ['g.AbCdEfGh12345678$a:b', false];
+		yield 'a dot' => ['.', false];
+		yield 'two dots' => ['..', false];
+		yield 'three dots' => ['...', true];
+		yield 'a dot inside a name' => ['a.b', true];
+		yield 'fifty UTF-16 units of characters past the BMP' => [str_repeat('😀', 25), true];
+		yield 'fifty-two UTF-16 units of characters past the BMP' => [str_repeat('😀', 26), false];
+		yield 'forty-nine characters and one past the BMP' => [str_repeat('a', 49) . '😀', false];
+		yield 'fifty characters and a line break' => [str_repeat('a', 50) . "\n", false];
 		yield 'not UTF-8' => ["\xff", false];
 	}
 
-	/** Etherpad's own rule (isValidPadId() in its PadManager), with the dot after `g` a dot. */
+	/**
+	 * Etherpad 3.3's rule (isValidPadId() in its PadManager), its length in
+	 * UTF-16 units and its end the string's, with the dot after `g` a dot.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('ids')]
 	public function testAPadIdIsValidAsEtherpadSaysIt(string $padId, bool $valid): void {
 		$this->assertSame($valid, PadId::isValid($padId));

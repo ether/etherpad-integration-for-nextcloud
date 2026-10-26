@@ -42,16 +42,25 @@ class PadLegacyMigrationService {
 	 * `g.<their-group>$invented` collides with no binding while naming a
 	 * real group, and the session issued on open grants all of it. Fails
 	 * closed: a refused migration is retried, a waved-through one is not.
+	 * True for a pad that names no group.
 	 */
-	private function assertGroupPadExists(string $sourcePadId): void {
+	private function groupHolds(string $sourcePadId): bool {
 		$groupId = PadId::groupIdOf($sourcePadId);
-		if ($groupId === null) {
-			return;
-		}
+		return $groupId === null || in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true);
+	}
 
-		if (!in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true)) {
-			throw new LegacyPadNotFoundException('The legacy .pad file names a pad that does not exist in its Etherpad group.');
-		}
+	/** The refusal of a file naming a pad that cannot be there, with its line, as the other refusals have. */
+	private function missingPad(string $uid, int $fileId, string $sourceUrl, string $accessMode, string $why): LegacyPadNotFoundException {
+		$this->logger->warning('Refused legacy Ownpad migration - the pad it names does not exist.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
+			'originBranch' => 'same',
+			'accessMode' => $accessMode,
+			'collision' => 'none',
+			'uid' => $uid,
+		]);
+		return new LegacyPadNotFoundException($why);
 	}
 
 	/**
@@ -122,11 +131,13 @@ class PadLegacyMigrationService {
 			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
 			if (!PadId::isValid($sourcePadId)) {
-				throw new LegacyPadNotFoundException('The legacy .pad file names a pad id Etherpad accepts for no pad.');
+				throw $this->missingPad($uid, $fileId, $sourceUrl, $accessMode, 'The legacy .pad file names a pad id Etherpad accepts for no pad.');
 			}
-			// After the refusal: asking first would answer three ways and
-			// make this an existence oracle on a privileged API.
-			$this->assertGroupPadExists($sourcePadId);
+			// After the switched-off refusal: asking first would answer three
+			// ways and make this an existence oracle on a privileged API.
+			if (!$this->groupHolds($sourcePadId)) {
+				throw $this->missingPad($uid, $fileId, $sourceUrl, $accessMode, 'The legacy .pad file names a pad that does not exist in its Etherpad group.');
+			}
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
 			// between findByPadId and createBinding), we re-classify as a

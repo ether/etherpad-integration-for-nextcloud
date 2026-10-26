@@ -28,7 +28,7 @@ This is a pure local re-bind. No remote pad is created, no content is copied; th
 - New YAML frontmatter is written referencing the same `pad_id`.
 - A binding row is inserted.
 
-Before a new binding row, the pad id has to be one Etherpad could hold - its own rule (`isValidPadId`): an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 characters without `$` - and a group pad has to be in the group it names (`listPads`). Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad.") and leaves the `.pad` file untouched.
+Before a new binding row, the pad id has to be one Etherpad could hold - its own rule (`isValidPadId`), as Etherpad 3.3 has it: an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 UTF-16 code units without `$` or `:`, and not `.` or `..` (Etherpad 2 still took those; an upgrade would leave such a pad unreachable) - and a group pad has to be in the group it names (`listPads`). Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad.") and leaves the `.pad` file untouched.
 
 ### Same origin — claim-collision rule
 
@@ -49,7 +49,7 @@ Refused imports surface as HTTP 403 with `code: "legacy_protected_import_disable
 
 ## Audit log
 
-Every branch emits a single log line at `info` level (or `warning` for the refusal). Fields:
+Every branch emits a single log line at `info` level (or `warning` for a refusal). Fields:
 
 | Field | Meaning |
 |---|---|
@@ -66,7 +66,7 @@ path is the permission - `sourceHost` plus the pad id would put that link back
 together. To go from a log line to the pad, read `pad_id` from `ep_pad_bindings`
 for that `file_id`.
 
-Grep `app:etherpad_nextcloud` + `legacy Ownpad` in `nextcloud.log` to reconstruct what was imported when. `Migrated legacy Ownpad` alone finds the successes only - both refusals are worded `Refused legacy Ownpad migration`.
+Grep `app:etherpad_nextcloud` + `legacy Ownpad` in `nextcloud.log` to reconstruct what was imported when. `Migrated legacy Ownpad` alone finds the successes only - every refusal is worded `Refused legacy Ownpad migration`.
 
 ## Out of scope
 

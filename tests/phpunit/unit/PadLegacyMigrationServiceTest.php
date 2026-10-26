@@ -302,11 +302,12 @@ class PadLegacyMigrationServiceTest extends TestCase {
 
 	/**
 	 * An id Etherpad accepts for no pad - a group of fifteen characters, a
-	 * name past fifty - names nothing to bind: refused before Etherpad is
-	 * asked, the file left as it is.
+	 * name past fifty, a colon, `..` - names nothing to bind: refused before
+	 * Etherpad is asked, with the migration's own line, the file left as it
+	 * is.
 	 */
 	public function testSameOriginRefusesAPadIdEtherpadAcceptsForNoPad(): void {
-		foreach (['g.VICTIMGROUPID12$notes', str_repeat('a', 51)] as $padId) {
+		foreach (['g.VICTIMGROUPID12$notes', str_repeat('a', 51), 'a:b', '..'] as $padId) {
 			$file = $this->createMock(File::class);
 			$file->method('getId')->willReturn(507);
 			$file->expects($this->never())->method('putContent');
@@ -323,20 +324,106 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			$binding->method('findByPadId')->willReturn(null);
 			$binding->expects($this->never())->method('createBinding');
 
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())
+				->method('warning')
+				->with('Refused legacy Ownpad migration - the pad it names does not exist.', $this->callback(
+					static fn (array $context): bool => ($context['fileId'] ?? null) === 507
+						&& ($context['collision'] ?? null) === 'none'
+						&& !in_array($padId, $context, true)
+				));
+
 			try {
 				$this->buildService(
 					binding: $binding,
 					padFileService: $padFileService,
 					etherpadClient: $etherpadClient,
+					logger: $logger,
 				)->migrate('mallory', $file, [
 					'url' => 'https://pad.our-server.test/p/' . $padId,
 					'pad_id' => $padId,
 				]);
-				$this->fail($padId . ': refused');
+				$this->fail($padId . ' should have been refused');
 			} catch (LegacyPadNotFoundException) {
 				$this->addToAssertionCount(1);
 			}
 		}
+	}
+
+	/**
+	 * Where the import of group pads is switched off, that refusal is the
+	 * one a group pad gets, whatever its id: the switch is the admin's
+	 * answer, and the one the migration's log trail names.
+	 */
+	public function testTheSwitchedOffRefusalComesBeforeTheIdIsAsked(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(508);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+
+		$this->expectException(LegacyProtectedImportDisabledException::class);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			legacyImportPolicy: $this->policyAllowing(false),
+		)->migrate('alice', $file, [
+			'url' => 'https://pad.our-server.test/p/g.short$notes',
+			'pad_id' => 'g.short$notes',
+		]);
+	}
+
+	/**
+	 * A row that already names the pad for this file is a migration to
+	 * finish, not a pad id to judge: the id is asked only before a row is
+	 * made.
+	 */
+	public function testAFileItsRowAlreadyNamesFinishesWhateverTheId(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(509);
+		$file->expects($this->once())->method('putContent');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 509, padId: 'a:b', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+		)->migrate('alice', $file, [
+			'url' => 'https://pad.our-server.test/p/a:b',
+			'pad_id' => 'a:b',
+		]);
+	}
+
+	/** A pad on another server is that server's to judge: it is linked, not refused. */
+	public function testAPadOnAnotherServerIsNotAskedTheRule(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(510);
+		$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
+		$externalPadSeeder->expects($this->once())->method('seed')->with($file, 510, 'https://legacy.example.test/p/a:b');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://legacy.example.test');
+
+		$this->buildService(
+			etherpadClient: $etherpadClient,
+			externalPadSeeder: $externalPadSeeder,
+		)->migrate('alice', $file, [
+			'url' => 'https://legacy.example.test/p/a:b',
+			'pad_id' => 'a:b',
+		]);
 	}
 
 	/** Fails closed: a read that did not answer is not permission to bind. */
@@ -412,6 +499,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		?ExternalPadSeeder $externalPadSeeder = null,
 		?UserNodeResolver $resolver = null,
 		?LegacyImportPolicy $legacyImportPolicy = null,
+		?LoggerInterface $logger = null,
 	): PadLegacyMigrationService {
 		return new PadLegacyMigrationService(
 			$binding ?? $this->createMock(BindingService::class),
@@ -420,7 +508,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$resolver ?? $this->createMock(UserNodeResolver::class),
-			$this->createMock(LoggerInterface::class),
+			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}
 
