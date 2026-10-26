@@ -37,9 +37,11 @@ use Psr\Log\LoggerInterface;
  *   answered as an outage): an error once a minute for the instance, at
  *   debug for the rest of that minute, on a minute apart from an
  *   outage's, so the line that sends an admin to the key is not lost
- *   behind the one that sends them to the network. The jobs share the
- *   answers' minute only through a cache cron shares with the web: not
- *   APCu, which each cron run has to itself.
+ *   behind the one that sends them to the network. Written outside a web
+ *   request - system cron, occ - the line shares the answers' minute only
+ *   through Redis or Memcached: APCu there is the process's own, and
+ *   without apc.enable_cli Nextcloud gives the CLI no cache, so each such
+ *   line is an error.
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
@@ -107,7 +109,8 @@ final class ApiErrorLog {
 	 * The rejected key's line, if $e is one or wraps one - a restore wraps
 	 * what failed in its own - where no answer logs it: the sweep, the jobs
 	 * that revoke or collect sessions, the listeners that revoke sessions or
-	 * restore a pad. None of them opens a pad, which would say it otherwise.
+	 * restore a pad. No answer of theirs reports $e: without this line, the
+	 * key would show only once someone opens a pad.
 	 */
 	public function reportIfKeyRejected(\Throwable $e): void {
 		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {

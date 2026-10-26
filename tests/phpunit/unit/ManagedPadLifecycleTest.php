@@ -326,10 +326,11 @@ class ManagedPadLifecycleTest extends TestCase {
 	 */
 	public function testRemovesAPublicPadWhoseCreateFailed(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
+		// As the client throws it, an outage like a rejected key.
+		$client->method('createPad')->willThrowException(new EtherpadClientException('Etherpad API request failed: createPad', 0, new \RuntimeException('Connection timed out')));
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(EtherpadClientException::class);
 		$this->provisionPublic($client, 'nc-abcdef0123456789');
 	}
 

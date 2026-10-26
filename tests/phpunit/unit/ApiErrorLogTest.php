@@ -107,10 +107,11 @@ class ApiErrorLogTest extends TestCase {
 	}
 
 	/**
-	 * A job says a rejected key on a minute apart from an outage's too, and
-	 * an answer after it on the job's: the same one line a minute. Its line
-	 * names what failed, also inside the error a restore wraps it in; a
-	 * job's other failures are not this line's.
+	 * Where a job or listener says a rejected key, it is on the answers'
+	 * minute - the same one line a minute - and before an outage here, so
+	 * the key's line takes nothing from the outage's either. Its line names
+	 * what failed, also inside the error a restore wraps it in; their other
+	 * failures are not this line's.
 	 */
 	public function testAJobSaysARejectedKeyOnTheSameMinute(): void {
 		$claimed = [];
@@ -126,21 +127,22 @@ class ApiErrorLogTest extends TestCase {
 		$factory->method('createDistributed')->willReturn($cache);
 
 		$log = new ApiErrorLog($factory, $this->logger());
-		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
 		$log->reportIfKeyRejected(new EtherpadClientException('Etherpad API request failed: deletePad'));
 		$log->reportIfKeyRejected(LifecycleException::failed('Restore', new \RuntimeException('connection lost')));
 		// As the client throws it: its call's failure, around the HTTP error.
 		$rejected = new EtherpadKeyRejectedException('Etherpad API request failed: createPad', 0, new EtherpadKeyRejectedException('Etherpad API HTTP error (401)'));
 		$log->reportIfKeyRejected(LifecycleException::failed('Restore', $rejected));
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 42]);
+		$log->reportIfKeyRejected(new EtherpadKeyRejectedException('Etherpad API request failed: deletePad'));
 
 		$this->assertSame(
-			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, null], ['debug', self::KEY_REJECTED, 42]],
+			[['error', self::KEY_REJECTED, null], ['warning', self::UNREACHABLE, 44], ['debug', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, null]],
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
 		);
 		$this->assertSame(
 			['app' => 'etherpad_nextcloud', 'error' => EtherpadKeyRejectedException::class, 'error_message' => 'Etherpad API request failed: createPad'],
-			array_intersect_key($this->logged[1][2], ['app' => 0, 'error' => 0, 'error_message' => 0]),
+			array_intersect_key($this->logged[0][2], ['app' => 0, 'error' => 0, 'error_message' => 0]),
 		);
 	}
 
