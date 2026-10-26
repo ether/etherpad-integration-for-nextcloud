@@ -17,8 +17,8 @@ class AppConfigService {
 	public const DELETE_PAD_WITH_FILE = 'delete_pad_with_file';
 	/** The version of RegisterMimeType's repair of the .pad files that last finished in a run that found the mapping in place. */
 	public const PAD_FILES_MIME_VERSION = 'pad_files_mime_version';
-	/** When the runs of GoneFileSweep began to end on Etherpad not answering, or when it last warned of them. */
-	public const SWEEP_UNANSWERED_SINCE = 'sweep_unanswered_since';
+	/** When GoneFileSweep last warned of a pad waiting on Etherpad. */
+	public const SWEEP_WARNED_AT = 'sweep_warned_at';
 
 	public function __construct(
 		private IConfig $config,
@@ -100,18 +100,14 @@ class AppConfigService {
 		$this->appConfig->deleteKey(Application::APP_ID, self::PAD_FILES_MIME_VERSION);
 	}
 
-	/** 0 unless the sweep's last run ended on Etherpad not answering. */
-	public function sweepUnansweredSince(): int {
-		return $this->appConfig->getValueInt(Application::APP_ID, self::SWEEP_UNANSWERED_SINCE, 0, true);
+	/** 0 where the sweep never warned. */
+	public function sweepWarnedAt(): int {
+		return $this->appConfig->getValueInt(Application::APP_ID, self::SWEEP_WARNED_AT, 0, true);
 	}
 
 	/** Lazy: only the sweep reads it, not every request. */
-	public function recordSweepUnansweredSince(int $time): void {
-		$this->appConfig->setValueInt(Application::APP_ID, self::SWEEP_UNANSWERED_SINCE, $time, true);
-	}
-
-	public function forgetSweepUnanswered(): void {
-		$this->appConfig->deleteKey(Application::APP_ID, self::SWEEP_UNANSWERED_SINCE);
+	public function recordSweepWarnedAt(int $time): void {
+		$this->appConfig->setValueInt(Application::APP_ID, self::SWEEP_WARNED_AT, $time, true);
 	}
 
 	/**

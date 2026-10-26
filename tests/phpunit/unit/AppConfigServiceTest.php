@@ -92,7 +92,7 @@ class AppConfigServiceTest extends TestCase {
 	}
 
 	/** Kept lazy: only the sweep reads it, no request does. */
-	public function testTheSweepsUnansweredHourIsLazyAndReadAsRecorded(): void {
+	public function testWhenTheSweepLastWarnedIsLazyAndReadAsRecorded(): void {
 		$stored = [];
 		$appConfig = $this->createMock(IAppConfig::class);
 		$appConfig->method('getValueInt')->willReturnCallback(static function (string $app, string $key, int $default = 0, bool $lazy = false) use (&$stored): int {
@@ -102,17 +102,12 @@ class AppConfigServiceTest extends TestCase {
 			$stored[$app . '/' . $key . '/' . ($lazy ? 'lazy' : 'eager')] = $value;
 			return true;
 		});
-		$appConfig->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$stored): void {
-			unset($stored[$app . '/' . $key . '/lazy'], $stored[$app . '/' . $key . '/eager']);
-		});
 		$service = $this->service($this->createMock(IConfig::class), $appConfig);
 
-		$this->assertSame(0, $service->sweepUnansweredSince());
-		$service->recordSweepUnansweredSince(1700000000);
-		$this->assertSame(['etherpad_nextcloud/sweep_unanswered_since/lazy' => 1700000000], $stored);
-		$this->assertSame(1700000000, $service->sweepUnansweredSince());
-		$service->forgetSweepUnanswered();
-		$this->assertSame([], $stored);
+		$this->assertSame(0, $service->sweepWarnedAt());
+		$service->recordSweepWarnedAt(1700000000);
+		$this->assertSame(['etherpad_nextcloud/sweep_warned_at/lazy' => 1700000000], $stored);
+		$this->assertSame(1700000000, $service->sweepWarnedAt());
 	}
 
 	/** The test fault of 1.1.0-beta.1 goes with its faults. */
