@@ -19,8 +19,8 @@ use Psr\Log\LoggerInterface;
 /**
  * The two error mappers as the container builds them, in one place: a
  * change to their constructors is made here, not in every controller test.
- * Their ApiErrorLog has no cache, so every Etherpad failure is a warning -
- * one call, one line.
+ * Their ApiErrorLog has no cache, so every Etherpad failure is logged at
+ * its level - a warning, a rejected key an error - one call, one line.
  */
 trait BuildsErrorMappers {
 	private function padErrorMapper(PadResponseService $responses, IL10N $l10n, ?LoggerInterface $logger = null): PadControllerErrorMapper {

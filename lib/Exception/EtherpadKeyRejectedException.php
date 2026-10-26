@@ -18,10 +18,10 @@ namespace OCA\EtherpadNextcloud\Exception;
  * proxy or firewall in front of Etherpad sent it.
  *
  * It counts as Etherpad not answering, not as a refusal: every call fails
- * alike until an admin fixes the key, so the jobs try again on their next
- * run and an answer says to try again, where a refusal would set each pad
- * aside as a case of its own. ApiErrorLog names it, for an answer and
- * wherever a job or listener meets it.
+ * alike until an admin fixes the key, so an answer says to try again and
+ * the sweep ends its run, where a refusal would set each pad aside for an
+ * hour as a case of its own. ApiErrorLog names it (report(),
+ * reportIfKeyRejected()).
  */
 class EtherpadKeyRejectedException extends EtherpadClientException {
 }

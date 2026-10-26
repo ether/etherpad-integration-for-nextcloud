@@ -25,8 +25,8 @@ use Psr\Log\LoggerInterface;
 /**
  * The one line an error a client is answered for gets, for both error
  * mappers; the services under them leave it to this. Of a key Etherpad
- * rejected, the jobs and listeners that meet it where no answer is logged
- * write the same line (reportIfKeyRejected()). Kept on purpose are
+ * rejected, some jobs and listeners write the same line where no answer
+ * logs it (reportIfKeyRejected()). Kept on purpose are
  * the lines a service writes to explain a refusal nothing else would: a
  * name another create has locked (PadFileCreator - a stale lock looks like
  * a taken name), a file a create will not write over, and the refusals of
@@ -37,8 +37,9 @@ use Psr\Log\LoggerInterface;
  *   answered as an outage): an error once a minute for the instance, at
  *   debug for the rest of that minute, on a minute apart from an
  *   outage's, so the line that sends an admin to the key is not lost
- *   behind the one that sends them to the network. The client takes the
- *   key out of what Etherpad says before it is part of a message.
+ *   behind the one that sends them to the network. The jobs share the
+ *   answers' minute only through a cache cron shares with the web: not
+ *   APCu, which each cron run has to itself.
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
@@ -103,15 +104,17 @@ final class ApiErrorLog {
 	}
 
 	/**
-	 * The rejected key's line for $e, if it is one, met where no answer is
-	 * logged for it: the sweep, the session jobs, the listeners that revoke
-	 * sessions or restore a pad. They run whether or not anyone opens a pad,
-	 * at night often alone, and their own lines name what they could not
-	 * do, not why; on the answers' minute, it is still one line a minute.
+	 * The rejected key's line, if $e is one or wraps one - a restore wraps
+	 * what failed in its own - where no answer logs it: the sweep, the jobs
+	 * that revoke or collect sessions, the listeners that revoke sessions or
+	 * restore a pad. None of them opens a pad, which would say it otherwise.
 	 */
 	public function reportIfKeyRejected(\Throwable $e): void {
-		if ($e instanceof EtherpadKeyRejectedException) {
-			$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($e)]);
+		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof EtherpadKeyRejectedException) {
+				$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($cause)]);
+				return;
+			}
 		}
 	}
 

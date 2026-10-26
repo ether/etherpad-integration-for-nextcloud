@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
@@ -76,12 +77,14 @@ class ManagedPadLifecycle {
 	 * The one failure that is not ours to undo is a pad that was already
 	 * there. Random ids make that vanishingly unlikely, but the cost of
 	 * being wrong is deleting someone's live pad, so it is worth the check.
+	 * Nor is there anything to undo after a rejected key: Etherpad made
+	 * nothing, and would reject the delete alike.
 	 */
 	private function provisionPad(string $padId): void {
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
-			if (!EtherpadErrorClassifier::isPadAlreadyPresent($e)) {
+			if (!$e instanceof EtherpadKeyRejectedException && !EtherpadErrorClassifier::isPadAlreadyPresent($e)) {
 				try {
 					$this->etherpadClient->deletePad($padId);
 				} catch (\Throwable $cleanupError) {

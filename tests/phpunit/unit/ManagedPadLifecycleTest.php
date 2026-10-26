@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -342,6 +343,19 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('deletePad');
 
 		$this->expectException(\RuntimeException::class);
+		$this->provisionPublic($client, 'nc-abcdef0123456789');
+	}
+
+	/**
+	 * A key Etherpad rejected made no pad, and a delete would be rejected
+	 * alike, only to warn about a pad that never was.
+	 */
+	public function testLeavesNothingToTakeDownAfterARejectedKey(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('createPad')->willThrowException(new EtherpadKeyRejectedException('Etherpad API request failed: createPad'));
+		$client->expects($this->never())->method('deletePad');
+
+		$this->expectException(EtherpadKeyRejectedException::class);
 		$this->provisionPublic($client, 'nc-abcdef0123456789');
 	}
 

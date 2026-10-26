@@ -391,15 +391,30 @@ class RestoreFromTrashListenerTest extends TestCase {
 		yield 'the trashbin hook' => ['hook'];
 	}
 
-	/** A key Etherpad rejects is said as that too, beside the pad that was not restored. */
+	/**
+	 * A key Etherpad rejects is said as that too, beside the pad that was not
+	 * restored, from inside the error the restore wraps it in. A file without
+	 * its row is the restore that asks Etherpad for a new pad; nothing is
+	 * left in Etherpad to take down.
+	 *
+	 * The real restore rather than a mock: what reaches the listener is what
+	 * the restore makes of the failure.
+	 */
 	public function testARejectedKeyIsSaidBesideThePadNotRestored(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+		$bindingService->method('findByPadId')->willReturn(null);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createPad')->willThrowException(new EtherpadKeyRejectedException('Etherpad API request failed: createPad'));
+		$etherpadClient->expects($this->never())->method('deletePad');
+		$padFiles = $this->createMock(PadFileService::class);
+		$padFiles->method('readPad')->willReturn(new ParsedPadFile([], 'body', 'old-pad', BindingService::ACCESS_PUBLIC, '', false, 2));
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
 		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn('doc');
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($file);
-		$restores = $this->createMock(RestoreService::class);
-		$restores->method('restore')->willThrowException(new EtherpadKeyRejectedException('Etherpad API request failed: getRevisionsCount'));
 		$lines = [];
 		$logger = $this->createMock(LoggerInterface::class);
 		foreach (['error', 'warning'] as $level) {
@@ -408,6 +423,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			});
 		}
 
+		$restores = $this->restoreService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFiles, logger: $logger, padLifecycleLogger: $logger);
 		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger, $this->appAccess(true), $this->apiErrorLog($logger));
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 
