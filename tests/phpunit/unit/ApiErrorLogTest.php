@@ -77,8 +77,8 @@ class ApiErrorLogTest extends TestCase {
 	/**
 	 * A rejected key is one error a minute for the instance, whichever file,
 	 * on the same minute where a job meets it, and on a minute apart from an
-	 * outage's, so neither hides the other's line. A job's other failures
-	 * are not this line's.
+	 * outage's, so neither hides the other's line. A job's line says what
+	 * failed; a job's other failures are not this line's.
 	 */
 	public function testOneErrorAMinuteForARejectedKey(): void {
 		$claimed = [];
@@ -106,6 +106,10 @@ class ApiErrorLogTest extends TestCase {
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
 		);
 		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[1][2]['error']);
+		$this->assertSame(
+			['app' => 'etherpad_nextcloud', 'error' => EtherpadKeyRejectedException::class, 'error_message' => 'Etherpad API request failed: deletePad'],
+			array_intersect_key($this->logged[3][2], ['app' => 0, 'error' => 0, 'error_message' => 0]),
+		);
 	}
 
 	/**
