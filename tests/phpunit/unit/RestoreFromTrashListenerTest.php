@@ -392,11 +392,10 @@ class RestoreFromTrashListenerTest extends TestCase {
 	}
 
 	/**
-	 * A key Etherpad rejects is said as that too, beside the pad that was not
-	 * restored, from inside the error the restore wraps it in; nothing is
-	 * left in Etherpad to take down. A file without its row: with one, the
-	 * restore asks Etherpad about the pad first, and a rejected key there is
-	 * passed over quietly, for the next open to say.
+	 * A file without its row gets a new pad; a key Etherpad rejects on the
+	 * way is said as that too, beside the pad not restored, though the
+	 * restore wraps it in its own error, and nothing is left to take down.
+	 * (With a row, the restore passes a rejected key over quietly.)
 	 *
 	 * The real restore rather than a mock: what reaches the listener is what
 	 * the restore makes of the failure.

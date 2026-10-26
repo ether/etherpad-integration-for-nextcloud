@@ -74,11 +74,11 @@ class ManagedPadLifecycle {
 	 * this worth doing: a `createPad` that times out on the way back leaves
 	 * a pad whose id the caller never learns.
 	 *
-	 * The one failure that is not ours to undo is a pad that was already
-	 * there. Random ids make that vanishingly unlikely, but the cost of
-	 * being wrong is deleting someone's live pad, so it is worth the check.
-	 * Nor is there anything to undo after a rejected key: Etherpad made
-	 * nothing, and would reject the delete alike.
+	 * Never taken down is a pad that was already there. Random ids make that
+	 * vanishingly unlikely, but the cost of being wrong is deleting someone's
+	 * live pad, so it is worth the check. Nor is a rejected key followed by a
+	 * delete: Etherpad checks the key before it runs a call, so it made
+	 * nothing.
 	 */
 	private function provisionPad(string $padId): void {
 		try {

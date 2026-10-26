@@ -140,8 +140,10 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A key Etherpad rejects ends the run, no row set aside, with the line
-	 * that names the key rather than the one for an outage.
+	 * A key Etherpad rejects fails the check that tells an outage from a
+	 * pad's own failure (checkToken) as it fails the delete: the run ends
+	 * with the line that names the key rather than the one for an outage,
+	 * and no row is set aside - with the key fixed, the next run takes them.
 	 */
 	public function testARejectedKeyEndsTheRunWithTheLineThatNamesTheKey(): void {
 		$this->table([self::row(1, 11, 'pad-a', seenAt: 100), self::row(2, 12, 'pad-b', seenAt: 101)], []);
@@ -156,6 +158,11 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertCount(1, $this->lines);
 		$this->assertSame('error', $this->lines[0][0]);
 		$this->assertStringStartsWith('Etherpad rejected this Nextcloud\'s API key', $this->lines[0][1]);
+
+		$this->padErrors = [];
+		$this->answering = true;
+		$this->sweep();
+		$this->assertSame(['pad-a', 'pad-b'], $this->deletedPads);
 	}
 
 	/**

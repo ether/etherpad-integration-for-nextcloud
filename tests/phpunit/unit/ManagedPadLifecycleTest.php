@@ -335,8 +335,8 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * The one failure that is not ours to undo: the pad was there before the
-	 * call, so deleting it would destroy live content.
+	 * A pad that was there before the call is not ours to undo: deleting it
+	 * would destroy live content.
 	 */
 	public function testLeavesAPadThatWasAlreadyThere(): void {
 		$client = $this->createMock(EtherpadClient::class);

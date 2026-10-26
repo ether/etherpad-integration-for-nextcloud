@@ -457,9 +457,9 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	public function testApiCallSurfacesHttpErrorStatusAsCause(): void {
-		// A 401 without Etherpad's own answer came from something in front of
-		// it: an HTTP error, wrapped as "request failed: <method>" with the
-		// status in the cause.
+		// A 401 without Etherpad's own answer says nothing of the key: an HTTP
+		// error, wrapped as "request failed: <method>" with the status in the
+		// cause.
 		$client = $this->clientWithResponse($this->response(401, 'Unauthorized'));
 
 		try {

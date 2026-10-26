@@ -589,8 +589,8 @@ class EtherpadClient {
 
 	/**
 	 * Whether $answer, decoded, is Etherpad's to a key it does not take: its
-	 * own code 4. A 401 or 403 sent by something in front of Etherpad - a
-	 * proxy, a firewall - is not, and stays an HTTP error.
+	 * own code 4. A 401 or 403 without it says nothing of the key, and stays
+	 * an HTTP error.
 	 */
 	private static function isEtherpadsKeyAnswer(mixed $answer): bool {
 		return is_array($answer) && ($answer['code'] ?? null) === 4;
