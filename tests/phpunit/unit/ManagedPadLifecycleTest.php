@@ -543,4 +543,78 @@ class ManagedPadLifecycleTest extends TestCase {
 
 		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
+
+	/** A pad made and seeded as one step: its id and revisions together. */
+	public function testMakesAndSeedsAPadAsOneStep(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('createPad')->with('nc-pad');
+		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
+		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(1);
+		$client->expects($this->never())->method('deletePad');
+		$lifecycle = $this->lifecycle($client);
+
+		$this->assertSame(['nc-pad', 1], $lifecycle->provisionSeeded(
+			static fn (): string => $lifecycle->provisionFor(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused'),
+			'text',
+			'',
+			['fileId' => 7],
+		));
+	}
+
+	/**
+	 * A seed that fails takes its new pad down before the failure goes on:
+	 * a public pad by its id, a protected one with its group, which holds
+	 * nothing else.
+	 */
+	public function testASeedThatFailsTakesItsNewPadDown(): void {
+		$cases = [
+			BindingService::ACCESS_PUBLIC => ['deletePad', 'nc-pad'],
+			BindingService::ACCESS_PROTECTED => ['deleteGroup', 'g.AbCdEfGh12345678'],
+		];
+		foreach ($cases as $accessMode => [$discard, $id]) {
+			$refused = new EtherpadClientException('Etherpad API request failed: setText');
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('createGroup')->willReturn('g.AbCdEfGh12345678');
+			$client->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-new');
+			$client->method('setText')->willThrowException($refused);
+			$client->expects($this->once())->method($discard)->with($id);
+			$lifecycle = $this->lifecycle($client);
+
+			try {
+				$lifecycle->provisionSeeded(
+					static fn (): string => $lifecycle->provisionFor($accessMode, static fn (): string => 'nc-pad', static fn (): string => 'p-new'),
+					'text',
+					'',
+				);
+				$this->fail($accessMode . ': the seed\'s failure goes on');
+			} catch (EtherpadClientException $e) {
+				$this->assertSame($refused, $e, $accessMode);
+			}
+		}
+	}
+
+	/**
+	 * A new pad that cannot be taken down is named in the log - no row
+	 * names it, so nothing else leads to it - and the seed's failure, not
+	 * the cleanup's, goes on.
+	 */
+	public function testANewPadThatCannotBeTakenDownIsNamed(): void {
+		$refused = new EtherpadClientException('Etherpad API request failed: setText');
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('setText')->willThrowException($refused);
+		$client->method('deletePad')->willThrowException(new EtherpadClientException('Etherpad API request failed: deletePad'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
+				static fn (array $context): bool => ($context['padId'] ?? null) === 'nc-pad' && ($context['fileId'] ?? null) === 7
+			));
+
+		try {
+			(new ManagedPadLifecycle($client, $logger))->provisionSeeded(static fn (): string => 'nc-pad', 'text', '', ['fileId' => 7]);
+			$this->fail('the seed\'s failure goes on');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame($refused, $e);
+		}
+	}
 }

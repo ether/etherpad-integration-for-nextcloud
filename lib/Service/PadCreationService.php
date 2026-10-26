@@ -209,13 +209,17 @@ class PadCreationService {
 
 		$fileId = $claim->fileId;
 
-		$padId = $this->padBootstrapService->provisionPadId($accessMode);
+		// The template's content is in the file from the start, so the file
+		// records the pad's revisions, as a restore does: they make it hold
+		// saved content should Etherpad lose the pad before its first sync,
+		// not only its text (ManagedPadLifecycle::howLost()).
+		[$padId, $revisions] = $this->padLifecycle->provisionSeeded(
+			fn (): string => $this->padBootstrapService->provisionPadId($accessMode),
+			$resolvedText,
+			$resolvedHtml,
+			['fileId' => $fileId],
+		);
 		try {
-			// The template's content is in the file from the start, so the
-			// file records the pad's revisions, as a restore does: they make
-			// it hold saved content should Etherpad lose the pad before its
-			// first sync, not only its text (ManagedPadLifecycle::howLost()).
-			$revisions = $this->padLifecycle->seed($padId, $resolvedText, $resolvedHtml, ['fileId' => $fileId]);
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
 			$content = $this->padFileService->buildInitialDocument(

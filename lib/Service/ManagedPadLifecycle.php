@@ -177,6 +177,34 @@ class ManagedPadLifecycle {
 		return $this->revisionsOfSeeded($padId);
 	}
 
+	/**
+	 * A pad $provision makes, seeded with a snapshot (seed()), as one step:
+	 * a seed that fails takes the pad down again before the failure goes
+	 * on, as no row names it yet. One that cannot be taken down is named in
+	 * the log, the only handle left on it.
+	 *
+	 * @param \Closure(): string $provision makes the pad (provisionFor()) and gives its id
+	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
+	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
+	 */
+	public function provisionSeeded(\Closure $provision, string $text, string $html, array $context = []): array {
+		$padId = $provision();
+		try {
+			return [$padId, $this->seed($padId, $text, $html, $context)];
+		} catch (\Throwable $e) {
+			try {
+				$this->discardProvisioned($padId);
+			} catch (\Throwable $cleanupError) {
+				$this->logger->warning('Could not remove a new Etherpad pad after seeding it failed.', [
+					'app' => 'etherpad_nextcloud',
+					'padId' => $padId,
+					...SafeError::context($cleanupError),
+				] + $context);
+			}
+			throw $e;
+		}
+	}
+
 	private function revisionsOfSeeded(string $padId): int {
 		try {
 			return $this->etherpadClient->getRevisionsCount($padId);

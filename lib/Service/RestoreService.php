@@ -161,11 +161,15 @@ class RestoreService {
 	 */
 	private function seedFromSnapshot(int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId): array {
 		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body());
-		$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
+		// Nobody else knows the new pad's id yet to have changed it, so the
+		// file records what seeding left as synced.
+		[$newPadId, $revisions] = $this->padLifecycle->provisionSeeded(
+			fn (): string => $this->provisionRestorePadId($accessMode, $oldPadId),
+			$snapshot['text'],
+			$snapshot['html'],
+			['fileId' => $fileId],
+		);
 		try {
-			// Nobody else knows the new pad's id yet to have changed it, so
-			// the file records what seeding left as synced.
-			$revisions = $this->padLifecycle->seed($newPadId, $snapshot['text'], $snapshot['html'], ['fileId' => $fileId]);
 			$content = $this->padFileService->withRestoredSnapshot(
 				$pad,
 				$snapshot['text'],
