@@ -100,7 +100,7 @@ class AppConfigService {
 		$this->appConfig->deleteKey(Application::APP_ID, self::PAD_FILES_MIME_VERSION);
 	}
 
-	/** 0 where the sweep never warned. */
+	/** 0 where none is recorded. */
 	public function sweepWarnedAt(): int {
 		return $this->appConfig->getValueInt(Application::APP_ID, self::SWEEP_WARNED_AT, 0, true);
 	}

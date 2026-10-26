@@ -91,7 +91,7 @@ class AppConfigServiceTest extends TestCase {
 		$this->assertSame(0, $service->padFilesMimeVersion());
 	}
 
-	/** Kept lazy: only the sweep reads it, no request does. */
+	/** Kept lazy: only the sweep reads it, not every request. */
 	public function testWhenTheSweepLastWarnedIsLazyAndReadAsRecorded(): void {
 		$stored = [];
 		$appConfig = $this->createMock(IAppConfig::class);
