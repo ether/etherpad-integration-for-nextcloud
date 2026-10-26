@@ -28,10 +28,9 @@ use Psr\Log\LoggerInterface;
  *
  * Before a pad goes the file cache is asked once more. A pad Etherpad no
  * longer has counts as gone; one Etherpad refuses to delete is tried again
- * an hour later; Etherpad not answering ends the run, with a warning once
- * the pad the run met has waited an hour past its due (unanswered()).
- * With deleting off nothing is deleted, but the rows keep waiting, so
- * switching it on finds them in place.
+ * an hour later; Etherpad not answering ends the run (unanswered()). With
+ * deleting off nothing is deleted, but the rows keep waiting, so switching
+ * it on finds them in place.
  */
 class GoneFileSweep {
 	/** Rows a batch takes. */
@@ -46,7 +45,7 @@ class GoneFileSweep {
 	/** How long a file seen deleted for good may still be there before it counts as one whose deletion did not happen. */
 	private const STALE_AFTER_SECONDS = 60 * 60;
 
-	/** How long past its due a pad Etherpad does not answer at may wait before the run's line is a warning, and the time warnsNow() waits between two. */
+	/** The wait past its due that makes the line of a run Etherpad did not answer at a pad a warning, and the time warnsNow() leaves between two. */
 	private const WAITED_WARNING_SECONDS = 60 * 60;
 
 	public function __construct(
@@ -125,12 +124,12 @@ class GoneFileSweep {
 	}
 
 	/**
-	 * The line of a run Etherpad did not answer at $binding's pad: info, as
-	 * the next run may get through, or a warning once that pad has waited
-	 * an hour past its due, as warnsNow() allows. With nobody opening a pad,
-	 * no answer of this app says Etherpad is down while the pads wait. The
-	 * hour is the pad's wait, not the outage's: a pad that waited for other
-	 * reasons warns at Etherpad's first lapse.
+	 * A warning where the pads of deleted files wait on Etherpad while
+	 * nobody opens a pad, whose answer would say Etherpad is down: once the
+	 * pad the run met has waited an hour past its due, as warnsNow()
+	 * allows. The hour is that pad's wait, not the outage's, so a pad that
+	 * waited for other reasons warns at Etherpad's first lapse. Otherwise
+	 * info: the next run may get through.
 	 */
 	private function unanswered(EtherpadClientException $e, ?Binding $binding, int $now): void {
 		$context = ['app' => 'etherpad_nextcloud', ...SafeError::context($e)];
@@ -150,7 +149,7 @@ class GoneFileSweep {
 
 	/**
 	 * Whether the sweep warns now: once an hour has passed since it last
-	 * warned, noting the yes. That time is kept in the app config, which
+	 * warned, and then records the time. It is kept in the app config, which
 	 * cron shares with the web whatever the cache. A time later than now -
 	 * a clock that ran ahead, a value set by hand - counts as long past:
 	 * kept, it would hold every warning back until an hour after it. A
@@ -194,7 +193,7 @@ class GoneFileSweep {
 			// Etherpad down, and ends the run - unless Etherpad answers the
 			// question it always can: then it is this pad's, and the pad
 			// waits its hour rather than hold the head of the queue.
-			if (EtherpadClientException::isEtherpadUnreachable($e) && !$this->padLifecycle->answers($budget)) {
+			if (EtherpadClientException::isEtherpadUnreachable($e) && !$this->answersInTime($budget)) {
 				throw $e;
 			}
 			$this->bindingService->postponeGone($binding->fileId, $binding->padId, $binding->deletedAt);
@@ -211,5 +210,18 @@ class GoneFileSweep {
 		}
 		$this->logger->info('The file of a pad is gone for good; the pad is deleted.', $context);
 		return true;
+	}
+
+	/**
+	 * Whether Etherpad answers the question it always can, within $budget.
+	 * No time left to ask is no answer: ended on the budget instead, a run
+	 * whose delete Etherpad left unanswered would say nothing of the pad.
+	 */
+	private function answersInTime(RunBudget $budget): bool {
+		try {
+			return $this->padLifecycle->answers($budget);
+		} catch (RunBudgetSpentException) {
+			return false;
+		}
 	}
 }

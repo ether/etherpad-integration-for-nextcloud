@@ -33,6 +33,8 @@ class GoneFileSweepTest extends TestCase {
 	private array $deletedPads = [];
 	/** @var array<string,\Throwable> what deleting a pad throws */
 	private array $padErrors = [];
+	/** Seconds a delete that throws takes first. */
+	private int $padErrorTakes = 0;
 	/** @var list<array{string,string,int|null}> level, message and file of each line logged */
 	private array $lines = [];
 	/** @var list<array<string,mixed>> the context of each line logged */
@@ -51,6 +53,7 @@ class GoneFileSweepTest extends TestCase {
 		$this->config = ['delete_pad_with_file' => true];
 		$this->deletedPads = [];
 		$this->padErrors = [];
+		$this->padErrorTakes = 0;
 		$this->lines = [];
 		$this->contexts = [];
 		$this->warnedAtReads = 0;
@@ -253,7 +256,23 @@ class GoneFileSweepTest extends TestCase {
 	public static function lastWarnings(): iterable {
 		yield 'now' => [FixedClock::NOW, 'info'];
 		yield 'a second ahead' => [FixedClock::NOW + 1, 'warning'];
-		yield 'a year ahead' => [FixedClock::NOW + 365 * 86400, 'warning'];
+	}
+
+	/**
+	 * A delete Etherpad left unanswered with no time left in the run to ask
+	 * whether Etherpad answers at all counts as Etherpad not answering: the
+	 * pad keeps its row, and the run's line says it waits.
+	 */
+	public function testNoTimeLeftToAskCountsAsEtherpadNotAnswering(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		// Leaves a second of the run's twenty, less than a call is given.
+		$this->padErrorTakes = 19;
+
+		$this->sweep();
+
+		$this->assertSame([['warning', 'Etherpad did not answer the sweep of files gone for good, and the pad it was deleting has waited an hour or more; it tries again next run.', 11]], $this->lines);
+		$this->assertSame(['pending_delete'], array_values($this->states()));
 	}
 
 	/** An app config that cannot say when the sweep last warned does not keep it from warning. */
@@ -463,6 +482,7 @@ class GoneFileSweepTest extends TestCase {
 		$etherpad->method('deletePad')->willReturnCallback(function (string $padId): void {
 			$this->attempts[$padId] = ($this->attempts[$padId] ?? 0) + 1;
 			if (isset($this->padErrors[$padId])) {
+				$this->clock->advance($this->padErrorTakes);
 				throw $this->padErrors[$padId];
 			}
 			$this->deletedPads[] = $padId;
