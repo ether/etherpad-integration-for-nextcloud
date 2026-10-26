@@ -12,7 +12,8 @@ class EtherpadClientException extends \RuntimeException {
 	/**
 	 * $e is this instance's Etherpad not reachable: no connection, an HTTP
 	 * error, an answer it could not have meant, no address or key to ask
-	 * with. Trying again may help. What the answer says and what the log
+	 * with, or a key it rejected (EtherpadKeyRejectedException). Trying
+	 * again may help. What the answer says and what the log
 	 * makes of it both go by this.
 	 */
 	public static function isEtherpadUnreachable(\Throwable $e): bool {

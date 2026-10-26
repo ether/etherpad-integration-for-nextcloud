@@ -7,7 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCA\EtherpadNextcloud\Exception\EtherpadKeyRefusedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\Http\Client\IClient;
@@ -189,7 +189,7 @@ class EtherpadClientTest extends TestCase {
 		$undescribed = 'Etherpad did not describe the session.';
 		return [
 			'another refusal' => ['{"code":2,"message":"internal error","data":null}', EtherpadRefusedException::class, 'Etherpad API error (getSessionInfo): internal error'],
-			'a wrong API key' => ['{"code":4,"message":"no or wrong API Key","data":null}', EtherpadKeyRefusedException::class, 'Etherpad API error (getSessionInfo): no or wrong API Key'],
+			'a wrong API key' => ['{"code":4,"message":"no or wrong API Key","data":null}', EtherpadKeyRejectedException::class, 'Etherpad API error (getSessionInfo): no or wrong API Key'],
 			'an empty author' => ['{"code":0,"data":{"groupID":"g.aaa","authorID":"","validUntil":1}}', EtherpadClientException::class, $undescribed],
 			'no expiry' => ['{"code":0,"data":{"groupID":"g.aaa","authorID":"a.x"}}', EtherpadClientException::class, $undescribed],
 			'a group as a number' => ['{"code":0,"data":{"groupID":5,"authorID":"a.x","validUntil":99}}', EtherpadClientException::class, $undescribed],
@@ -474,27 +474,40 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
-	 * A key Etherpad does not take - HTTP 401 or 403, or code 4 in an answer
-	 * of 200 - is told apart from an outage and from a refusal, and keeps the
-	 * messages the connection test's hints read. None of them holds the key.
+	 * Etherpad's own code 4 - under HTTP 401 or 403, as Etherpad 2 sends it,
+	 * also where Nextcloud's client throws on the status and hands the
+	 * answer back, or under 200 - is a rejected key, with the messages the
+	 * connection test's hints read. A 401 or 403 without it - a proxy's page
+	 * - is not, nor another status or code. No message holds the key, even
+	 * where the answer quotes it.
 	 */
-	public function testARefusedKeyIsToldApart(): void {
-		$refusal = '{"code":4,"message":"no or wrong API Key","data":null}';
-		foreach ([[401, $refusal, 'Etherpad API HTTP error (401)'], [403, $refusal, 'Etherpad API HTTP error (403)']] as [$status, $body, $cause]) {
-			$e = $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $body))->createGroup());
-			$this->assertInstanceOf(EtherpadKeyRefusedException::class, $e, (string)$status);
+	public function testARejectedKeyIsToldApart(): void {
+		$rejected = '{"code":4,"message":"no or wrong API Key","data":null}';
+		foreach ([401, 403] as $status) {
+			$e = $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $rejected))->createGroup());
+			$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e, (string)$status);
 			$this->assertSame('Etherpad API request failed: createGroup', $e->getMessage());
-			$this->assertInstanceOf(EtherpadKeyRefusedException::class, $e->getPrevious());
-			$this->assertSame($cause, $e->getPrevious()?->getMessage());
-			$this->assertStringNotContainsString('stored-key', $e->getMessage() . $e->getPrevious()?->getMessage());
+			$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e->getPrevious());
+			$this->assertSame('Etherpad API HTTP error (' . $status . ')', $e->getPrevious()?->getMessage());
 		}
 
-		$e = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, $refusal))->createGroup());
-		$this->assertInstanceOf(EtherpadKeyRefusedException::class, $e);
-		$this->assertSame('Etherpad API error (createGroup): no or wrong API Key', $e->getMessage());
+		$http = $this->createMock(IClient::class);
+		$http->method('request')->willThrowException(new \RuntimeException('401 Unauthorized'));
+		$http->method('getResponseFromThrowable')->willReturn($this->response(401, $rejected));
+		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWith($http)->createGroup()));
 
-		foreach ([[500, $refusal], [404, '{"code":3,"message":"no such function","data":null}']] as [$status, $body]) {
-			$this->assertNotInstanceOf(EtherpadKeyRefusedException::class, $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $body))->createGroup()), (string)$status);
+		$proxied = $this->failureOf(fn () => $this->clientWithResponse($this->response(403, '<html><body>Forbidden</body></html>'))->createGroup());
+		$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $proxied);
+		$this->assertSame('Etherpad API HTTP error (403)', $proxied->getPrevious()?->getMessage());
+
+		$e = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, $rejected))->createGroup());
+		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e);
+		$this->assertSame('Etherpad API error (createGroup): no or wrong API Key', $e->getMessage());
+		$quoted = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, '{"code":4,"message":"invalid apikey stored-key","data":null}'))->createGroup());
+		$this->assertSame('Etherpad API error (createGroup): invalid apikey ***', $quoted->getMessage());
+
+		foreach ([[500, $rejected], [404, '{"code":3,"message":"no such function","data":null}']] as [$status, $body]) {
+			$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $body))->createGroup()), (string)$status);
 		}
 		$other = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, '{"code":1,"message":"groupID does not exist","data":null}'))->createGroup());
 		$this->assertInstanceOf(EtherpadRefusedException::class, $other);

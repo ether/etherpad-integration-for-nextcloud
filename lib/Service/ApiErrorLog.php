@@ -14,7 +14,7 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCA\EtherpadNextcloud\Exception\EtherpadKeyRefusedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\ICacheFactory;
@@ -24,25 +24,28 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The one line an error a client is answered for gets, for both error
- * mappers; the services under them leave it to this. Kept on purpose are
+ * mappers; the services under them leave it to this. The sweep hands it a
+ * key Etherpad rejected too, so that line is written whether or not
+ * anyone opens a pad. Kept on purpose are
  * the lines a service writes to explain a refusal nothing else would: a
  * name another create has locked (PadFileCreator - a stale lock looks like
  * a taken name), a file a create will not write over, and the refusals of
  * a legacy Ownpad migration, the trail docs/legacy-ownpad-migration.md
  * points admins to. At the level it deserves:
  *
- * - This instance's Etherpad refusing this Nextcloud's API key: an error
- *   once a minute for the instance, at debug for the rest of that minute.
- *   It is answered as an outage, and logged as what it is, so an admin
- *   looks at the key rather than at the network. The key is in none of
- *   its messages: the client carries it as an ApiKey.
+ * - A key Etherpad rejected (EtherpadKeyRejectedException says why it is
+ *   answered as an outage): an error once a minute for the instance, at
+ *   debug for the rest of that minute, on a minute apart from an
+ *   outage's, so the line that sends an admin to the key is not lost
+ *   behind the one that sends them to the network. The client takes the
+ *   key out of what Etherpad says before it is part of a message.
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
  *   otherwise write its own. Refusing: once a minute for each file, since
  *   each is a case of its own, and once a minute for all refusals that
  *   name none. Without a distributed cache to share the minute with - or
- *   one that fails - each is a warning.
+ *   one that fails - each is a warning, a rejected key an error.
  * - A `.pad` and its row that do not match: a warning. That is data an
  *   admin has to mend. A row that could not be written: an error, with the
  *   database's cause.
@@ -54,7 +57,7 @@ use Psr\Log\LoggerInterface;
  */
 final class ApiErrorLog {
 	private const QUIET_SECONDS = 60;
-	private const ETHERPAD_KEY_REFUSED = 'Etherpad refused this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
+	private const ETHERPAD_KEY_REJECTED = 'Etherpad rejected this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
 	private const ETHERPAD_UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const ETHERPAD_REFUSED = 'Etherpad refused a request.';
 	private const PAD_LOST = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
@@ -72,8 +75,8 @@ final class ApiErrorLog {
 	public function report(\Throwable $e, array $context = [], ?string $failure = null): void {
 		$file = self::fileIn($context);
 		$context = ['app' => Application::APP_ID, ...$context, ...SafeError::context($e)];
-		if ($e instanceof EtherpadKeyRefusedException) {
-			$this->onceAMinute(self::ETHERPAD_KEY_REFUSED, 'key-refused', $context, asError: true);
+		if ($e instanceof EtherpadKeyRejectedException) {
+			$this->rejectedKey($context);
 		} elseif (EtherpadClientException::isEtherpadUnreachable($e)) {
 			$this->onceAMinute(self::ETHERPAD_UNREACHABLE, 'unreachable', $context);
 		} elseif ($e instanceof EtherpadRefusedException) {
@@ -97,6 +100,16 @@ final class ApiErrorLog {
 		} else {
 			$this->logger->debug('A request was refused.', $context);
 		}
+	}
+
+	/** A key Etherpad rejected, met outside a request: by the sweep. */
+	public function reportRejectedKey(EtherpadKeyRejectedException $e): void {
+		$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($e)]);
+	}
+
+	/** @param array<string,mixed> $context */
+	private function rejectedKey(array $context): void {
+		$this->onceAMinute(self::ETHERPAD_KEY_REJECTED, 'key-rejected', $context, asError: true);
 	}
 
 	/**

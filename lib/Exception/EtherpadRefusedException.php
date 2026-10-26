@@ -13,7 +13,7 @@ namespace OCA\EtherpadNextcloud\Exception;
  * This instance's Etherpad answered, and refused: a pad or group it does
  * not have. Trying again gives the same answer; what it said is for the
  * admin. Any other EtherpadClientException of our own Etherpad is one it
- * did not answer properly, or a key it refused (EtherpadKeyRefusedException).
+ * did not answer properly, or a key it refused (EtherpadKeyRejectedException).
  */
 class EtherpadRefusedException extends EtherpadClientException {
 	/** Etherpad answered. */

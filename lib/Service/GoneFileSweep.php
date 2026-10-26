@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -50,6 +51,7 @@ class GoneFileSweep {
 		private AppConfigService $appConfig,
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
+		private ApiErrorLog $apiErrorLog,
 	) {
 	}
 
@@ -107,6 +109,10 @@ class GoneFileSweep {
 			}
 		} catch (RunBudgetSpentException) {
 			// The rest waits for the next run.
+		} catch (EtherpadKeyRejectedException $e) {
+			// The run ends as for an outage, with the line that names the
+			// key: the sweep runs whether or not anyone opens a pad.
+			$this->apiErrorLog->reportRejectedKey($e);
 		} catch (EtherpadClientException $e) {
 			$this->logger->info('Etherpad did not answer the sweep of files gone for good; it tries again next run.', [
 				'app' => 'etherpad_nextcloud',
@@ -124,7 +130,7 @@ class GoneFileSweep {
 	 *
 	 * @return bool whether pad and row went
 	 * @throws RunBudgetSpentException
-	 * @throws EtherpadClientException Etherpad did not answer
+	 * @throws EtherpadClientException Etherpad did not answer, or rejected the key
 	 */
 	private function discard(Binding $binding, RunBudget $budget): bool {
 		if (!$this->bindingService->isFileGone($binding->fileId)) {

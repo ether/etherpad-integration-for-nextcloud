@@ -9,11 +9,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCA\EtherpadNextcloud\Exception\EtherpadKeyRefusedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCA\EtherpadNextcloud\Util\ApiKey;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
@@ -492,10 +493,10 @@ class EtherpadClient {
 			if ($tooLarge !== null) {
 				throw $tooLarge;
 			}
-			// A refused key keeps its type through the wrapping, which the
-			// connection test's hints read the messages of.
-			if ($e instanceof EtherpadKeyRefusedException) {
-				throw new EtherpadKeyRefusedException('Etherpad API request failed: ' . $method, 0, $e);
+			// Wrapped like any failure, so the connection test's hints still
+			// read the cause's message; the type is kept for ApiErrorLog.
+			if ($e instanceof EtherpadKeyRejectedException) {
+				throw new EtherpadKeyRejectedException('Etherpad API request failed: ' . $method, 0, $e);
 			}
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
 		}
@@ -507,11 +508,13 @@ class EtherpadClient {
 
 		$code = (int)($decoded['code'] ?? -1);
 		if ($code !== 0) {
-			$message = (string)($decoded['message'] ?? 'Unknown Etherpad API error');
+			// Etherpad's own words, but a server in its place could quote
+			// the key back: taken out before it is part of a message.
+			$message = DiagnosticText::withoutSecret((string)($decoded['message'] ?? 'Unknown Etherpad API error'), $apiKey->reveal());
 			// Code 4 is Etherpad's for a key it does not take; Etherpad 2
 			// sends it with HTTP 401 or 403, which never get this far.
 			if ($code === 4) {
-				throw new EtherpadKeyRefusedException(sprintf('Etherpad API error (%s): %s', $method, $message));
+				throw new EtherpadKeyRejectedException(sprintf('Etherpad API error (%s): %s', $method, $message));
 			}
 			throw new EtherpadRefusedException(sprintf('Etherpad API error (%s): %s', $method, $message));
 		}
@@ -570,8 +573,8 @@ class EtherpadClient {
 			throw $e;
 		}
 		$statusCode = $response->getStatusCode();
-		if ($statusCode === 401 || $statusCode === 403) {
-			throw new EtherpadKeyRefusedException('Etherpad API HTTP error (' . $statusCode . ')');
+		if (($statusCode === 401 || $statusCode === 403) && self::isEtherpadsKeyAnswer(json_decode($sink === null ? (string)$response->getBody() : $sink->getContents(), true))) {
+			throw new EtherpadKeyRejectedException('Etherpad API HTTP error (' . $statusCode . ')');
 		}
 		if ($statusCode >= 400) {
 			throw new EtherpadClientException('Etherpad API HTTP error (' . $statusCode . ')');
@@ -582,6 +585,15 @@ class EtherpadClient {
 		return $sink === null ? (string)$response->getBody() : $sink->getContents();
 	}
 
+
+	/**
+	 * Whether $answer, decoded, is Etherpad's to a key it does not take: its
+	 * own code 4. A 401 or 403 sent by something in front of Etherpad - a
+	 * proxy, a firewall - is not, and stays an HTTP error.
+	 */
+	private static function isEtherpadsKeyAnswer(mixed $answer): bool {
+		return is_array($answer) && ($answer['code'] ?? null) === 4;
+	}
 
 	/**
 	 * The form-encoded request body, as a stream: `apikey` plus the
