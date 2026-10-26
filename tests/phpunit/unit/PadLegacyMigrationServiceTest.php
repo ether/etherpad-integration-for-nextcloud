@@ -301,59 +301,54 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * An id Etherpad accepts for no pad - a group of fifteen characters, a
-	 * name past fifty, a colon, `..` - names nothing to bind: refused before
-	 * Etherpad is asked, with the migration's own line, the file left as it
-	 * is.
+	 * An id Etherpad's API refuses is not bound: refused before its group
+	 * is asked about it, with the migration's own line, the file left as
+	 * it is. One such id stands for all; which ids fail is PadIdTest's.
 	 */
-	public function testSameOriginRefusesAPadIdEtherpadAcceptsForNoPad(): void {
-		foreach (['g.VICTIMGROUPID12$notes', str_repeat('a', 51), 'a:b', '..'] as $padId) {
-			$file = $this->createMock(File::class);
-			$file->method('getId')->willReturn(507);
-			$file->expects($this->never())->method('putContent');
+	public function testSameOriginRefusesAPadIdEtherpadsApiRefuses(): void {
+		$padId = 'g.VICTIMGROUPID12$notes';
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(507);
+		$file->expects($this->never())->method('putContent');
 
-			$padFileService = $this->createMock(PadFileService::class);
-			$padFileService->method('inferAccessModeFromPadId')->willReturn(str_starts_with($padId, 'g.') ? BindingService::ACCESS_PROTECTED : BindingService::ACCESS_PUBLIC);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
 
-			$etherpadClient = $this->createMock(EtherpadClient::class);
-			$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
-			$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-			$etherpadClient->expects($this->never())->method('listPads');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->expects($this->never())->method('listPads');
 
-			$binding = $this->createMock(BindingService::class);
-			$binding->method('findByPadId')->willReturn(null);
-			$binding->expects($this->never())->method('createBinding');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->expects($this->never())->method('createBinding');
 
-			$logger = $this->createMock(LoggerInterface::class);
-			$logger->expects($this->once())
-				->method('warning')
-				->with('Refused legacy Ownpad migration - the pad it names does not exist.', $this->callback(
-					static fn (array $context): bool => ($context['fileId'] ?? null) === 507
-						&& ($context['collision'] ?? null) === 'none'
-						&& !in_array($padId, $context, true)
-				));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with('Refused legacy Ownpad migration - the pad it names does not exist.', $this->callback(
+				static fn (array $context): bool => ($context['fileId'] ?? null) === 507
+					&& ($context['collision'] ?? null) === 'none'
+					&& !in_array($padId, $context, true)
+			));
 
-			try {
-				$this->buildService(
-					binding: $binding,
-					padFileService: $padFileService,
-					etherpadClient: $etherpadClient,
-					logger: $logger,
-				)->migrate('mallory', $file, [
-					'url' => 'https://pad.our-server.test/p/' . $padId,
-					'pad_id' => $padId,
-				]);
-				$this->fail($padId . ' should have been refused');
-			} catch (LegacyPadNotFoundException) {
-				$this->addToAssertionCount(1);
-			}
-		}
+		$this->expectException(LegacyPadNotFoundException::class);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			logger: $logger,
+		)->migrate('mallory', $file, [
+			'url' => 'https://pad.our-server.test/p/' . $padId,
+			'pad_id' => $padId,
+		]);
 	}
 
 	/**
 	 * Where the import of group pads is switched off, that refusal is the
-	 * one a group pad gets, whatever its id: the switch is the admin's
-	 * answer, and the one the migration's log trail names.
+	 * one a group pad gets, whatever its id: an id the API refuses meets
+	 * the switch first.
 	 */
 	public function testTheSwitchedOffRefusalComesBeforeTheIdIsAsked(): void {
 		$file = $this->createMock(File::class);

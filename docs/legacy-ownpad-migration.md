@@ -28,7 +28,7 @@ This is a pure local re-bind. No remote pad is created, no content is copied; th
 - New YAML frontmatter is written referencing the same `pad_id`.
 - A binding row is inserted.
 
-Before a new binding row, the pad id has to be one Etherpad could hold - its own rule (`isValidPadId`), as Etherpad 3.3 has it: an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 UTF-16 code units without `$` or `:`, and not `.` or `..` (Etherpad 2 still took those; an upgrade would leave such a pad unreachable) - and a group pad has to be in the group it names (`listPads`). Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad.") and leaves the `.pad` file untouched.
+Before a new binding row, the pad id has to be one Etherpad could hold - its own rule (`isValidPadId`), as Etherpad 3.3 has it: an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 UTF-16 code units without `$` or `:`, and not `.` or `..` - and a group pad has to be in the group it names (`listPads`). Etherpad's API refuses every call naming an id that fails that rule, so the app could neither read, sync nor delete such a pad - even one Etherpad 2 made with a `:`, which the editor still opens; no pad under `.` or `..` was ever reachable, as a browser makes `/p/.` another path. Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad.") and leaves the `.pad` file untouched.
 
 ### Same origin — claim-collision rule
 

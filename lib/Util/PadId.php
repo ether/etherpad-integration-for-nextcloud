@@ -9,18 +9,13 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Util;
 
 /**
- * What an Etherpad pad id says about itself.
+ * What an Etherpad pad id says about itself, two ways. Loosely, which group
+ * an id names: one rule for every reader of a binding, as two rules once
+ * left a group behind that one of them did not see as a group. Strictly,
+ * whether Etherpad's API takes an id that comes from outside (isValid()).
  *
- * There were three rules for one concept: the session code required exactly
- * sixteen characters after `g.`, the access-mode inference accepted any
- * prefix, and the delete path had a copy of the strict one. A pad bound as
- * protected by the loose rule was then not recognised as a group pad by the
- * strict one, and its group was left behind — silently, since the two
- * failures look nothing alike.
- *
- * The loose rule is the one that matches how a binding is classified, so it
- * is the one that survives. Nothing here is a permission check: knowing
- * that an id *names* a group says nothing about whose group it is.
+ * Neither is a permission check: knowing that an id *names* a group says
+ * nothing about whose group it is.
  */
 final class PadId {
 	/** `g.<group>$<pad name>`, the shape Etherpad gives a pad inside a group. */
@@ -28,13 +23,16 @@ final class PadId {
 
 	/**
 	 * Etherpad's own rule for a pad id, as Etherpad 3.3 has it (isValidPadId()
-	 * in its PadManager, read in 3.3.11): an optional group - `g.` and
-	 * sixteen letters or digits, as createGroup() makes it - with `$`, then
-	 * a name without `$` or `:`; not `.` or `..`. Etherpad 2 still took `:`
-	 * and the two dot names; an upgrade would leave such a pad unreachable.
-	 * The dot after `g` is a dot here, where Etherpad's pattern lets it be
-	 * any character: no group of Etherpad's is named otherwise. The name's
+	 * in its PadManager): an optional group - `g.` and sixteen letters or
+	 * digits, as createGroup() makes it - with `$`, then a name without `$`
+	 * or `:`; not `.` or `..`. A `:` is how Etherpad's database keys a pad's
+	 * records, and Etherpad 2 still took it; a browser makes `/p/.` and
+	 * `/p/..` another path, so no pad under those was ever reachable. The
+	 * dot after `g` is a dot here, where Etherpad's pattern lets it be any
+	 * character: no group of Etherpad's is named otherwise. The name's
 	 * length is isValid()'s to check.
+	 *
+	 * @see https://github.com/ether/etherpad-lite/blob/v3.3.11/src/node/db/PadManager.ts
 	 */
 	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:]{1,50})$/uD';
 
@@ -51,10 +49,13 @@ final class PadId {
 	}
 
 	/**
-	 * Whether Etherpad could hold a pad under this id: one that fails names
-	 * no pad, whatever wrote it. For an id that comes from outside - a file,
-	 * an import - before it is bound; the loose rule above still decides
-	 * what an id already bound names.
+	 * Whether Etherpad's API takes this id: every call naming one that fails
+	 * is refused (getPadSafe() in its API), so a pad under it could be
+	 * neither read, synced nor deleted - even one an older Etherpad made,
+	 * which its editor still opens. Syntax only; whether the pad exists is
+	 * another question. For an id that comes from outside - a file, an
+	 * import - before it is bound; what an id already bound names stays the
+	 * loose rule's.
 	 */
 	public static function isValid(string $padId): bool {
 		if (preg_match(self::VALID_PATTERN, $padId, $matches) !== 1) {

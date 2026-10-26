@@ -544,7 +544,6 @@ class ManagedPadLifecycleTest extends TestCase {
 		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
 
-	/** A pad made and seeded as one step: its id and revisions together. */
 	public function testMakesAndSeedsAPadAsOneStep(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->once())->method('createPad')->with('nc-pad');

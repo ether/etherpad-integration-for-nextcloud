@@ -178,13 +178,15 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * A pad $provision makes, seeded with a snapshot (seed()), as one step:
-	 * a seed that fails takes the pad down again before the failure goes
-	 * on, as no row names it yet. One that cannot be taken down is named in
-	 * the log, the only handle left on it.
+	 * A pad $provision makes, seeded with a snapshot (seed()), as one step.
+	 * A seed that fails has the pad taken down before its failure goes on,
+	 * as no row names it yet; a pad that cannot be taken down is named in
+	 * the log, the only handle left on it, and the seed's failure still
+	 * goes on.
 	 *
-	 * @param \Closure(): string $provision makes a new pad (provisionFor()) and gives its id; never
-	 *   one that was there before, which a failed seed would take down, a group pad with its group
+	 * @param \Closure(): string $provision makes a new pad (provisionFor()) and gives its id - for a
+	 *   group pad, in a group made for it. Never one that was there before: a failed seed takes
+	 *   the pad down, a group pad with its group
 	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
 	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
 	 */

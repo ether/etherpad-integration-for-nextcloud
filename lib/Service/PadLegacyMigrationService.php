@@ -49,9 +49,20 @@ class PadLegacyMigrationService {
 		return $groupId === null || in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true);
 	}
 
-	/** The refusal of a file naming a pad that cannot be there, with its line, as the other refusals have. */
+	/** The refusal of a file naming a pad it cannot be bound to, with its line, as the other refusals have. */
 	private function missingPad(string $uid, int $fileId, string $sourceUrl, string $accessMode, string $why): LegacyPadNotFoundException {
-		$this->logger->warning('Refused legacy Ownpad migration - the pad it names does not exist.', [
+		$this->logger->warning('Refused legacy Ownpad migration - the pad it names does not exist.', $this->refusalContext($uid, $fileId, $sourceUrl, $accessMode));
+		return new LegacyPadNotFoundException($why);
+	}
+
+	/**
+	 * The fields of a same-origin refusal where no row names the pad yet
+	 * (docs/legacy-ownpad-migration.md, "Audit log").
+	 *
+	 * @return array<string,int|string>
+	 */
+	private function refusalContext(string $uid, int $fileId, string $sourceUrl, string $accessMode): array {
+		return [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
 			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
@@ -59,8 +70,7 @@ class PadLegacyMigrationService {
 			'accessMode' => $accessMode,
 			'collision' => 'none',
 			'uid' => $uid,
-		]);
-		return new LegacyPadNotFoundException($why);
+		];
 	}
 
 	/**
@@ -79,15 +89,7 @@ class PadLegacyMigrationService {
 		if ($this->legacyImportPolicy->allowsProtectedImport()) {
 			return;
 		}
-		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-			'originBranch' => 'same',
-			'accessMode' => $accessMode,
-			'collision' => 'none',
-			'uid' => $uid,
-		]);
+		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', $this->refusalContext($uid, $fileId, $sourceUrl, $accessMode));
 		throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
 	}
 

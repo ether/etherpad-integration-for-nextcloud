@@ -32,6 +32,8 @@ class PadIdTest extends TestCase {
 		yield 'a colon in a group pad' => ['g.AbCdEfGh12345678$a:b', false];
 		yield 'a dot' => ['.', false];
 		yield 'two dots' => ['..', false];
+		// Etherpad asks it of the whole id, as only a whole id is a path.
+		yield 'two dots as a group pad\'s name' => ['g.AbCdEfGh12345678$..', true];
 		yield 'three dots' => ['...', true];
 		yield 'a dot inside a name' => ['a.b', true];
 		yield 'fifty UTF-16 units of characters past the BMP' => [str_repeat('😀', 25), true];
@@ -42,8 +44,10 @@ class PadIdTest extends TestCase {
 	}
 
 	/**
-	 * Etherpad 3.3's rule (isValidPadId() in its PadManager), its length in
-	 * UTF-16 units and its end the string's, with the dot after `g` a dot.
+	 * Etherpad 3.3's rule (isValidPadId() in its PadManager): the name
+	 * counted in UTF-16 units, as JavaScript counts it, up to the string's
+	 * very end - a final line break gives it no room - and the dot after `g`
+	 * a dot.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('ids')]
 	public function testAPadIdIsValidAsEtherpadSaysIt(string $padId, bool $valid): void {
