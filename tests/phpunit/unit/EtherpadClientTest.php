@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\Http\Client\IClient;
@@ -188,7 +189,7 @@ class EtherpadClientTest extends TestCase {
 		$undescribed = 'Etherpad did not describe the session.';
 		return [
 			'another refusal' => ['{"code":2,"message":"internal error","data":null}', EtherpadRefusedException::class, 'Etherpad API error (getSessionInfo): internal error'],
-			'a wrong API key' => ['{"code":4,"message":"no or wrong API Key","data":null}', EtherpadRefusedException::class, 'Etherpad API error (getSessionInfo): no or wrong API Key'],
+			'a wrong API key' => ['{"code":4,"message":"no or wrong API Key","data":null}', EtherpadKeyRejectedException::class, 'Etherpad API error (getSessionInfo): no or wrong API Key'],
 			'an empty author' => ['{"code":0,"data":{"groupID":"g.aaa","authorID":"","validUntil":1}}', EtherpadClientException::class, $undescribed],
 			'no expiry' => ['{"code":0,"data":{"groupID":"g.aaa","authorID":"a.x"}}', EtherpadClientException::class, $undescribed],
 			'a group as a number' => ['{"code":0,"data":{"groupID":5,"authorID":"a.x","validUntil":99}}', EtherpadClientException::class, $undescribed],
@@ -456,10 +457,9 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	public function testApiCallSurfacesHttpErrorStatusAsCause(): void {
-		// e.g. a wrong apikey makes Etherpad answer 401 — the failure mode the
-		// #105 regression produced. apiCall() wraps every sendRequest failure
-		// as "request failed: <method>" and preserves the HTTP error as the
-		// cause (exactly what the server log showed during #105).
+		// A 401 without Etherpad's own answer says nothing of the key: an HTTP
+		// error, wrapped as "request failed: <method>" with the status in the
+		// cause.
 		$client = $this->clientWithResponse($this->response(401, 'Unauthorized'));
 
 		try {
@@ -467,9 +467,69 @@ class EtherpadClientTest extends TestCase {
 			$this->fail('Expected EtherpadClientException.');
 		} catch (EtherpadClientException $e) {
 			$this->assertSame('Etherpad API request failed: createGroup', $e->getMessage());
+			$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $e);
 			$this->assertInstanceOf(EtherpadClientException::class, $e->getPrevious());
 			$this->assertStringContainsString('Etherpad API HTTP error (401)', $e->getPrevious()->getMessage());
 		}
+	}
+
+	/**
+	 * Etherpad's own code 4 - under HTTP 401 as Etherpad sends it, or 403,
+	 * also where Nextcloud's client throws on the status and hands the
+	 * answer back, or under a success status - is a rejected key, with the
+	 * messages the connection test's hints read. A 401 or 403 without it - a
+	 * proxy's page, another JSON - is not, nor another status or code. No
+	 * message holds the key, even where the answer quotes it.
+	 */
+	public function testARejectedKeyIsToldApart(): void {
+		$rejected = '{"code":4,"message":"no or wrong API Key","data":null}';
+		foreach ([401, 403] as $status) {
+			$e = $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $rejected))->createGroup());
+			$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e, (string)$status);
+			$this->assertSame('Etherpad API request failed: createGroup', $e->getMessage());
+			$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e->getPrevious());
+			$this->assertSame('Etherpad API HTTP error (' . $status . ')', $e->getPrevious()?->getMessage());
+		}
+
+		$http = $this->createMock(IClient::class);
+		$http->method('request')->willThrowException(new \RuntimeException('401 Unauthorized'));
+		$http->method('getResponseFromThrowable')->willReturn($this->response(401, $rejected));
+		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWith($http)->createGroup()));
+
+		// A call with a size cap reads the answer from its sink.
+		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWithResponse($this->response(401, $rejected))->getHTMLForPreview('pad-1')));
+
+		foreach ([
+			[401, '<html><body>Sign in</body></html>'],
+			[401, '{"message":"Unauthorized"}'],
+			[403, '<html><body>Forbidden</body></html>'],
+			[403, '{"code":403,"message":"Forbidden"}'],
+		] as [$status, $body]) {
+			$proxied = $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $body))->createGroup());
+			$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $proxied, $status . ' ' . $body);
+			$this->assertSame('Etherpad API HTTP error (' . $status . ')', $proxied->getPrevious()?->getMessage());
+		}
+
+		$e = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, $rejected))->createGroup());
+		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e);
+		$this->assertSame('Etherpad API error (createGroup): no or wrong API Key', $e->getMessage());
+		$quoted = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, '{"code":4,"message":"invalid apikey stored-key","data":null}'))->createGroup());
+		$this->assertSame('Etherpad API error (createGroup): invalid apikey ***', $quoted->getMessage());
+
+		foreach ([[500, $rejected], [404, '{"code":3,"message":"no such function","data":null}']] as [$status, $body]) {
+			$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $body))->createGroup()), (string)$status);
+		}
+		$other = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, '{"code":1,"message":"groupID does not exist","data":null}'))->createGroup());
+		$this->assertInstanceOf(EtherpadRefusedException::class, $other);
+	}
+
+	private function failureOf(\Closure $call): EtherpadClientException {
+		try {
+			$call();
+		} catch (EtherpadClientException $e) {
+			return $e;
+		}
+		$this->fail('The call should fail.');
 	}
 
 	public function testDetectApiVersionUsesGetAgainstApiEndpointWithoutBody(): void {

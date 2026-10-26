@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -325,16 +326,17 @@ class ManagedPadLifecycleTest extends TestCase {
 	 */
 	public function testRemovesAPublicPadWhoseCreateFailed(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
+		// As the client throws it, an outage like a rejected key.
+		$client->method('createPad')->willThrowException(new EtherpadClientException('Etherpad API request failed: createPad', 0, new \RuntimeException('Connection timed out')));
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(EtherpadClientException::class);
 		$this->provisionPublic($client, 'nc-abcdef0123456789');
 	}
 
 	/**
-	 * The one failure that is not ours to undo: the pad was there before the
-	 * call, so deleting it would destroy live content.
+	 * A pad that was there before the call is not ours to undo: deleting it
+	 * would destroy live content.
 	 */
 	public function testLeavesAPadThatWasAlreadyThere(): void {
 		$client = $this->createMock(EtherpadClient::class);
@@ -342,6 +344,19 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('deletePad');
 
 		$this->expectException(\RuntimeException::class);
+		$this->provisionPublic($client, 'nc-abcdef0123456789');
+	}
+
+	/**
+	 * A key Etherpad rejected made no pad, and a delete would be rejected
+	 * alike, only to warn about a pad that never was.
+	 */
+	public function testLeavesNothingToTakeDownAfterARejectedKey(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('createPad')->willThrowException(new EtherpadKeyRejectedException('Etherpad API request failed: createPad'));
+		$client->expects($this->never())->method('deletePad');
+
+		$this->expectException(EtherpadKeyRejectedException::class);
 		$this->provisionPublic($client, 'nc-abcdef0123456789');
 	}
 

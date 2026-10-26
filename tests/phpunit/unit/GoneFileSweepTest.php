@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -14,6 +16,7 @@ use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
+use OCP\ICacheFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -99,7 +102,7 @@ class GoneFileSweepTest extends TestCase {
 		], []);
 		$this->padErrors = [
 			'pad-already-gone' => new EtherpadRefusedException('padID does not exist'),
-			'pad-refused' => new EtherpadRefusedException('apikey is invalid'),
+			'pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy'),
 		];
 
 		$this->sweep();
@@ -134,6 +137,32 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([], $this->deletedPads);
 		$this->assertSame([11, 12], $this->fileIds());
 		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
+	}
+
+	/**
+	 * A key Etherpad rejects fails the check that tells an outage from a
+	 * pad's own failure (checkToken) as it fails the delete: the run ends
+	 * with the line that names the key rather than the one for an outage,
+	 * and no row is set aside - with the key fixed, the next run takes them.
+	 */
+	public function testARejectedKeyEndsTheRunWithTheLineThatNamesTheKey(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100), self::row(2, 12, 'pad-b', seenAt: 101)], []);
+		$this->padErrors = ['pad-a' => new EtherpadKeyRejectedException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+
+		$this->sweep();
+
+		$this->assertSame([], $this->deletedPads);
+		$this->assertSame([11, 12], $this->fileIds());
+		$this->assertSame(['pending_delete', 'pending_delete'], array_values($this->states()));
+		$this->assertCount(1, $this->lines);
+		$this->assertSame('error', $this->lines[0][0]);
+		$this->assertStringStartsWith('Etherpad rejected this Nextcloud\'s API key', $this->lines[0][1]);
+
+		$this->padErrors = [];
+		$this->answering = true;
+		$this->sweep();
+		$this->assertSame(['pad-a', 'pad-b'], $this->deletedPads);
 	}
 
 	/**
@@ -218,7 +247,7 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testARefusalInTheSecondOfTheMarkCountsAsTried(): void {
 		$this->table([self::row(1, 11, 'pad-refused', seenAt: FixedClock::NOW)], []);
-		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('apikey is invalid')];
+		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
 
 		$this->build()->run(atOnce: true);
 		$this->clock->advance(300);
@@ -239,7 +268,7 @@ class GoneFileSweepTest extends TestCase {
 			$rows[] = self::row($i, 1000 + $i, 'pad-' . $i, seenAt: 100);
 		}
 		$this->table($rows, []);
-		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('apikey is invalid')];
+		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
 
 		$this->build()->run(atOnce: true);
 
@@ -314,17 +343,20 @@ class GoneFileSweepTest extends TestCase {
 		$config = $this->createMock(AppConfigService::class);
 		$config->method('isDeletePadWithFileEnabled')->willReturnCallback(fn (): bool => (bool)$this->config['delete_pad_with_file']);
 		$logger = $this->createMock(LoggerInterface::class);
-		foreach (['debug', 'info', 'warning'] as $level) {
+		foreach (['debug', 'info', 'warning', 'error'] as $level) {
 			$logger->method($level)->willReturnCallback(function (string $message, array $context) use ($level): void {
 				$this->lines[] = [$level, $message, $context['fileId'] ?? null];
 			});
 		}
+		$noCache = $this->createMock(ICacheFactory::class);
+		$noCache->method('isAvailable')->willReturn(false);
 		return new GoneFileSweep(
 			$bindings ?? new BindingService($this->db, $this->clock),
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$config,
 			$this->clock,
 			$logger,
+			new ApiErrorLog($noCache, $logger),
 		);
 	}
 

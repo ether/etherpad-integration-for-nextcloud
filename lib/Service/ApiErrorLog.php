@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\ICacheFactory;
@@ -23,20 +24,32 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The one line an error a client is answered for gets, for both error
- * mappers; the services under them leave it to this. Kept on purpose are
+ * mappers; the services under them leave it to this. Of a key Etherpad
+ * rejected, some jobs and listeners write the same line where no answer
+ * logs it (reportIfKeyRejected()). Kept on purpose are
  * the lines a service writes to explain a refusal nothing else would: a
  * name another create has locked (PadFileCreator - a stale lock looks like
  * a taken name), a file a create will not write over, and the refusals of
  * a legacy Ownpad migration, the trail docs/legacy-ownpad-migration.md
  * points admins to. At the level it deserves:
  *
+ * - A key Etherpad rejected (EtherpadKeyRejectedException says why it is
+ *   answered as an outage): an error once a minute for the instance, at
+ *   debug for the rest of that minute, on a minute apart from an
+ *   outage's, so the line that sends an admin to the key is not lost
+ *   behind the one that sends them to the network. Written outside a web
+ *   request - system cron, occ - the line shares the answers' minute only
+ *   through Redis or Memcached: APCu there is the process's own, and
+ *   without apc.enable_cli Nextcloud gives the CLI no cache, so each such
+ *   line is an error
+ *   (https://github.com/nextcloud/server/blob/stable32/lib/private/Memcache/Factory.php).
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
  *   otherwise write its own. Refusing: once a minute for each file, since
  *   each is a case of its own, and once a minute for all refusals that
- *   name none. Without a distributed cache to share the minute with - or
- *   one that fails - each is a warning.
+ *   name none. Without a distributed cache that can add() - or with one
+ *   that throws - each is a warning, a rejected key an error.
  * - A `.pad` and its row that do not match: a warning. That is data an
  *   admin has to mend. A row that could not be written: an error, with the
  *   database's cause.
@@ -48,6 +61,7 @@ use Psr\Log\LoggerInterface;
  */
 final class ApiErrorLog {
 	private const QUIET_SECONDS = 60;
+	private const ETHERPAD_KEY_REJECTED = 'Etherpad rejected this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
 	private const ETHERPAD_UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const ETHERPAD_REFUSED = 'Etherpad refused a request.';
 	private const PAD_LOST = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
@@ -65,7 +79,9 @@ final class ApiErrorLog {
 	public function report(\Throwable $e, array $context = [], ?string $failure = null): void {
 		$file = self::fileIn($context);
 		$context = ['app' => Application::APP_ID, ...$context, ...SafeError::context($e)];
-		if (EtherpadClientException::isEtherpadUnreachable($e)) {
+		if ($e instanceof EtherpadKeyRejectedException) {
+			$this->rejectedKey($context);
+		} elseif (EtherpadClientException::isEtherpadUnreachable($e)) {
 			$this->onceAMinute(self::ETHERPAD_UNREACHABLE, 'unreachable', $context);
 		} elseif ($e instanceof EtherpadRefusedException) {
 			// Each file refused is a case of its own - a pad deleted in
@@ -88,6 +104,25 @@ final class ApiErrorLog {
 		} else {
 			$this->logger->debug('A request was refused.', $context);
 		}
+	}
+
+	/**
+	 * The rejected key's line, if $e is one or wraps one, for a failure no
+	 * answer of this app reports - a job's, a listener's: without it, the
+	 * key would show only once someone opens a pad. On the answers' minute.
+	 */
+	public function reportIfKeyRejected(\Throwable $e): void {
+		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof EtherpadKeyRejectedException) {
+				$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($cause)]);
+				return;
+			}
+		}
+	}
+
+	/** @param array<string,mixed> $context */
+	private function rejectedKey(array $context): void {
+		$this->onceAMinute(self::ETHERPAD_KEY_REJECTED, 'key-rejected', $context, asError: true);
 	}
 
 	/**
@@ -129,11 +164,13 @@ final class ApiErrorLog {
 	}
 
 	/** @param array<string,mixed> $context */
-	private function onceAMinute(string $message, string $key, array $context): void {
-		if ($this->firstThisMinute($key)) {
-			$this->logger->warning($message, $context);
-		} else {
+	private function onceAMinute(string $message, string $key, array $context, bool $asError = false): void {
+		if (!$this->firstThisMinute($key)) {
 			$this->logger->debug($message, $context);
+		} elseif ($asError) {
+			$this->logger->error($message, $context);
+		} else {
+			$this->logger->warning($message, $context);
 		}
 	}
 

@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\BackgroundJob\RevokeGroupSessionsJob;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
@@ -19,6 +20,7 @@ use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -28,6 +30,8 @@ use Psr\Log\LoggerInterface;
  * from Files (BindingServiceTest holds where a file counts as in Files).
  */
 class GroupSessionRevokerTest extends TestCase {
+	use BuildsErrorMappers;
+
 	private const GROUP = 'g.AAAAAAAAAAAAAAAA';
 	private const PAD = 'g.AAAAAAAAAAAAAAAA$notes';
 	private const TRASHED = [42 => [3, 'files_trashbin/files/Notes.pad.d1791400000']];
@@ -309,6 +313,30 @@ class GroupSessionRevokerTest extends TestCase {
 		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
+	/** A key Etherpad rejects is said as that too, beside what could not be listed. */
+	public function testARejectedKeyIsSaidBesideWhatCouldNotBeListed(): void {
+		foreach (['listPads' => 'Could not list the pads of a group whose Etherpad sessions to revoke.', 'listSessionsOfGroup' => 'Could not list the Etherpad sessions of a group to revoke.'] as $failing => $line) {
+			$rejected = new EtherpadKeyRejectedException('Etherpad API request failed: ' . $failing);
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('listPads')->willReturnCallback(static fn (): array => $failing === 'listPads' ? throw $rejected : [self::PAD]);
+			$client->method('listSessionsOfGroup')->willThrowException($rejected);
+			$lines = [];
+			$logger = $this->createMock(LoggerInterface::class);
+			foreach (['error', 'warning'] as $level) {
+				$logger->method($level)->willReturnCallback(static function (string $message) use (&$lines, $level): void {
+						$lines[] = [$level, $message];
+				});
+			}
+
+			$this->revoker($client, $this->bindings(self::TRASHED), logger: $logger)->revokeRest(self::GROUP);
+
+			self::assertCount(2, $lines, $failing);
+			self::assertSame('error', $lines[0][0], $failing);
+			self::assertStringStartsWith('Etherpad rejected this Nextcloud\'s API key', $lines[0][1]);
+			self::assertSame(['warning', $line], $lines[1]);
+		}
+	}
+
 	public function testLeavesWhatPassesTheCeilingToTheNextPass(): void {
 		$sessions = [];
 		for ($i = 1; $i <= 300; $i++) {
@@ -479,6 +507,7 @@ class GroupSessionRevokerTest extends TestCase {
 			$jobList ?? $this->createMock(IJobList::class),
 			$logger,
 			$clock ?? new FixedClock(),
+			$this->apiErrorLog($logger),
 		);
 	}
 }

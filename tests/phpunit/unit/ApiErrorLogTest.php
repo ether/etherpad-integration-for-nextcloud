@@ -12,11 +12,13 @@ use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
+use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCP\ICache;
@@ -29,6 +31,7 @@ use Psr\Log\LoggerInterface;
 class ApiErrorLogTest extends TestCase {
 	private const UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const REFUSED = 'Etherpad refused a request.';
+	private const KEY_REJECTED = 'Etherpad rejected this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
 
 	/** @var list<array{string, string, array<string,mixed>}> */
 	private array $logged = [];
@@ -73,6 +76,77 @@ class ApiErrorLogTest extends TestCase {
 	}
 
 	/**
+	 * A rejected key is one error a minute for the instance, whichever file,
+	 * and on a minute apart from an outage's, so neither hides the other's
+	 * line.
+	 */
+	public function testOneErrorAMinuteForARejectedKey(): void {
+		$claimed = [];
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willReturnCallback(static function (string $key, mixed $value, int $ttl) use (&$claimed): bool {
+			if (isset($claimed[$key])) {
+				return false;
+			}
+			return $claimed[$key] = true;
+		});
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+
+		$log = new ApiErrorLog($factory, $this->logger());
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
+		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 42]);
+		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 43]);
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 45]);
+
+		$this->assertSame(
+			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::UNREACHABLE, 45]],
+			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
+		);
+		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[1][2]['error']);
+	}
+
+	/**
+	 * Where a job or listener says a rejected key, it is on the answers'
+	 * minute - the same one line a minute - and before an outage here, so
+	 * the key's line takes nothing from the outage's either. Its line names
+	 * what failed, also inside the error a restore wraps it in; their other
+	 * failures are not this line's.
+	 */
+	public function testAJobSaysARejectedKeyOnTheSameMinute(): void {
+		$claimed = [];
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willReturnCallback(static function (string $key) use (&$claimed): bool {
+			if (isset($claimed[$key])) {
+				return false;
+			}
+			return $claimed[$key] = true;
+		});
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+
+		$log = new ApiErrorLog($factory, $this->logger());
+		$log->reportIfKeyRejected(new EtherpadClientException('Etherpad API request failed: deletePad'));
+		$log->reportIfKeyRejected(LifecycleException::failed('Restore', new \RuntimeException('connection lost')));
+		// As the client throws it: its call's failure, around the HTTP error.
+		$rejected = new EtherpadKeyRejectedException('Etherpad API request failed: createPad', 0, new EtherpadKeyRejectedException('Etherpad API HTTP error (401)'));
+		$log->reportIfKeyRejected(LifecycleException::failed('Restore', $rejected));
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
+		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 42]);
+		$log->reportIfKeyRejected(new EtherpadKeyRejectedException('Etherpad API request failed: deletePad'));
+
+		$this->assertSame(
+			[['error', self::KEY_REJECTED, null], ['warning', self::UNREACHABLE, 44], ['debug', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, null]],
+			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
+		);
+		$this->assertSame(
+			['app' => 'etherpad_nextcloud', 'error' => EtherpadKeyRejectedException::class, 'error_message' => 'Etherpad API request failed: createPad'],
+			array_intersect_key($this->logged[0][2], ['app' => 0, 'error' => 0, 'error_message' => 0]),
+		);
+	}
+
+	/**
 	 * A pad Etherpad has lost gets its own minute for each file, apart from
 	 * a refusal of the same file: an admin hears of it however often the
 	 * file is opened before someone makes the new pad.
@@ -105,10 +179,11 @@ class ApiErrorLogTest extends TestCase {
 
 	/**
 	 * Nothing to share the minute with - no cache, one without add(), or
-	 * one that fails - and each failure is a warning. A cache that throws
-	 * must not fail the answer the line reports for.
+	 * one that fails - and each failure is logged at its level, a warning,
+	 * a rejected key an error. A cache that throws must not fail the answer
+	 * the line reports for.
 	 */
-	public function testWithoutACacheToShareEachFailureIsAWarning(): void {
+	public function testWithoutACacheToShareEachFailureIsLoggedAtItsLevel(): void {
 		$none = $this->createMock(ICacheFactory::class);
 		$none->method('isAvailable')->willReturn(false);
 		$none->expects($this->never())->method('createDistributed');
@@ -125,9 +200,10 @@ class ApiErrorLogTest extends TestCase {
 			$log = new ApiErrorLog($factory, $this->logger());
 			$log->report(new EtherpadClientException('down'));
 			$log->report(new EtherpadClientException('down'));
+			$log->report(new EtherpadKeyRejectedException('rejected'));
 		}
 
-		$this->assertSame(array_fill(0, 6, 'warning'), array_column($this->logged, 0));
+		$this->assertSame(['warning', 'warning', 'error', 'warning', 'warning', 'error', 'warning', 'warning', 'error'], array_column($this->logged, 0));
 	}
 
 	/**
@@ -162,6 +238,7 @@ class ApiErrorLogTest extends TestCase {
 	 */
 	public function testWhatCountsAsEtherpadNotReachable(): void {
 		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadClientException('Etherpad API request failed: createPad')));
+		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadKeyRejectedException('Etherpad API request failed: createPad')));
 		foreach ([
 			new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),

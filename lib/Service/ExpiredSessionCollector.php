@@ -54,6 +54,7 @@ class ExpiredSessionCollector {
 		private ITimeFactory $timeFactory,
 		private SessionDeletes $deletes,
 		private ManagedPadLifecycle $padLifecycle,
+		private ApiErrorLog $apiErrorLog,
 		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
 	) {
 	}
@@ -202,6 +203,7 @@ class ExpiredSessionCollector {
 			]);
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => $park];
 		}
+		$this->apiErrorLog->reportIfKeyRejected($e);
 		$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 			'app' => 'etherpad_nextcloud',
 			...$context,

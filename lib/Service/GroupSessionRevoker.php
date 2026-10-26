@@ -56,6 +56,7 @@ class GroupSessionRevoker {
 		private IJobList $jobList,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
+		private ApiErrorLog $apiErrorLog,
 	) {
 	}
 
@@ -114,6 +115,7 @@ class GroupSessionRevoker {
 				// The group went with its last pad, and its sessions with it.
 				return self::ENDED;
 			}
+			$this->apiErrorLog->reportIfKeyRejected($e);
 			$this->logger->warning('Could not list the pads of a group whose Etherpad sessions to revoke.', [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
 		}
@@ -146,6 +148,7 @@ class GroupSessionRevoker {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				return self::ENDED;
 			}
+			$this->apiErrorLog->reportIfKeyRejected($e);
 			$this->logger->warning('Could not list the Etherpad sessions of a group to revoke.', [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
 		}
