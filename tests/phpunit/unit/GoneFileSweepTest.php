@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
@@ -215,6 +216,26 @@ class GoneFileSweepTest extends TestCase {
 
 		$this->assertSame(['warning'], array_column($this->lines, 0));
 		$this->assertSame(6900, $this->contexts[0]['waitedSeconds'] ?? null);
+	}
+
+	/**
+	 * A row that does not say when its file was seen deleted - findGone()
+	 * returns none, but an early version left some - has no wait to warn
+	 * of: Etherpad not answering at its pad is an info line.
+	 */
+	public function testAPadWithoutAKnownWaitIsAnInfoLine(): void {
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$bindings = new class($this->db, $this->clock) extends BindingService {
+			public function findGone(int $limit, int $graceBy, int $retryBy): array {
+				return [new Binding(11, 'pad-a', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE)];
+			}
+		};
+		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
+
+		$this->sweep($bindings);
+
+		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
 	}
 
 	/**
