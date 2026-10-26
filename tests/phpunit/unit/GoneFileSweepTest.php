@@ -144,8 +144,7 @@ class GoneFileSweepTest extends TestCase {
 
 	/**
 	 * Etherpad not answering at a pad that has waited an hour past its due
-	 * is a warning, with how long, at most once an hour: with nobody opening
-	 * a pad, nothing else says Etherpad is down while the pads wait.
+	 * is a warning, with how long, at most once an hour.
 	 */
 	public function testAPadWaitingAnHourOnEtherpadIsAWarningAtMostHourly(): void {
 		// Due 300 s after it was seen.
