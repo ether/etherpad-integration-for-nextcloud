@@ -46,7 +46,7 @@ class GoneFileSweep {
 	/** How long a file seen deleted for good may still be there before it counts as one whose deletion did not happen. */
 	private const STALE_AFTER_SECONDS = 60 * 60;
 
-	/** How long past its due a pad Etherpad does not answer at may wait before the run's line is a warning, and the least time between two warnings. */
+	/** How long past its due a pad Etherpad does not answer at may wait before the run's line is a warning, and the time warnsNow() waits between two. */
 	private const WAITED_WARNING_SECONDS = 60 * 60;
 
 	public function __construct(
@@ -152,9 +152,9 @@ class GoneFileSweep {
 	 * Whether the sweep warns now: once an hour has passed since it last
 	 * warned, noting the yes. That time is kept in the app config, which
 	 * cron shares with the web whatever the cache. A time later than now -
-	 * a clock that ran ahead, a value set by hand - counts as long past,
-	 * or no warning would come again. A settle and a cron run at once may
-	 * both warn.
+	 * a clock that ran ahead, a value set by hand - counts as long past:
+	 * kept, it would hold every warning back until an hour after it. A
+	 * settle and a cron run at once may both warn.
 	 */
 	private function warnsNow(int $now): bool {
 		try {
@@ -164,7 +164,8 @@ class GoneFileSweep {
 			}
 			$this->appConfig->recordSweepWarnedAt($now);
 		} catch (\Throwable) {
-			// The line matters more than the hour: every such run then warns.
+			// The line matters more than the hour: while the app config fails,
+			// every run that gets here warns.
 		}
 		return true;
 	}

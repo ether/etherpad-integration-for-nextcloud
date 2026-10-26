@@ -200,18 +200,18 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A pad put back an hour after a refusal has waited since its due, not
-	 * since it was put back.
+	 * A pad put back after a refusal an hour ago has waited since its due,
+	 * not since the refusal.
 	 */
 	public function testAPadPutBackAfterARefusalHasWaitedSinceItsDue(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 3900, triedAt: FixedClock::NOW - 3600)], []);
+		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 7200, triedAt: FixedClock::NOW - 3600)], []);
 		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
 		$this->sweep();
 
 		$this->assertSame(['warning'], array_column($this->lines, 0));
-		$this->assertSame(3600, $this->contexts[0]['waitedSeconds'] ?? null);
+		$this->assertSame(6900, $this->contexts[0]['waitedSeconds'] ?? null);
 	}
 
 	/**
@@ -233,18 +233,27 @@ class GoneFileSweepTest extends TestCase {
 
 	/**
 	 * A last warning later than now - a clock that ran ahead, a value set by
-	 * hand - counts as long past: the warning comes, and now is noted.
+	 * hand - counts as long past: the warning comes, and now is noted. One
+	 * at now itself is the hour just begun.
 	 */
-	public function testALastWarningInTheFutureDoesNotSilenceTheSweep(): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider('lastWarnings')]
+	public function testALastWarningInTheFutureDoesNotSilenceTheSweep(int $last, string $level): void {
 		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
 		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
-		$this->config['sweep_warned_at'] = FixedClock::NOW + 365 * 86400;
+		$this->config['sweep_warned_at'] = $last;
 
 		$this->sweep();
 
-		$this->assertSame(['warning'], array_column($this->lines, 0));
+		$this->assertSame([$level], array_column($this->lines, 0));
 		$this->assertSame(FixedClock::NOW, $this->config['sweep_warned_at']);
+	}
+
+	/** @return iterable<string, array{int, string}> */
+	public static function lastWarnings(): iterable {
+		yield 'now' => [FixedClock::NOW, 'info'];
+		yield 'a second ahead' => [FixedClock::NOW + 1, 'warning'];
+		yield 'a year ahead' => [FixedClock::NOW + 365 * 86400, 'warning'];
 	}
 
 	/** An app config that cannot say when the sweep last warned does not keep it from warning. */
