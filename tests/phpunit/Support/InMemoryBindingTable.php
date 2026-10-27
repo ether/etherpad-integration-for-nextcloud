@@ -37,6 +37,9 @@ final class InMemoryBindingTable implements IDBConnection {
 	/** @var list<?int> the limit each of those queries asked for, null for none */
 	public array $limits = [];
 
+	/** Results handed out and not closed yet. */
+	public int $openResults = 0;
+
 	/**
 	 * $fileCache holds what the file cache knows (`fileid`, `storage`,
 	 * `path`), for the statements that join it; $mounts what the mount

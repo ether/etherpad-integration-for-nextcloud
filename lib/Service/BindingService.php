@@ -105,6 +105,27 @@ class BindingService {
 	}
 
 	/**
+	 * The first row, in any state, whose pad id is $padId in other
+	 * capitals: the same once lowered - the column by the database's
+	 * LOWER(), $padId by mb_strtolower() - yet not the same as it is. No
+	 * index serves it.
+	 */
+	public function findByPadIdInOtherCase(string $padId): ?Binding {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from(self::TABLE)
+			->where($qb->expr()->eq($qb->func()->lower('pad_id'), $qb->createNamedParameter(mb_strtolower($padId, 'UTF-8'))))
+			->andWhere($qb->expr()->neq('pad_id', $qb->createNamedParameter($padId)))
+			->setMaxResults(1);
+
+		$result = $qb->executeQuery();
+		$row = DbRows::one($result->fetch());
+		$result->closeCursor();
+
+		return $row === null ? null : Binding::fromRow($row);
+	}
+
+	/**
 	 * Move one binding from one state to another, but only if it is still
 	 * in the first and still names this pad. Whoever finds the row changed
 	 * has lost to whoever changed it, and gets false rather than an

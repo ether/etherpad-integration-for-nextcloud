@@ -11,10 +11,10 @@ namespace OCA\EtherpadNextcloud\Exception;
 
 /**
  * A legacy Ownpad file naming a pad it cannot be linked to: an id
- * Etherpad's API refuses or a `.pad` file cannot hold, or a group pad its
- * group does not have. A format problem to everything that catches those,
- * with a sentence of its own for the reader, since the file itself is
- * well-formed.
+ * Etherpad's API refuses or a `.pad` file cannot hold; a group pad its
+ * group does not have; a public pad bound under other capitals. A format
+ * problem to everything that catches those, with a sentence of its own for
+ * the reader, since the file itself is well-formed.
  */
 final class LegacyPadNotFoundException extends PadFileFormatException {
 }

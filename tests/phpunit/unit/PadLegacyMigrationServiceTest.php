@@ -119,6 +119,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
+		// Its group lists it under this id alone.
+		$binding->expects($this->never())->method('findByPadIdInOtherCase');
 		$binding->expects($this->once())
 			->method('createBinding')
 			->with(303, 'g.abcdefghijklmnop$team-meeting', BindingService::ACCESS_PROTECTED);
@@ -321,6 +323,40 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/g.VICTIMGROUPID123$made-up',
 			'pad_id' => 'g.VICTIMGROUPID123$made-up',
+		]);
+	}
+
+	/**
+	 * Bob's file binds the public pad `nc-abc`. Mallory's Ownpad file names
+	 * `NC-ABC`: no row names that id, yet with Etherpad's lowerCasePadIds on
+	 * the API lowers it onto Bob's pad, which the sweep would delete with
+	 * her file. Refused before a row is made.
+	 */
+	public function testAPublicIdBoundUnderOtherCapitalsIsNotBound(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(514);
+		$file->expects($this->never())->method('putContent');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->method('findByPadIdInOtherCase')
+			->with('NC-ABC')
+			->willReturn(new Binding(999, 'nc-abc', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, null, 100));
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(LegacyPadNotFoundException::class);
+		$this->expectExceptionMessage('The legacy .pad file names a pad bound under other capitals.');
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: new PadFileService(new FixedClock()),
+			etherpadClient: $etherpadClient,
+			logger: $this->refusalLine('the pad it names cannot be linked.', 514, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'case_variant']),
+		)->migrate('mallory', $file, [
+			'url' => 'https://pad.our-server.test/p/NC-ABC',
+			'pad_id' => 'NC-ABC',
 		]);
 	}
 

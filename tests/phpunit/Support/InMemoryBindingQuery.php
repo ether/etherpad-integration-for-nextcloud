@@ -14,8 +14,9 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 /**
  * One statement against an InMemoryBindingTable: select, update and delete
  * on the binding table, selects on the file cache, the joins between the
- * two the sweeps use, and counts. Conditions are evaluated, not recorded, so a
- * condition left out changes which rows are hit.
+ * two the sweeps use, counts, and a column lowered. Conditions are
+ * evaluated, not recorded, so a condition left out changes which rows are
+ * hit.
  *
  * A column is named as the statement names it: plain on a table without
  * an alias, `alias.column` once aliased. A condition's second operand is a
@@ -136,6 +137,16 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $this;
 	}
 
+	/** Its own function builder: LOWER() alone. */
+	public function func(): self {
+		return $this;
+	}
+
+	/** Lowered as SQLite lowers it, ASCII only: the least any database does. */
+	public function lower(string $column): string {
+		return 'LOWER(' . $column . ')';
+	}
+
 	/** @return \Closure(array<string,mixed>): bool */
 	public function eq(string $column, string $operand): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) !== null && (string)$this->value($row, $column) === (string)$this->operand($row, $operand);
@@ -232,9 +243,10 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 
 	/** @param list<array<string,mixed>> $rows */
 	private function result(array $rows): object {
-		return new class($rows) {
+		$this->db->openResults++;
+		return new class($rows, $this->db) {
 			/** @param list<array<string,mixed>> $rows */
-			public function __construct(private array $rows) {
+			public function __construct(private array $rows, private InMemoryBindingTable $db) {
 			}
 
 			/** @return array<string,mixed>|false */
@@ -248,6 +260,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 			}
 
 			public function closeCursor(): void {
+				$this->db->openResults--;
 			}
 		};
 	}
@@ -343,6 +356,10 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 
 	/** @param array<string,mixed> $row */
 	private function value(array $row, string $column): mixed {
+		if (preg_match('/^LOWER\((.+)\)$/', $column, $matches) === 1) {
+			$value = $this->value($row, $matches[1]);
+			return $value === null ? null : strtolower((string)$value);
+		}
 		return $row[$this->column($column)] ?? null;
 	}
 
