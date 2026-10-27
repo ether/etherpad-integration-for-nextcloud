@@ -104,7 +104,6 @@ class PadCreationService {
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
-			// A pad on another server: nothing of ours in Etherpad to remove.
 			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
 	}
@@ -233,8 +232,10 @@ class PadCreationService {
 	}
 
 	/**
-	 * Capture identity and copied template content before materialization.
-	 * The listener shares this claim with materialization and recovery.
+	 * The claim on a file Nextcloud made from a template or a tile: its
+	 * identity and the content copied into it, before anything is written.
+	 * The listener shares it with the materialization or the external
+	 * tile's write, and with their recovery.
 	 */
 	public function claimTemplateTarget(File $target, ?IUser $user): CreatedFileClaim {
 		$uid = $user?->getUID();

@@ -100,13 +100,13 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', $this->attempt('', $this->claimThatWrote('our document')));
 	}
 
-	/** Emptied after this create wrote it: somebody else's doing, and said so. */
+	/** Empty, though this create wrote it: somebody else's doing, and said so. */
 	public function testLeavesAFileEmptiedAfterThisCreateWroteIt(): void {
 		$emptied = $this->untouchedFile();
 		$emptied->expects($this->never())->method('delete');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')
-			->with('Left a .pad file in place: it was emptied after this create wrote it', ['app' => 'etherpad_nextcloud', 'file' => '/Created.pad']);
+			->with('Left a .pad file in place: it reads as empty, though this create wrote it', ['app' => 'etherpad_nextcloud', 'file' => '/Created.pad']);
 
 		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($emptied))
 			->rollbackFailedCreate('alice', $this->attempt('', $this->claimThatWrote('our document')));
@@ -156,11 +156,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', $this->attempt('', new CreatedFileClaim('alice', 4711)));
 	}
 
-	/**
-	 * For a template's create, whose pad is taken down already, and an
-	 * external one, which made none: the file goes, and the pad an attempt
-	 * names stays, whatever the attempt says of it.
-	 */
+	/** The file goes, and a pad the attempt names stays. */
 	public function testFileOnlyRollbackLeavesThePadAlone(): void {
 		$resolved = $this->untouchedFile();
 		$resolved->expects($this->once())->method('delete');

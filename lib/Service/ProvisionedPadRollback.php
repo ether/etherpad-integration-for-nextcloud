@@ -53,7 +53,8 @@ class ProvisionedPadRollback {
 	 * naming it once the binding write began, as createBinding can commit
 	 * and still throw. Failing earlier, the pad is the create's beyond doubt
 	 * and goes without a database question, which is what happens when that
-	 * question cannot be answered. $fileId names the file in the log.
+	 * question cannot be answered. $fileId names the file in the line of a
+	 * pad left over before the binding write.
 	 */
 	public function discardCreated(PadCreateAttempt $attempt, ?int $fileId, string $operation): void {
 		$padId = $attempt->padId();

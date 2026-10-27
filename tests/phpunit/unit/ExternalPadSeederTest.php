@@ -75,7 +75,7 @@ class ExternalPadSeederTest extends TestCase {
 		], (new ExternalPadSeeder($padFileService, $fetcher))->prepare(999, 'https://pad.remote.test/p/RemotePad'));
 	}
 
-	public function testSeedSurfacesSnapshotUnavailableWarningCode(): void {
+	public function testPrepareSurfacesSnapshotUnavailableWarningCode(): void {
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
 			->willReturn([

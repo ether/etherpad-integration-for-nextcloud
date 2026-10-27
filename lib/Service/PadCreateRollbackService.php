@@ -41,11 +41,11 @@ class PadCreateRollbackService {
 	}
 
 	/**
-	 * Remove only the file, leaving the pad alone: for a create from a
-	 * template, whose materialisation takes its pad down before rethrowing -
-	 * the full rollback would delete it a second time, costing a round trip
-	 * and logging a warning about a pad that is already gone - and for an
-	 * external create, which links a pad on another server and makes none.
+	 * Remove only the file, leaving any pad alone: for the creates whose pad
+	 * is not this rollback's - a template's, which its materialisation takes
+	 * down itself, and an external one's, on another server. Called by name
+	 * rather than through rollbackFailedCreate() with no pad recorded, so a
+	 * pad step added there cannot reach them.
 	 */
 	public function rollbackCreatedFileOnly(string $uid, PadCreateAttempt $attempt): void {
 		$claim = $attempt->claim();
@@ -105,7 +105,7 @@ class PadCreateRollbackService {
 				if ($writtenHash === null) {
 					return true;
 				}
-				$this->logger->warning('Left a .pad file in place: it was emptied after this create wrote it', [
+				$this->logger->warning('Left a .pad file in place: it reads as empty, though this create wrote it', [
 					'app' => 'etherpad_nextcloud',
 					'file' => $path,
 				]);

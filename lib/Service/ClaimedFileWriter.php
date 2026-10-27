@@ -17,8 +17,8 @@ use OCP\Files\File;
  * tile or a blank first open holds a claim on, and tells whether that file
  * is still as the claim left it. One guard for those: a write that took the
  * file as it was handed over would destroy whatever was written into it
- * meanwhile. The legacy Ownpad migration still writes through the node it
- * is handed.
+ * meanwhile. The legacy Ownpad migration writes through the node it is
+ * handed.
  */
 class ClaimedFileWriter {
 	public function __construct(

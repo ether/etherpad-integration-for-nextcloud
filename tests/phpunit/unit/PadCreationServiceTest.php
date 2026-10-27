@@ -16,7 +16,6 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
-use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreateAttempt;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -844,12 +843,11 @@ class PadCreationServiceTest extends TestCase {
 	}
 
 	/**
-	 * The case the earlier template test missed: the document is written and
-	 * the pad exists, and only then the binding fails. The rollback has to
-	 * know the pad id by then — otherwise it sees a file with content it
-	 * cannot attribute and leaves a broken .pad behind.
+	 * Written, then the binding fails: pad and row are
+	 * materializeTemplateInto()'s to take down, so the create's own
+	 * rollback takes the file alone.
 	 */
-	public function testCreateFromTemplateRollsBackWithThePadIdWhenTheBindingFails(): void {
+	public function testCreateFromTemplateRollsBackOnlyTheFileWhenTheBindingFails(): void {
 		$templateNode = $this->createMock(\OCP\Files\File::class);
 		$templateNode->method('getName')->willReturn('Tpl.pad');
 		$templateNode->method('getContent')->willReturn('tpl-content');
@@ -903,10 +901,9 @@ class PadCreationServiceTest extends TestCase {
 	}
 
 	/**
-	 * With the real rollback service, not a mock: materializeTemplateInto()
-	 * deletes the pad it provisioned before rethrowing, so the outer rollback
-	 * must not delete it again. A second deletePad() costs a round trip and
-	 * logs a cleanup warning about a pad that is already gone.
+	 * With the real rollback service, not a mock: the pad goes once, by
+	 * materializeTemplateInto(), and the create's rollback, which takes the
+	 * file alone, does not reach Etherpad.
 	 */
 	public function testTemplateBindingFailureDeletesThePadExactlyOnce(): void {
 		$templateNode = $this->createMock(\OCP\Files\File::class);

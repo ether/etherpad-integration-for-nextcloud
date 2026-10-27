@@ -54,6 +54,16 @@ class ClaimedFileWriterTest extends TestCase {
 		$this->assertNull($claim->writtenHash);
 	}
 
+	/** A read that gives no string counts as a change: the file is not written over. */
+	public function testRefusesAFileThatReadsAsNothing(): void {
+		$node = $this->createMock(File::class);
+		$node->method('getContent')->willReturn(null);
+		$node->expects($this->never())->method('putContent');
+
+		$this->expectException(PadFileChangedException::class);
+		$this->writer($node)->write(new CreatedFileClaim('alice', 4242), 'the document');
+	}
+
 	/** As handed over, or holding what this create wrote: still the claim's. */
 	public function testRecognisesTheFileAsTheClaimLeftIt(): void {
 		$written = new CreatedFileClaim('alice', 4242);
