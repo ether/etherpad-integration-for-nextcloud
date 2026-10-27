@@ -158,12 +158,13 @@ class BindingServiceTest extends TestCase {
 	 * database lowers the column and PHP the id - a Kelvin sign is a `k`
 	 * to PHP - with a final sigma as σ, which PHP before 8.3 makes of Σ
 	 * where JavaScript makes ς, and an id may write ς itself. The same id
-	 * as it is, or another once lowered, is none. One row at most each
-	 * time, its result closed.
+	 * as it is, or another once lowered, is none - told apart after the
+	 * query, which answers two rows at most. Its result is closed.
 	 */
 	public function testFindsAPadsRowUnderOtherCapitals(): void {
 		$table = new InMemoryBindingTable([
 			self::bindingRow(5, 'nc-abc', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(10, 'team-notes', BindingService::STATE_ACTIVE),
 			self::bindingRow(6, 'Team-Notes', BindingService::STATE_ACTIVE),
 			self::bindingRow(7, 'nc-kelvin', BindingService::STATE_ACTIVE),
 			self::bindingRow(8, 'σημειώσεις', BindingService::STATE_ACTIVE),
@@ -178,7 +179,7 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(9, $service->findByPadIdInOtherCase('Ας')?->fileId);
 		$this->assertNull($service->findByPadIdInOtherCase('nc-abc'), 'the same id');
 		$this->assertNull($service->findByPadIdInOtherCase('NC-ABD'), 'another id');
-		$this->assertSame([1, 1, 1, 1, 1, 1, 1], $table->limits);
+		$this->assertSame([2, 2, 2, 2, 2, 2, 2], $table->limits);
 		$this->assertSame(0, $table->openResults);
 	}
 
