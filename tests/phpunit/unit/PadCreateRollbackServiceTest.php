@@ -127,23 +127,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 		return $node;
 	}
 
-	/**
-	 * A protected pad is removed by its group — and without asking Etherpad
-	 * whose group it is. A rollback only ever holds a pad its own request
-	 * provisioned, and nothing retries it: making the delete wait on a read
-	 * would mean one timed-out read strands a group and its sessions for
-	 * good, on a group nothing else has ever seen.
-	 */
-	public function testTakesTheGroupOfAProvisionedProtectedPadWithoutAsking(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->never())->method('listPads');
-		$etherpad->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
-		$etherpad->expects($this->never())->method('deletePad');
-
-		$this->buildService(etherpad: $etherpad)
-			->rollbackFailedCreate('alice', $this->attempt('g.ABCDEFGHIJKLMNOP$pad', null));
-	}
-
 	/** A cleanup failure must not replace the error that caused the rollback. */
 	public function testReportsButSwallowsADeleteFailure(): void {
 		$resolved = $this->untouchedFile();
@@ -159,19 +142,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($resolved))
 			->rollbackFailedCreate('alice', $this->attempt('', new CreatedFileClaim('alice', 4711)));
-	}
-
-	public function testReportsButSwallowsAPadDeleteFailure(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('etherpad down'));
-
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
-			->method('warning')
-			->with($this->stringContains('Could not cleanup failed Etherpad create'), $this->anything());
-
-		$this->buildService(etherpad: $etherpad, logger: $logger)
-			->rollbackFailedCreate('alice', $this->attempt('nc-abcdef0123456789', null));
 	}
 
 	/**
@@ -206,58 +176,28 @@ class PadCreateRollbackServiceTest extends TestCase {
 	}
 
 	/**
-	 * createBinding can commit and still throw, so a failed create can leave
-	 * a row naming the pad it is about to take away.
+	 * The pad goes by the rule every create's pad goes by
+	 * (ProvisionedPadRollback::discardCreated()), handed what the attempt
+	 * made: its pad, the file its binding write began for, and its file.
 	 */
-	public function testRemovesARowThatNamesThePadTheFailedCreateMade(): void {
-		$binding = $this->createMock(BindingService::class);
-		$binding->method('isBoundTo')->with(4711, 'nc-abc')->willReturn(true);
-		$binding->expects($this->once())->method('deleteActiveBinding')->with(4711, 'nc-abc')->willReturn(true);
+	public function testHandsThePadToTheRuleOfEveryCreate(): void {
+		$calls = [];
+		$rollback = $this->createMock(ProvisionedPadRollback::class);
+		$rollback->method('discardCreated')->willReturnCallback(static function (string $padId, ?int $bindingAttemptFileId, ?int $fileId, string $operation) use (&$calls): void {
+			$calls[] = [$padId, $bindingAttemptFileId, $fileId, $operation];
+		});
+		$service = new PadCreateRollbackService($this->resolverFinding($this->untouchedFile()), $this->createMock(LoggerInterface::class), $rollback);
 
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
+		$service->rollbackFailedCreate('alice', $this->attempt('nc-abc', new CreatedFileClaim('alice', 4711), 4711));
+		$service->rollbackFailedCreate('alice', $this->attempt('nc-abc', new CreatedFileClaim('alice', 4711)));
+		$service->rollbackFailedCreate('alice', $this->attempt('nc-abc', null));
+		$service->rollbackFailedCreate('alice', $this->attempt('', new CreatedFileClaim('alice', 4711)));
 
-		$this->buildService(
-			bindingService: $binding,
-			etherpad: $etherpad,
-			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
-		)->rollbackFailedCreate('alice', $this->attempt('nc-abc', new CreatedFileClaim('alice', 4711), 4711));
-	}
-
-	/** A row naming a different pad belongs to whoever won the file. */
-	public function testLeavesARowThatNamesAnotherPadAlone(): void {
-		$binding = $this->createMock(BindingService::class);
-		$binding->method('isBoundTo')->willReturn(false);
-		$binding->expects($this->never())->method('deleteActiveBinding');
-
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
-
-		$this->buildService(
-			bindingService: $binding,
-			etherpad: $etherpad,
-			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
-		)->rollbackFailedCreate('alice', $this->attempt('nc-abc', new CreatedFileClaim('alice', 4711), 4711));
-	}
-
-	/**
-	 * A create that failed before it wrote the row owns its pad beyond
-	 * doubt, so it goes without asking the database - and still goes when
-	 * the database cannot answer.
-	 */
-	public function testDiscardsWithoutAskingWhenNoRowWasEverWritten(): void {
-		$binding = $this->createMock(BindingService::class);
-		$binding->expects($this->never())->method('isBoundTo');
-		$binding->expects($this->never())->method('deleteActiveBinding');
-
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
-
-		$this->buildService(
-			bindingService: $binding,
-			etherpad: $etherpad,
-			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
-		)->rollbackFailedCreate('alice', $this->attempt('nc-abc', new CreatedFileClaim('alice', 4711)));
+		$this->assertSame([
+			['nc-abc', 4711, 4711, 'create'],
+			['nc-abc', null, 4711, 'create'],
+			['nc-abc', null, null, 'create'],
+		], $calls);
 	}
 
 	private function buildService(

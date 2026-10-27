@@ -89,6 +89,23 @@ class ProvisionedPadRollbackTest extends TestCase {
 		$rollback->discardCreated('nc-abc', 4711, 4711, 'create');
 	}
 
+	/**
+	 * Once a create's binding write began, a row naming its pad goes with
+	 * the pad - createBinding can commit and still throw - while a row
+	 * naming another pad belongs to whoever won the file, and stays.
+	 */
+	public function testACreatesRowGoesWithItsPadButAnotherPadsRowStays(): void {
+		foreach ([true, false] as $namesThePad) {
+			$binding = $this->createMock(BindingService::class);
+			$binding->method('isBoundTo')->with(4711, 'nc-abc')->willReturn($namesThePad);
+			$binding->expects($namesThePad ? $this->once() : $this->never())->method('deleteActiveBinding')->with(4711, 'nc-abc')->willReturn(true);
+			$etherpad = $this->createMock(EtherpadClient::class);
+			$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
+
+			$this->buildRollback($binding, $etherpad)->discardCreated('nc-abc', 4711, 4711, 'create');
+		}
+	}
+
 	/** A pad a create cannot take down is named with its file and way: nothing else leads to it. */
 	public function testACreatesPadLeftOverIsNamedWithItsFileAndWay(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
