@@ -139,11 +139,14 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		// do NOT create a second binding row — the file becomes a copy.
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(404);
-		$file->expects($this->once())->method('putContent');
+		$file->expects($this->once())->method('putContent')->with('frontmatter');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
-		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
+		// This file's document, not the bound file's.
+		$padFileService->method('buildInitialDocument')
+			->with(404, 'g.abcdefghijklmnop$x', BindingService::ACCESS_PROTECTED, null, 'https://pad.our-server.test/p/g.abcdefghijklmnop$x')
+			->willReturn('frontmatter');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
@@ -255,15 +258,28 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			->with('alice', 808)
 			->willReturn($this->createMock(File::class));
 
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('info')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[] = [$message, $context];
+		});
+
 		$this->buildService(
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			resolver: $resolver,
+			logger: $logger,
 		)->migrate('alice', $file, [
 			'url' => 'https://pad.our-server.test/p/race-pad',
 			'pad_id' => 'race-pad',
 		]);
+
+		// The race's own line decides no collision; the copy's line does.
+		$this->assertEquals([
+			['Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', $this->sameOriginFields(707, BindingService::ACCESS_PUBLIC, 'alice', null)],
+			['Migrated legacy Ownpad .pad as copy of an already-bound pad.', $this->sameOriginFields(707, BindingService::ACCESS_PUBLIC, 'alice', 'with_access', ['boundFileId' => 808])],
+		], $lines);
 	}
 
 	/**
@@ -309,7 +325,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A group listing Etherpad refuses is refused like a missing pad: the
+	 * A group Etherpad does not know is refused like a missing pad: the
 	 * answer does not tell whether the group is there.
 	 */
 	public function testSameOriginRefusesAPadWhoseGroupEtherpadDoesNotList(): void {
@@ -346,6 +362,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		yield 'a line break' => ["a\nb", BindingService::ACCESS_PUBLIC];
 		yield 'a carriage return' => ["a\rb", BindingService::ACCESS_PUBLIC];
 		yield 'a NUL' => ["a\x00b", BindingService::ACCESS_PUBLIC];
+		// The database refuses it too: a server error in place of the refusal.
+		yield 'not UTF-8' => ["a\xffb", BindingService::ACCESS_PUBLIC];
 	}
 
 	/**
@@ -377,7 +395,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: new PadFileService(new FixedClock()),
 			etherpadClient: $etherpadClient,
-			logger: $this->refusalLine('the pad it names cannot be linked.', 507, $accessMode, 'mallory', ['reason' => 'invalid_id']),
+			logger: $this->refusalLine('the pad it names cannot be linked.', 507, $accessMode, 'mallory', ['reason' => 'invalid_id'], collision: null),
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/' . rawurlencode($padId),
 			'pad_id' => $padId,
@@ -385,9 +403,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * An id the app cannot link is refused before anything else is asked,
-	 * the switch for group pads included: whatever the switch says, such
-	 * a pad could not be linked.
+	 * An id the app cannot link is refused before the switch for group pads
+	 * is asked: whatever the switch says, such a pad could not be linked.
 	 */
 	public function testAnIdItCannotLinkIsRefusedBeforeTheSwitch(): void {
 		$file = $this->createMock(File::class);
@@ -599,16 +616,20 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('inferAccessModeFromPadId')
 			->willReturn(BindingService::ACCESS_PROTECTED);
+		$padFileService->method('buildInitialDocument')
+			->with(204, 'g.ourgroup00000000$notes', BindingService::ACCESS_PROTECTED, null, 'https://pad.our-server.test/p/g.ourgroup00000000$notes')
+			->willReturn('frontmatter');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.ourgroup00000000$notes');
 		$etherpadClient->method('listPads')->willReturn(['g.ourgroup00000000$notes']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(new Binding(fileId: 204, padId: 'g.ourgroup00000000$notes', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
-		$file->expects($this->once())->method('putContent');
+		$file->expects($this->once())->method('putContent')->with('frontmatter');
 
 		$this->buildService(
 			logger: $this->migrationLine('info', 'Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', 204, BindingService::ACCESS_PROTECTED, 'alice', 'self'),
@@ -623,50 +644,45 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A logger that takes one refusal, with the fields every refusal where
-	 * no row names the pad yet has - and nothing more: not the URL, nor the
-	 * pad id.
+	 * A logger that takes one refusal where no row names the pad yet - and
+	 * nothing more: not the URL, nor the pad id.
 	 *
 	 * @param array<string,string> $more
 	 */
-	private function refusalLine(string $why, int $fileId, string $accessMode, string $uid, array $more = []): LoggerInterface {
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
-			->method('warning')
-			->with('Refused legacy Ownpad migration - ' . $why, [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'sourceHost' => 'https://pad.our-server.test',
-				'originBranch' => 'same',
-				'accessMode' => $accessMode,
-				'collision' => 'none',
-				'uid' => $uid,
-				...$more,
-			]);
-		return $logger;
+	private function refusalLine(string $why, int $fileId, string $accessMode, string $uid, array $more = [], ?string $collision = 'none'): LoggerInterface {
+		return $this->migrationLine('warning', 'Refused legacy Ownpad migration - ' . $why, $fileId, $accessMode, $uid, $collision, $more);
 	}
 
 	/**
 	 * A logger that takes one line of a same-origin migration, with every
-	 * field such a line has.
+	 * field such a line has; `collision` only where it is given.
 	 *
-	 * @param array<string,int> $more
+	 * @param array<string,int|string> $more
 	 */
-	private function migrationLine(string $level, string $message, int $fileId, string $accessMode, string $uid, string $collision, array $more = []): LoggerInterface {
+	private function migrationLine(string $level, string $message, int $fileId, string $accessMode, string $uid, ?string $collision, array $more = []): LoggerInterface {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method($level)
-			->with($message, [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'sourceHost' => 'https://pad.our-server.test',
-				'originBranch' => 'same',
-				'accessMode' => $accessMode,
-				'collision' => $collision,
-				'uid' => $uid,
-				...$more,
-			]);
+			->with($message, $this->sameOriginFields($fileId, $accessMode, $uid, $collision, $more));
 		return $logger;
+	}
+
+	/**
+	 * @param array<string,int|string> $more
+	 * @return array<string,int|string>
+	 */
+	private function sameOriginFields(int $fileId, string $accessMode, string $uid, ?string $collision, array $more = []): array {
+		$fields = [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceHost' => 'https://pad.our-server.test',
+			'originBranch' => 'same',
+			'accessMode' => $accessMode,
+		];
+		if ($collision !== null) {
+			$fields['collision'] = $collision;
+		}
+		return $fields + ['uid' => $uid] + $more;
 	}
 
 	private function policyAllowing(bool $protectedImport): LegacyImportPolicy {

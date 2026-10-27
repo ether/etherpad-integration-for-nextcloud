@@ -63,9 +63,10 @@ class PadLegacyMigrationService {
 		}
 	}
 
-	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, string $reason, string $why): LegacyPadNotFoundException {
+	/** @param ?string $collision null where no row was looked up */
+	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision, string $reason, string $why): LegacyPadNotFoundException {
 		$this->logger->warning('Refused legacy Ownpad migration - the pad it names cannot be linked.', [
-			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode),
+			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, $collision),
 			'reason' => $reason,
 		]);
 		return new LegacyPadNotFoundException($why);
@@ -73,20 +74,23 @@ class PadLegacyMigrationService {
 
 	/**
 	 * The fields of every same-origin line (docs/legacy-ownpad-migration.md,
-	 * "Audit log").
+	 * "Audit log"); `collision` only where a row was looked up and decided.
 	 *
 	 * @return array<string,int|string>
 	 */
-	private function sameOriginContext(string $uid, int $fileId, string $sourceUrl, string $accessMode, string $collision = 'none'): array {
-		return [
+	private function sameOriginContext(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision = 'none'): array {
+		$context = [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
 			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
-			'collision' => $collision,
-			'uid' => $uid,
 		];
+		if ($collision !== null) {
+			$context['collision'] = $collision;
+		}
+		$context['uid'] = $uid;
+		return $context;
 	}
 
 	/**
@@ -145,13 +149,14 @@ class PadLegacyMigrationService {
 
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		// Before anything is asked or written, on every way below: an id
-		// Etherpad's API refuses could be neither synced nor deleted, and
-		// one the file's frontmatter cannot hold - built now, so the
-		// format's own rule says so - would fail every write after a row.
-		// Neither reaches the database either.
+		// Etherpad's API refuses could be neither synced nor deleted; one
+		// the file's frontmatter cannot hold - built now, so the format's
+		// own rule says so - would fail every write after a row; and the
+		// database refuses invalid UTF-8 and NUL, a server error in place
+		// of this refusal.
 		$document = PadId::isValid($sourcePadId) ? $this->managedDocument($fileId, $sourcePadId, $accessMode) : null;
 		if ($document === null) {
-			throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');
+			throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, null, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');
 		}
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
@@ -162,7 +167,7 @@ class PadLegacyMigrationService {
 			// After the switched-off refusal: asking first would answer three
 			// ways and make this an existence oracle on a privileged API.
 			if (!$this->groupHolds($sourcePadId)) {
-				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'not_in_group', 'The legacy .pad file names a pad its Etherpad group does not hold.');
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'not_in_group', 'The legacy .pad file names a pad its Etherpad group does not hold.');
 			}
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
@@ -183,11 +188,7 @@ class PadLegacyMigrationService {
 					// so the open retry sees a clear "could not initialize".
 					throw $e;
 				}
-				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					'uid' => $uid,
-				]);
+				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, null));
 				// Fall through to the collision-with-access handling below.
 			}
 			if ($existingBinding === null) {
