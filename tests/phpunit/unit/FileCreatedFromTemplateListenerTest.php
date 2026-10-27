@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
@@ -32,6 +33,13 @@ use Psr\Log\LoggerInterface;
  */
 class FileCreatedFromTemplateListenerTest extends TestCase {
 	use BuildsAppAccess;
+
+	/** Where the listener asks whether its target is still as the claim left it. */
+	private ClaimedFileWriter $writer;
+
+	protected function setUp(): void {
+		$this->writer = $this->createMock(ClaimedFileWriter::class);
+	}
 
 	public function testIgnoresUnrelatedEvent(): void {
 		$creation = $this->createMock(PadCreationService::class);
@@ -228,6 +236,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$this->userSession(true),
 			$logger,
 			$this->appAccess(true),
+			$this->writer,
 		);
 		$listener->handle(new FileCreatedFromTemplateEvent($marker, $target, [
 			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad?token=s3cret#top'],
@@ -346,6 +355,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$session,
 			$logger,
 			$this->appAccess(true, $session),
+			$this->writer,
 		);
 
 		$listener->handle(new FileCreatedFromTemplateEvent(null, $target, []));
@@ -426,7 +436,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$creation = $this->createMock(PadCreationService::class);
 		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
 		// The claimed file is no longer accessible or its content changed.
-		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$this->writer->method('resolveUnchanged')->willReturn(null);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('etherpad unreachable'));
 
@@ -443,7 +453,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$creation = $this->createMock(PadCreationService::class);
 		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
-		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$this->writer->method('resolveUnchanged')->willReturn(null);
 		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
 
 		$this->expectException(PadTypeDisabledException::class);
@@ -456,7 +466,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	private function expectClaimFor(PadCreationService $creation, File $target, int $fileId = 4242): CreatedFileClaim {
 		$claim = new CreatedFileClaim('alice', $fileId);
 		$creation->method('claimTemplateTarget')->willReturn($claim);
-		$creation->method('resolveUnchangedClaim')->willReturn($target);
+		$this->writer->method('resolveUnchanged')->willReturn($target);
 
 		return $claim;
 	}
@@ -478,6 +488,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$session,
 			$this->createMock(LoggerInterface::class),
 			$this->appAccess($appEnabledForUser, $session),
+			$this->writer,
 		);
 	}
 

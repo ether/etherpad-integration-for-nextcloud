@@ -11,11 +11,13 @@ use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
+use OCA\EtherpadNextcloud\Service\PadCreateAttempt;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
@@ -82,13 +84,16 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
-			->with('alice', '/Test.pad', 'g.ABC$pad', $this->callback(
+			->with('alice', $this->callback(
 				// Check identity, baseline and write evidence, not just the claim's type.
-				static fn (CreatedFileClaim $claim): bool => $claim->uid === 'alice'
-					&& $claim->fileId === 123
-					&& $claim->expectedBefore() === ''
-					&& $claim->writtenHash !== null
-			), 123);
+				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/Test.pad'
+					&& $attempt->padId() === 'g.ABC$pad'
+					&& $attempt->bindingAttemptFileId() === 123
+					&& $attempt->claim()?->uid === 'alice'
+					&& $attempt->claim()->fileId === 123
+					&& $attempt->claim()->expectedBefore() === ''
+					&& $attempt->claim()->writtenHash !== null
+			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -125,7 +130,11 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
-			->with('alice', '/Test.pad', 'g.ABC$pad', $this->anything(), null);
+			->with('alice', $this->callback(
+				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/Test.pad'
+					&& $attempt->padId() === 'g.ABC$pad'
+					&& $attempt->bindingAttemptFileId() === null
+			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -231,8 +240,8 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
-			->with('alice', $this->anything(), '', $this->callback(
-				static fn (?CreatedFileClaim $claim): bool => $claim !== null && $claim->fileId === 4242
+			->with('alice', $this->callback(
+				static fn (PadCreateAttempt $attempt): bool => $attempt->padId() === '' && $attempt->claim()?->fileId === 4242
 			));
 
 		$this->expectException(\OCP\Files\NotFoundException::class);
@@ -688,7 +697,9 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackExternalCreate')
-			->with('alice', '/External.pad', $this->isInstanceOf(CreatedFileClaim::class));
+			->with('alice', $this->callback(
+				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/External.pad' && $attempt->claim() !== null
+			));
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
@@ -1226,31 +1237,6 @@ class PadCreationServiceTest extends TestCase {
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
-	/** A binding failure after writing must still allow recovery from that write. */
-	public function testRecognisesOurOwnWrittenDocumentAsStillOurs(): void {
-		$claim = new CreatedFileClaim('alice', 4242);
-		$claim->writtenHash = hash('sha256', 'our document');
-
-		$node = $this->createMock(\OCP\Files\File::class);
-		$node->method('getContent')->willReturn('our document');
-
-		$service = $this->buildService(userNodeResolver: $this->resolverFor($node, 'alice', 4242));
-
-		$this->assertSame($node, $service->resolveUnchangedClaim($claim));
-	}
-
-	public function testDoesNotRecogniseAStrangersContent(): void {
-		$claim = new CreatedFileClaim('alice', 4242);
-		$claim->writtenHash = hash('sha256', 'our document');
-
-		$node = $this->createMock(\OCP\Files\File::class);
-		$node->method('getContent')->willReturn('somebody else\'s notes');
-
-		$service = $this->buildService(userNodeResolver: $this->resolverFor($node, 'alice', 4242));
-
-		$this->assertNull($service->resolveUnchangedClaim($claim));
-	}
-
 	/** Exercise create and rollback together when the initial getId() fails. */
 	public function testACreateThatNeverGotAnIdCleansUpNothing(): void {
 		$node = $this->createMock(\OCP\Files\File::class);
@@ -1321,14 +1307,15 @@ class PadCreationServiceTest extends TestCase {
 		// directly without having to mock the seeder separately.
 		$externalPadSeeder = $externalPadSeeder
 			?? new \OCA\EtherpadNextcloud\Service\ExternalPadSeeder($padFileService, $externalPadExportFetcher);
+		$userNodeResolver ??= $this->createMock(UserNodeResolver::class);
 		return new PadCreationService(
 			$padFileService,
 			$padPaths ?? $this->createMock(PathNormalizer::class),
 			$fileCreator ?? $this->createMock(PadFileCreator::class),
-			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
+			$userNodeResolver,
 			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),
 			$bindingService ?? $this->createMock(BindingService::class),
-			$etherpadClient,
+			new ClaimedFileWriter($userNodeResolver, $padFileService, $etherpadClient),
 			new ManagedPadLifecycle($etherpadClient, $padLifecycleLogger ?? $this->createMock(LoggerInterface::class)),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,

@@ -27,7 +27,7 @@ class PadCreationService {
 		private UserNodeResolver $userNodeResolver,
 		private PadCreateRollbackService $rollbackService,
 		private BindingService $bindingService,
-		private EtherpadClient $etherpadClient,
+		private ClaimedFileWriter $claimedFileWriter,
 		private ManagedPadLifecycle $padLifecycle,
 		private PadBootstrapService $padBootstrapService,
 		private PadPlaceholderResolver $placeholderResolver,
@@ -52,9 +52,7 @@ class PadCreationService {
 
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
 	}
 
@@ -83,9 +81,7 @@ class PadCreationService {
 					'pad_url' => $created['pad_url'],
 				];
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
 	}
 
@@ -103,15 +99,13 @@ class PadCreationService {
 				$fileId = $claim->fileId;
 
 				$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
-				$this->writeCreatedFile($claim, $prepared['content']);
+				$this->claimedFileWriter->write($claim, $prepared['content']);
 				$seeded = $prepared['result'];
 				// `file` first, where the response has always had it.
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackExternalCreate($uid, $attempt->path(), $attempt->claim());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackExternalCreate($uid, $attempt),
 		);
 	}
 
@@ -256,45 +250,6 @@ class PadCreationService {
 	}
 
 	/**
-	 * Re-resolve by id and require the claimed content before writing.
-	 *
-	 * File::putContent() uses its remembered path, which may have been reused
-	 * during provisioning. The content check and write are not atomic.
-	 *
-	 * @throws \OCP\Files\NotFoundException
-	 * @throws PadFileChangedException
-	 */
-	private function writeCreatedFile(CreatedFileClaim $claim, string $content): void {
-		$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-		if ((string)$node->getContent() !== $claim->expectedBefore()) {
-			throw new PadFileChangedException('The target .pad file changed while the pad was being provisioned.');
-		}
-		$node->putContent($content);
-		// Record on the shared claim so recovery retains proof if binding fails next.
-		$claim->writtenHash = hash('sha256', $content);
-	}
-
-	/**
-	 * Resolve for recovery only if the original content or recorded write still matches.
-	 * Return null if the file changed or cannot be resolved or read. This does not lock it.
-	 */
-	public function resolveUnchangedClaim(CreatedFileClaim $claim): ?File {
-		try {
-			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-			$current = (string)$node->getContent();
-			$isOurs = $current === $claim->expectedBefore()
-				|| ($claim->writtenHash !== null && hash_equals($claim->writtenHash, hash('sha256', $current)));
-			if (!$isOurs) {
-				return null;
-			}
-		} catch (\Throwable) {
-			return null;
-		}
-
-		return $node;
-	}
-
-	/**
 	 * Everything a blank create does once its file exists.
 	 *
 	 * `create()` and `createInParent()` differ only in how they reach that
@@ -335,9 +290,7 @@ class PadCreationService {
 	 * @return string the pad's URL
 	 */
 	private function writeAndBind(PadCreateAttempt $attempt, CreatedFileClaim $claim, string $padId, string $accessMode, ?PadSnapshot $snapshot = null): string {
-		$padUrl = $this->etherpadClient->buildPadUrl($padId);
-		$content = $this->padFileService->buildInitialDocument($claim->fileId, $padId, $accessMode, $snapshot, $padUrl);
-		$this->writeCreatedFile($claim, $content);
+		$padUrl = $this->claimedFileWriter->writePadDocument($claim, $padId, $accessMode, $snapshot);
 		$attempt->recordBindingAttempt($claim->fileId);
 		$this->bindingService->createBinding($claim->fileId, $padId, $accessMode);
 

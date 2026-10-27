@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Listeners;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -42,6 +43,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
+		private ClaimedFileWriter $claimedFileWriter,
 	) {
 	}
 
@@ -121,7 +123,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'targetFileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
-			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
+			$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
 			if ($unchanged !== null) {
 				$this->deleteTarget($unchanged, $claim->fileId);
 			}
@@ -142,7 +144,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				...SafeError::context($e),
 			]);
 			// Other failures do not imply unchanged content: check before resetting.
-			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
+			$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
 			if ($unchanged === null) {
 				$this->logger->warning('Left the template target alone: it is no longer the file this create was given.', [
 					'app' => 'etherpad_nextcloud',

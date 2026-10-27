@@ -31,13 +31,13 @@ class PadCreateRollbackService {
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim, ?int $bindingAttemptFileId = null): void {
-		$this->rollbackCreatedFileOnly($uid, $path, $claim);
+	public function rollbackFailedCreate(string $uid, PadCreateAttempt $attempt): void {
+		$this->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim());
 
-		if ($padId === '') {
+		if ($attempt->padId() === '') {
 			return;
 		}
-		$this->provisionedPadRollback->discardCreated($padId, $bindingAttemptFileId, $claim?->fileId, 'create');
+		$this->provisionedPadRollback->discardCreated($attempt->padId(), $attempt->bindingAttemptFileId(), $attempt->claim()?->fileId, 'create');
 	}
 
 	/**
@@ -91,10 +91,10 @@ class PadCreateRollbackService {
 		}
 	}
 
-	public function rollbackExternalCreate(string $uid, string $path, ?CreatedFileClaim $claim): void {
+	public function rollbackExternalCreate(string $uid, PadCreateAttempt $attempt): void {
 		// An external create links a pad that already exists elsewhere, so
 		// there is nothing of ours on the Etherpad side to remove.
-		$this->rollbackCreatedFileOnly($uid, $path, $claim);
+		$this->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim());
 	}
 
 	/**
