@@ -82,8 +82,8 @@ class ManagedPadLifecycle {
 	 */
 	private function provisionPad(string $padId): void {
 		// createPad refuses $ / ? & # before it makes anything, and
-		// deletePad does not check them: the delete after that refusal
-		// could take down a pad already under the id.
+		// deletePad takes / ? & # - and $ for a group pad: the delete after
+		// that refusal could take down a pad already under the id.
 		if (preg_match('~[$/?&#]~', $padId) === 1) {
 			throw new \InvalidArgumentException('A public pad id holds none of $ / ? & #.');
 		}

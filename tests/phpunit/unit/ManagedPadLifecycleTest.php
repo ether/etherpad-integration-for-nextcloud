@@ -638,4 +638,38 @@ class ManagedPadLifecycleTest extends TestCase {
 			}
 		}
 	}
+
+	/**
+	 * The lines' own fields win over a caller's: a context naming another
+	 * app, pad or error does not make the line say so.
+	 */
+	public function testALinesOwnFieldsWinOverTheCallers(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('setHTML')->willThrowException(new \RuntimeException('setHTML unsupported'));
+		$client->method('setText')->willThrowException(new EtherpadClientException('Etherpad API request failed: setText'));
+		$client->method('deletePad')->willThrowException(new \TypeError('a cleanup gone wrong'));
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[$message] = [$context['app'] ?? null, $context['padId'] ?? null, $context['error'] ?? null];
+		});
+
+		try {
+			(new ManagedPadLifecycle($client, $logger))->provisionSeeded(
+				BindingService::ACCESS_PUBLIC,
+				static fn (): string => 'nc-pad',
+				static fn (): string => 'p-unused',
+				'text',
+				'<p>text</p>',
+				['fileId' => 7, 'app' => 'other', 'padId' => 'other', 'error' => 'other'],
+			);
+			$this->fail('the seed\'s failure goes on');
+		} catch (EtherpadClientException) {
+			// The seed's failure, as the step lets it go on.
+		}
+
+		$fallback = $lines['Could not import the HTML snapshot; falling back to plain text.'] ?? [];
+		$this->assertSame(['etherpad_nextcloud', \RuntimeException::class], [$fallback[0] ?? null, $fallback[2] ?? null]);
+		$this->assertSame(['etherpad_nextcloud', 'nc-pad', \TypeError::class], $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
+	}
 }
