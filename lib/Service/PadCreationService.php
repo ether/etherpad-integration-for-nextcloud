@@ -11,7 +11,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
-use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -105,7 +104,8 @@ class PadCreationService {
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
-			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackExternalCreate($uid, $attempt),
+			// A pad on another server: nothing of ours in Etherpad to remove.
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
 	}
 
@@ -142,7 +142,7 @@ class PadCreationService {
 					'pad_url' => $result['pad_url'],
 				];
 			},
-			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim()),
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
 	}
 
@@ -205,9 +205,10 @@ class PadCreationService {
 			$resolvedHtml,
 			['fileId' => $fileId, 'operation' => 'template materialization'],
 		);
-		// An attempt of its own, to mark the binding write: the file is the
-		// caller's, and so is its rollback.
+		// An attempt of its own, for its pad and the binding write: the file
+		// is the caller's, and so is its rollback.
 		$attempt = new PadCreateAttempt();
+		$attempt->recordPad($padId);
 		try {
 			$padUrl = $this->writeAndBind(
 				$attempt,
@@ -219,7 +220,7 @@ class PadCreationService {
 				new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
 			);
 		} catch (\Throwable $e) {
-			$this->provisionedPadRollback->discardCreated($padId, $attempt->bindingAttemptFileId(), $fileId, 'template materialization');
+			$this->provisionedPadRollback->discardCreated($attempt, $fileId, 'template materialization');
 			throw $e;
 		}
 

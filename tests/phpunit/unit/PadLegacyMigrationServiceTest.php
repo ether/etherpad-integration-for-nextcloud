@@ -32,13 +32,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
 		$externalPadSeeder->expects($this->once())
 			->method('seed')
-			->with($file, 101, 'https://legacy.example.test/p/team-meeting')
-			->willReturn([
-				'file_id' => 101,
-				'pad_id' => 'ext.team-meeting',
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'pad_url' => 'https://legacy.example.test/p/team-meeting',
-			]);
+			->with($file, 101, 'https://legacy.example.test/p/team-meeting');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');

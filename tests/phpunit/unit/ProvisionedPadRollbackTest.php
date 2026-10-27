@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\PadCreateAttempt;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -85,8 +86,8 @@ class ProvisionedPadRollbackTest extends TestCase {
 		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
 
 		$rollback = $this->buildRollback($binding, $etherpad);
-		$rollback->discardCreated('nc-abc', null, 4711, 'create');
-		$rollback->discardCreated('nc-abc', 4711, 4711, 'create');
+		$rollback->discardCreated($this->attempt('nc-abc', null), 4711, 'create');
+		$rollback->discardCreated($this->attempt('nc-abc', 4711), 4711, 'create');
 	}
 
 	/**
@@ -102,7 +103,7 @@ class ProvisionedPadRollbackTest extends TestCase {
 			$etherpad = $this->createMock(EtherpadClient::class);
 			$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
 
-			$this->buildRollback($binding, $etherpad)->discardCreated('nc-abc', 4711, 4711, 'create');
+			$this->buildRollback($binding, $etherpad)->discardCreated($this->attempt('nc-abc', 4711), 4711, 'create');
 		}
 	}
 
@@ -121,7 +122,17 @@ class ProvisionedPadRollbackTest extends TestCase {
 		]));
 
 		(new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)), $logger))
-			->discardCreated('nc-abc', null, 4711, 'template materialization');
+			->discardCreated($this->attempt('nc-abc', null), 4711, 'template materialization');
+	}
+
+	/** A create's attempt with its pad, and the file its binding write began for, if it did. */
+	private function attempt(string $padId, ?int $bindingAttemptFileId): PadCreateAttempt {
+		$attempt = new PadCreateAttempt();
+		$attempt->recordPad($padId);
+		if ($bindingAttemptFileId !== null) {
+			$attempt->recordBindingAttempt($bindingAttemptFileId);
+		}
+		return $attempt;
 	}
 
 	private function buildRollback(BindingService $binding, EtherpadClient $etherpad): ProvisionedPadRollback {

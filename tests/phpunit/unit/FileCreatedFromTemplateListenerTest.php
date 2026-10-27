@@ -177,16 +177,19 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$seeder = $this->createMock(ExternalPadSeeder::class);
 		$seeder->expects($this->once())
-			->method('seed')
-			->with($target, 42, 'https://pad.remote.test/p/RemotePad')
-			->willReturn([
+			->method('prepare')
+			->with(42, 'https://pad.remote.test/p/RemotePad')
+			->willReturn(['content' => 'the document', 'result' => [
 				'file_id' => 42,
 				'pad_id' => 'ext.RemotePad',
 				'access_mode' => 'public',
 				'pad_url' => 'https://pad.remote.test/p/RemotePad',
-			]);
+			]]);
 
 		$creation = $this->createMock(PadCreationService::class);
+		$claim = $this->expectClaimFor($creation, $target, 42);
+		// Written by its id, guarded like any create's file.
+		$this->writer->expects($this->once())->method('write')->with($claim, 'the document');
 		$creation->expects($this->never())->method('materializeTemplateInto');
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		// Provisioning a local pad here would quietly make it an internal one.
@@ -212,13 +215,15 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$storage->method('isExternalMarkerFile')->willReturn(true);
 
 		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$seeder->method('seed')->willReturn([
+		$seeder->method('prepare')->willReturn(['content' => 'the document', 'result' => [
 			'file_id' => 42,
 			'pad_id' => 'ext.RemotePad',
 			'access_mode' => 'public',
 			'pad_url' => 'https://pad.remote.test/p/RemotePad',
 			'snapshot_warning_code' => 'remote_export_unavailable',
-		]);
+		]]);
+		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target, 42);
 
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
@@ -229,7 +234,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		);
 
 		$listener = new FileCreatedFromTemplateListener(
-			$this->createMock(PadCreationService::class),
+			$creation,
 			$this->createMock(PadBootstrapService::class),
 			$storage,
 			$seeder,
@@ -271,10 +276,12 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$storage->method('isExternalMarkerFile')->willReturn(true);
 
 		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$seeder->expects($this->never())->method('seed');
+		$seeder->expects($this->never())->method('prepare');
+		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target, 42);
 
 		$this->expectException(\RuntimeException::class);
-		$this->buildListener($this->createMock(PadCreationService::class), $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
+		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, $fields));
 	}
 
@@ -288,10 +295,42 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$storage->method('isExternalMarkerFile')->willReturn(true);
 
 		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$seeder->method('seed')->willThrowException(new \RuntimeException('pad not reachable'));
+		$seeder->method('prepare')->willThrowException(new \RuntimeException('pad not reachable'));
+		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target, 42);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not link a new .pad file to an external pad.',
+			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 42),
+		);
 
 		$this->expectExceptionMessage('pad not reachable');
-		$this->buildListener($this->createMock(PadCreationService::class), $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
+		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder, logger: $logger)
+			->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
+	}
+
+	/**
+	 * The remote fetch takes its time. A file written meanwhile is neither
+	 * written over nor removed: the guarded write refuses it, and the file
+	 * is no longer as the claim left it.
+	 */
+	public function testLeavesAFileWrittenMeanwhileWhileTheExternalPadWasFetched(): void {
+		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
+		$target = $this->file('Team pad.pad');
+		$target->expects($this->never())->method('delete');
+
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->method('isExternalMarkerFile')->willReturn(true);
+
+		$seeder = $this->createMock(ExternalPadSeeder::class);
+		$seeder->method('prepare')->willReturn(['content' => 'the document', 'result' => ['file_id' => 42, 'pad_id' => 'ext.x', 'access_mode' => 'public', 'pad_url' => 'https://pad.remote.test/p/x']]);
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
+		$this->writer->method('write')->willThrowException(new PadFileChangedException('The .pad file changed while its pad was being provisioned.'));
+		$this->writer->method('resolveUnchanged')->willReturn(null);
+
+		$this->expectException(PadFileChangedException::class);
+		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
 	}
 
@@ -478,6 +517,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		?PadTemplateStorage $templateStorage = null,
 		?ExternalPadSeeder $externalPadSeeder = null,
 		bool $appEnabledForUser = true,
+		?LoggerInterface $logger = null,
 	): FileCreatedFromTemplateListener {
 		$session = $this->userSession($withUser);
 		return new FileCreatedFromTemplateListener(
@@ -486,7 +526,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$templateStorage ?? $this->noTypeTemplates(),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$session,
-			$this->createMock(LoggerInterface::class),
+			$logger ?? $this->createMock(LoggerInterface::class),
 			$this->appAccess($appEnabledForUser, $session),
 			$this->writer,
 		);

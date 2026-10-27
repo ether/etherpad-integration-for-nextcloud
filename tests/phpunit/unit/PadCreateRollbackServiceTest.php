@@ -100,6 +100,18 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', $this->attempt('', $this->claimThatWrote('our document')));
 	}
 
+	/** Emptied after this create wrote it: somebody else's doing, and said so. */
+	public function testLeavesAFileEmptiedAfterThisCreateWroteIt(): void {
+		$emptied = $this->untouchedFile();
+		$emptied->expects($this->never())->method('delete');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')
+			->with('Left a .pad file in place: it was emptied after this create wrote it', ['app' => 'etherpad_nextcloud', 'file' => '/Created.pad']);
+
+		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($emptied))
+			->rollbackFailedCreate('alice', $this->attempt('', $this->claimThatWrote('our document')));
+	}
+
 	public function testSwallowsAFailedLookup(): void {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeById')->willThrowException(new \RuntimeException('storage down'));
@@ -145,9 +157,9 @@ class PadCreateRollbackServiceTest extends TestCase {
 	}
 
 	/**
-	 * For the flows that clean up their own pad. Routed through the
-	 * file-only method rather than relying on an empty pad id to skip the
-	 * pad step, so a future pad-side step cannot leak into it.
+	 * For a template's create, whose pad is taken down already, and an
+	 * external one, which made none: the file goes, and the pad an attempt
+	 * names stays, whatever the attempt says of it.
 	 */
 	public function testFileOnlyRollbackLeavesThePadAlone(): void {
 		$resolved = $this->untouchedFile();
@@ -157,22 +169,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$etherpad->expects($this->never())->method('deletePad');
 
 		$this->buildService(etherpad: $etherpad, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackCreatedFileOnly('alice', '/Created.pad', new CreatedFileClaim('alice', 4711));
-	}
-
-	/**
-	 * An external create links a pad that already exists elsewhere, so the
-	 * file goes and nothing is deleted on the Etherpad side.
-	 */
-	public function testExternalRollbackDeletesTheFileButNoPad(): void {
-		$resolved = $this->untouchedFile();
-		$resolved->expects($this->once())->method('delete');
-
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->never())->method('deletePad');
-
-		$this->buildService(etherpad: $etherpad, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackExternalCreate('alice', $this->attempt('', new CreatedFileClaim('alice', 4711)));
+			->rollbackCreatedFileOnly('alice', $this->attempt('nc-abc', new CreatedFileClaim('alice', 4711), 4711));
 	}
 
 	/**
@@ -183,8 +180,8 @@ class PadCreateRollbackServiceTest extends TestCase {
 	public function testHandsThePadToTheRuleOfEveryCreate(): void {
 		$calls = [];
 		$rollback = $this->createMock(ProvisionedPadRollback::class);
-		$rollback->method('discardCreated')->willReturnCallback(static function (string $padId, ?int $bindingAttemptFileId, ?int $fileId, string $operation) use (&$calls): void {
-			$calls[] = [$padId, $bindingAttemptFileId, $fileId, $operation];
+		$rollback->method('discardCreated')->willReturnCallback(static function (PadCreateAttempt $attempt, ?int $fileId, string $operation) use (&$calls): void {
+			$calls[] = [$attempt->padId(), $attempt->bindingAttemptFileId(), $fileId, $operation];
 		});
 		$service = new PadCreateRollbackService($this->resolverFinding($this->untouchedFile()), $this->createMock(LoggerInterface::class), $rollback);
 

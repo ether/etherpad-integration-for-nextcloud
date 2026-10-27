@@ -24,6 +24,7 @@ use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
 use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
+use OCP\IUser;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
@@ -84,7 +85,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// The external tile's address arrives with the event, so the file is
 		// complete before anyone opens it.
 		if ($this->templateStorage->isExternalMarkerFile($template)) {
-			$this->seedExternalPad($target, $event->getTemplateFields());
+			$this->seedExternalPad($target, $user, $event->getTemplateFields());
 			return;
 		}
 
@@ -188,22 +189,25 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	/**
 	 * A file that cannot be linked is removed rather than left behind: an empty
 	 * `.pad` would become an ordinary local pad on first open, which is not
-	 * what the user picked. Nextcloud turns the exception into its own "could
-	 * not create from template" message and logs the reason.
+	 * what the user picked - unless it is no longer as the claim left it.
+	 * Written by its id and guarded, as the remote fetch can take seconds.
+	 * Nextcloud turns the exception into its own "could not create from
+	 * template" message and logs the reason.
 	 *
 	 * @param array<string,mixed> $templateFields
 	 */
-	private function seedExternalPad(File $target, array $templateFields): void {
-		$fileId = (int)$target->getId();
+	private function seedExternalPad(File $target, IUser $user, array $templateFields): void {
+		$claim = null;
 		try {
+			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+			$fileId = $claim->fileId;
 			$padUrl = $this->padUrlField($templateFields);
 			if ($padUrl === '') {
 				throw new \RuntimeException('No pad address was given for the external pad template.');
 			}
-			if ($fileId <= 0) {
-				throw new \RuntimeException('Could not resolve new file ID.');
-			}
-			$seeded = $this->externalPadSeeder->seed($target, $fileId, $padUrl);
+			$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
+			$this->claimedFileWriter->write($claim, $prepared['content']);
+			$seeded = $prepared['result'];
 			if (($seeded['snapshot_warning_code'] ?? '') === 'remote_export_unavailable') {
 				// The pad is linked and opens; only its snapshot stays empty, as
 				// the remote refused the export. This line is the admin's
@@ -218,10 +222,19 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not link a new .pad file to an external pad.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
+				'fileId' => $claim?->fileId,
 				...SafeError::context($e),
 			]);
-			$this->deleteTarget($target);
+			if ($claim === null) {
+				// Without a claim nothing tells this file from another: it goes
+				// as Nextcloud handed it over.
+				$this->deleteTarget($target);
+			} else {
+				$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
+				if ($unchanged !== null) {
+					$this->deleteTarget($unchanged, $claim->fileId);
+				}
+			}
 			throw $e;
 		}
 	}

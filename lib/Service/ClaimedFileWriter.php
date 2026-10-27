@@ -13,10 +13,12 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCP\Files\File;
 
 /**
- * Writes into a `.pad` file a create or a first open holds a claim on, and
- * tells whether that file is still as the claim left it. One guard for
- * all of them: a write that took the file as it was handed over would
- * destroy whatever was written into it meanwhile.
+ * Writes into a `.pad` file a create, a template in Files, the external
+ * tile or a blank first open holds a claim on, and tells whether that file
+ * is still as the claim left it. One guard for those: a write that took the
+ * file as it was handed over would destroy whatever was written into it
+ * meanwhile. The legacy Ownpad migration still writes through the node it
+ * is handed.
  */
 class ClaimedFileWriter {
 	public function __construct(
@@ -52,7 +54,7 @@ class ClaimedFileWriter {
 	 */
 	public function write(CreatedFileClaim $claim, string $content): void {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-		if ((string)$node->getContent() !== $claim->expectedBefore()) {
+		if ($node->getContent() !== $claim->expectedBefore()) {
 			throw new PadFileChangedException('The .pad file changed while its pad was being provisioned.');
 		}
 		$node->putContent($content);

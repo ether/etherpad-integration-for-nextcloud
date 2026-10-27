@@ -600,10 +600,11 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
-	/** A `.pad` file the user may change: initialising writes it. */
-	private function writableFile(): File&\PHPUnit\Framework\MockObject\MockObject {
+	/** A `.pad` file the user may change, holding $content as the write's guard reads it. */
+	private function writableFile(string $content = ''): File&\PHPUnit\Framework\MockObject\MockObject {
 		$file = $this->createMock(File::class);
 		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getContent')->willReturn($content);
 		return $file;
 	}
 
@@ -738,8 +739,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$claimed->expects($this->never())->method('putContent');
 
 		// A fresh node for the claimed id, now containing another writer's content.
-		$stranger = $this->writableFile();
-		$stranger->method('getContent')->willReturn('somebody else\'s notes');
+		$stranger = $this->writableFile('somebody else\'s notes');
 		$stranger->expects($this->never())->method('putContent');
 
 		$service = $this->bootstrap(
@@ -772,9 +772,8 @@ class PadBootstrapServiceTest extends TestCase {
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
 
-		$file = $this->writableFile();
+		$file = $this->writableFile("\n");
 		$file->method('getId')->willReturn(4242);
-		$file->method('getContent')->willReturn("\n");
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$this->assertFalse($this->bootstrap(

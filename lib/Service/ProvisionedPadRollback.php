@@ -16,12 +16,15 @@ use Psr\Log\LoggerInterface;
  * Undoes the pad and the binding row when a flow that provisions a pad
  * fails partway. The `.pad` file is each flow's own business.
  *
- * Which method a flow calls turns on what is left of its file. A first
- * init works on an empty file, so a row naming the new pad is the finished
- * half of the job and the next open writes the rest. A restore has a file
- * naming a different pad, so a row pointing at this pad contradicts it. A
- * failed create gives up its file, and its row and pad go with it; it
- * asks about the row only once its binding write began (discardCreated()).
+ * Which method a flow calls turns on whether a row naming the new pad is
+ * the flow's to take back. discardUnlessBoundToFile() lets such a row stand,
+ * and the pad with it: a first init's row is the finished half of its job,
+ * which the next open completes, and a restore uses it where its row should
+ * not name the new pad, keeping a pad one does name.
+ * removeMatchingBindingAndDiscard() takes the row away with the pad, where
+ * the row is the flow's own: the claim of a restore, the row of a create.
+ * discardCreated() is that for a create, asking about the row only once its
+ * binding write began.
  *
  * Only for a pad provisioned in the same call: `discardProvisioned` removes
  * a group outright. A flow that adopted an existing pad - the legacy Ownpad
@@ -47,12 +50,14 @@ class ProvisionedPadRollback {
 
 	/**
 	 * The pad of a failed create - empty or from a template - with the row
-	 * naming it once the binding write began ($bindingAttemptFileId), as
-	 * createBinding can commit and still throw. Failing earlier, the pad is
-	 * the create's beyond doubt and goes without a database question, which
-	 * is what happens when that question cannot be answered.
+	 * naming it once the binding write began, as createBinding can commit
+	 * and still throw. Failing earlier, the pad is the create's beyond doubt
+	 * and goes without a database question, which is what happens when that
+	 * question cannot be answered. $fileId names the file in the log.
 	 */
-	public function discardCreated(string $padId, ?int $bindingAttemptFileId, ?int $fileId, string $operation): void {
+	public function discardCreated(PadCreateAttempt $attempt, ?int $fileId, string $operation): void {
+		$padId = $attempt->padId();
+		$bindingAttemptFileId = $attempt->bindingAttemptFileId();
 		if ($bindingAttemptFileId !== null) {
 			$this->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, $operation);
 			return;

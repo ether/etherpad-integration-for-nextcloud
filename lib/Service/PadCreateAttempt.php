@@ -16,7 +16,7 @@ namespace OCA\EtherpadNextcloud\Service;
  *
  * The template flow's pad stays out of the create's rollback:
  * `materializeTemplateInto()` takes it down itself, with an attempt of its
- * own that marks only the binding write.
+ * own that holds only its pad and the binding write.
  */
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
