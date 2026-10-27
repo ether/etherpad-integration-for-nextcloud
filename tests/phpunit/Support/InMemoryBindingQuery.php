@@ -121,30 +121,28 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $this;
 	}
 
-	/** Only `COUNT(*)`, selected under an alias: the statement then answers one row with the count. */
+	/**
+	 * `COUNT(*)`, selected under an alias: the statement then answers one
+	 * row with the count. Or `REPLACE()` of a column, or of its `LOWER()`,
+	 * with two parameters.
+	 */
 	public function createFunction(string $call): string {
 		return $call;
 	}
 
-	public function createNamedParameter(mixed $value, mixed $type = null): string {
-		$name = ':p' . count($this->parameters);
+	public function createNamedParameter(mixed $value, mixed $type = null, ?string $placeHolder = null): string {
+		$name = $placeHolder ?? ':p' . count($this->parameters);
 		$this->parameters[$name] = $value;
 		return $name;
+	}
+
+	public function getColumnName(string $column): string {
+		return $this->column($column);
 	}
 
 	/** Its own expression builder, for what these statements use. */
 	public function expr(): self {
 		return $this;
-	}
-
-	/** Its own function builder: LOWER() alone. */
-	public function func(): self {
-		return $this;
-	}
-
-	/** Lowered as SQLite lowers it, ASCII only: the least any database does. */
-	public function lower(string $column): string {
-		return 'LOWER(' . $column . ')';
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
@@ -356,6 +354,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 
 	/** @param array<string,mixed> $row */
 	private function value(array $row, string $column): mixed {
+		if (preg_match('/^REPLACE\((.+), (:\w+), (:\w+)\)$/', $column, $matches) === 1) {
+			$value = $this->value($row, $matches[1]);
+			return $value === null ? null : str_replace((string)$this->parameters[$matches[2]], (string)$this->parameters[$matches[3]], (string)$value);
+		}
+		// Lowered as SQLite lowers it, ASCII only: the least any database does.
 		if (preg_match('/^LOWER\((.+)\)$/', $column, $matches) === 1) {
 			$value = $this->value($row, $matches[1]);
 			return $value === null ? null : strtolower((string)$value);

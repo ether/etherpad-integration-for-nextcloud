@@ -105,16 +105,22 @@ class BindingService {
 	}
 
 	/**
-	 * The first row, in any state, whose pad id is $padId in other
-	 * capitals: the same once lowered - the column by the database's
-	 * LOWER(), $padId by mb_strtolower() - yet not the same as it is. No
-	 * index serves it.
+	 * A row, in any state, whose pad id is $padId in other capitals: the
+	 * same once lowered - the column by the database's LOWER(), $padId by
+	 * mb_strtolower() - yet not the same as it is. A final sigma counts as
+	 * σ on both sides: PHP before 8.3 lowers Σ to σ wherever it stands,
+	 * JavaScript to ς at a word's end. No index serves it.
 	 */
 	public function findByPadIdInOtherCase(string $padId): ?Binding {
 		$qb = $this->db->getQueryBuilder();
+		$qb->createNamedParameter('ς', IQueryBuilder::PARAM_STR, ':finalsigma');
+		$qb->createNamedParameter('σ', IQueryBuilder::PARAM_STR, ':sigma');
 		$qb->select('*')
 			->from(self::TABLE)
-			->where($qb->expr()->eq($qb->func()->lower('pad_id'), $qb->createNamedParameter(mb_strtolower($padId, 'UTF-8'))))
+			->where($qb->expr()->eq(
+				$qb->createFunction('REPLACE(LOWER(' . $qb->getColumnName('pad_id') . '), :finalsigma, :sigma)'),
+				$qb->createNamedParameter(str_replace('ς', 'σ', mb_strtolower($padId, 'UTF-8'))),
+			))
 			->andWhere($qb->expr()->neq('pad_id', $qb->createNamedParameter($padId)))
 			->setMaxResults(1);
 
