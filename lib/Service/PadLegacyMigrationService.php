@@ -63,7 +63,6 @@ class PadLegacyMigrationService {
 		}
 	}
 
-	/** @param ?string $collision null where no row was looked up */
 	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision, string $reason, string $why): LegacyPadNotFoundException {
 		$this->logger->warning('Refused legacy Ownpad migration - the pad it names cannot be linked.', [
 			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, $collision),
@@ -74,11 +73,12 @@ class PadLegacyMigrationService {
 
 	/**
 	 * The fields of every same-origin line (docs/legacy-ownpad-migration.md,
-	 * "Audit log"); `collision` only where a row was looked up and decided.
+	 * "Audit log"); `collision` only where a row was looked up and decided,
+	 * null otherwise.
 	 *
 	 * @return array<string,int|string>
 	 */
-	private function sameOriginContext(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision = 'none'): array {
+	private function sameOriginContext(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision): array {
 		$context = [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
@@ -109,7 +109,7 @@ class PadLegacyMigrationService {
 		if ($this->legacyImportPolicy->allowsProtectedImport()) {
 			return;
 		}
-		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode));
+		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 		throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
 	}
 
@@ -151,8 +151,8 @@ class PadLegacyMigrationService {
 		// Before anything is asked or written, on every way below: an id
 		// Etherpad's API refuses could be neither synced nor deleted; one
 		// the file's frontmatter cannot hold - built now, so the format's
-		// own rule says so - would fail every write after a row; and the
-		// database refuses invalid UTF-8 and NUL, a server error in place
+		// own rule says so - would fail every write after a row; and
+		// PostgreSQL refuses invalid UTF-8 and NUL, a server error in place
 		// of this refusal.
 		$document = PadId::isValid($sourcePadId) ? $this->managedDocument($fileId, $sourcePadId, $accessMode) : null;
 		if ($document === null) {
@@ -193,7 +193,7 @@ class PadLegacyMigrationService {
 			}
 			if ($existingBinding === null) {
 				$file->putContent($document);
-				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode));
+				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 				return;
 			}
 		}

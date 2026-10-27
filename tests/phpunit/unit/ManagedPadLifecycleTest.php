@@ -595,7 +595,8 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger->expects($this->once())
 			->method('warning')
 			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
-				static fn (array $context): bool => ($context['padId'] ?? null) === 'nc-pad'
+				static fn (array $context): bool => ($context['app'] ?? null) === 'etherpad_nextcloud'
+					&& ($context['padId'] ?? null) === 'nc-pad'
 					&& ($context['fileId'] ?? null) === 7
 					&& ($context['error'] ?? null) === \TypeError::class
 			));
@@ -622,11 +623,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '');
 	}
 
-	/**
-	 * An id Etherpad's createPad refuses before it makes anything is refused
-	 * here: a delete after that refusal would take down a pad already under
-	 * the id.
-	 */
+	/** Each of the five on its own, so none can drop out of the pattern unnoticed. */
 	public function testAPublicIdCreatePadRefusesIsNotTried(): void {
 		foreach (['a$b', 'a/b', 'a?b', 'a&b', 'a#b'] as $padId) {
 			$client = $this->createMock(EtherpadClient::class);

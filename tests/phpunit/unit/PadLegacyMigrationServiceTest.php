@@ -328,7 +328,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	 * A group Etherpad does not know is refused like a missing pad: the
 	 * answer does not tell whether the group is there.
 	 */
-	public function testSameOriginRefusesAPadWhoseGroupEtherpadDoesNotList(): void {
+	public function testSameOriginRefusesAPadWhoseGroupEtherpadDoesNotKnow(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(511);
 		$file->expects($this->never())->method('putContent');
@@ -362,7 +362,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		yield 'a line break' => ["a\nb", BindingService::ACCESS_PUBLIC];
 		yield 'a carriage return' => ["a\rb", BindingService::ACCESS_PUBLIC];
 		yield 'a NUL' => ["a\x00b", BindingService::ACCESS_PUBLIC];
-		// The database refuses it too: a server error in place of the refusal.
+		// PostgreSQL refuses it too: a server error in place of the refusal.
 		yield 'not UTF-8' => ["a\xffb", BindingService::ACCESS_PUBLIC];
 	}
 
@@ -644,7 +644,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A logger that takes one refusal where no row names the pad yet - and
+	 * A logger that takes one refusal of a same-origin migration - and
 	 * nothing more: not the URL, nor the pad id.
 	 *
 	 * @param array<string,string> $more

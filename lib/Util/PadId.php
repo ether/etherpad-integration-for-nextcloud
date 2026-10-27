@@ -24,11 +24,13 @@ final class PadId {
 	/**
 	 * Etherpad's own rule for a pad id as it has it from 3.3.3 (isValidPadId()
 	 * in its PadManager, read in 3.3.11), but for the name's length. A `:` is
-	 * how Etherpad's database keys a pad's records, and Etherpad before 3.3.3
-	 * still took it; no editor ever opened a pad under `.` or `..`, as a
-	 * browser makes `/p/.` another path. The dot after `g` is a dot here,
-	 * where Etherpad's lets it be any character but a line break: no group
-	 * of Etherpad's is named otherwise.
+	 * how Etherpad's database keys a pad's records; Etherpad before 3.3.3
+	 * still took it, and is held to the rule all the same, as after an
+	 * upgrade the app could not reach such a pad. No editor ever opened a
+	 * pad under `.` or `..`, as a browser makes `/p/.` another path. The
+	 * dot after `g` is a dot here, where Etherpad's lets it be any
+	 * character but a line break: no group of Etherpad's is named
+	 * otherwise.
 	 *
 	 * @see https://github.com/ether/etherpad/blob/v3.3.11/src/node/db/PadManager.ts
 	 */
@@ -58,8 +60,8 @@ final class PadId {
 			return false;
 		}
 		// Counted as Etherpad counts it: a character past the Basic
-		// Multilingual Plane is two units. A string, as the pattern has
-		// taken the name as UTF-8.
+		// Multilingual Plane is two units. A string: mb_convert_encoding()
+		// gives false only where it has to guess the source encoding.
 		/** @var string $utf16 */
 		$utf16 = mb_convert_encoding($matches[1], 'UTF-16LE', 'UTF-8');
 		return strlen($utf16) <= 2 * self::MAX_NAME_UNITS;

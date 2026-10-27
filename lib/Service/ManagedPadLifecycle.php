@@ -81,9 +81,9 @@ class ManagedPadLifecycle {
 	 * nothing.
 	 */
 	private function provisionPad(string $padId): void {
-		// What Etherpad's createPad refuses before it makes anything, refused
-		// here: a delete after that refusal would take down a pad that has
-		// the id already.
+		// createPad refuses $ / ? & # before it makes anything, and
+		// deletePad does not check them: the delete after that refusal
+		// could take down a pad already under the id.
 		if (preg_match('~[$/?&#]~', $padId) === 1) {
 			throw new \InvalidArgumentException('A public pad id holds none of $ / ? & #.');
 		}
@@ -116,7 +116,8 @@ class ManagedPadLifecycle {
 	 *
 	 * @param callable():string $padId the id a public pad is created under
 	 * @param callable():string $groupPadName the name a protected pad carries
-	 * @throws \InvalidArgumentException when $accessMode is not a known mode
+	 * @throws \InvalidArgumentException when $accessMode is not a known mode,
+	 *   or a public pad's id holds one of $ / ? & #
 	 */
 	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
 		$mode = PadAccessMode::tryFrom($accessMode);
