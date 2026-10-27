@@ -100,4 +100,9 @@ final class EtherpadErrorClassifier {
 	public static function isPadAlreadyPresent(\Throwable $error): bool {
 		return self::mentions($error, ['does already exist']);
 	}
+
+	/** Etherpad not knowing a group it was asked about: `groupID does not exist`. */
+	public static function isGroupUnknown(\Throwable $error): bool {
+		return self::mentions($error, ['groupid does not exist']);
+	}
 }
