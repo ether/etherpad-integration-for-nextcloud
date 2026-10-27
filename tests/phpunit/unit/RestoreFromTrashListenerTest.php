@@ -409,6 +409,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$etherpadClient->expects($this->never())->method('deletePad');
 		$padFiles = $this->createMock(PadFileService::class);
 		$padFiles->method('readPad')->willReturn(new ParsedPadFile([], 'body', 'old-pad', BindingService::ACCESS_PUBLIC, '', false, 2));
+		$padFiles->method('getSnapshotPartsFromBody')->willReturn(['text' => 'doc', 'html' => '']);
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
 		$file->method('getName')->willReturn('Notes.pad');

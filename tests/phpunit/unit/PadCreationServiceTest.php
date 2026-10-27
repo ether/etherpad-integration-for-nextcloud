@@ -341,12 +341,12 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->expects(self::once())
-			->method('provisionPadId')
-			->with(BindingService::ACCESS_PROTECTED)
-			->willReturn('g.grp$pad');
+		$bootstrap->method('newGroupPadName')->willReturn('p-new');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
+		// A protected pad, in a group made for it, under the name a new pad gets.
+		$etherpadClient->method('createGroup')->willReturn('g.grp');
+		$etherpadClient->expects(self::once())->method('createGroupPad')->with('g.grp', 'p-new')->willReturn('g.grp$pad');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 		// The template's formatting is what reaches the pad, not its text.
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
@@ -369,6 +369,106 @@ class PadCreationServiceTest extends TestCase {
 		)->materializeTemplateInto($target, $template, $this->materializeUser());
 
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
+	}
+
+	/**
+	 * A failed seed takes the template's new pad down without asking the
+	 * binding table. The table throws here: the later rollback's path,
+	 * which does ask, would keep the pad. The file stays unwritten.
+	 */
+	public function testATemplatesPadThatCannotBeSeededGoes(): void {
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+		$written = $this->createMock(\OCP\Files\File::class);
+		$written->expects($this->never())->method('putContent');
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($written);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+
+		$refused = new EtherpadClientException('Etherpad API request failed: setText');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-new');
+		$etherpadClient->method('setHTML')->willThrowException(new EtherpadClientException('Etherpad API request failed: setHTML'));
+		$etherpadClient->method('setText')->willThrowException($refused);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.AbCdEfGh12345678');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('createBinding');
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('Database gone'));
+
+		try {
+			$this->buildService(
+				padFileService: $padFileService,
+				userNodeResolver: $resolver,
+				bindingService: $bindingService,
+				etherpadClient: $etherpadClient,
+				bootstrap: $bootstrap,
+			)->materializeTemplateInto($target, $template, $this->materializeUser());
+			$this->fail('the seed\'s failure goes on');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame($refused, $e);
+		}
+	}
+
+	/** A template's pad that cannot be taken down either is named in the log with its file and its way. */
+	public function testATemplatesPadLeftOverIsNamedWithItsFile(): void {
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '']);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('newPadId')->willReturn('nc-new');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('setText')->willThrowException(new EtherpadClientException('Etherpad API request failed: setText'));
+		$etherpadClient->method('deletePad')->willThrowException(new EtherpadClientException('Etherpad API request failed: deletePad'));
+		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
+		$padLifecycleLogger->expects($this->once())
+			->method('warning')
+			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
+				static fn (array $context): bool => ($context['fileId'] ?? null) === 4321
+					&& ($context['padId'] ?? null) === 'nc-new'
+					&& ($context['operation'] ?? null) === 'template materialization'
+			));
+
+		$this->expectException(EtherpadClientException::class);
+
+		$this->buildService(
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			bootstrap: $bootstrap,
+			padLifecycleLogger: $padLifecycleLogger,
+		)->materializeTemplateInto($target, $template, $this->materializeUser());
 	}
 
 	public function testATemplatesPadWhoseRevisionsEtherpadDoesNotSayStartsAtZero(): void {
@@ -398,12 +498,12 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->expects(self::once())
-			->method('provisionPadId')
-			->with(BindingService::ACCESS_PROTECTED)
-			->willReturn('g.grp$pad');
+		$bootstrap->method('newGroupPadName')->willReturn('p-new');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
+		// A protected pad, in a group made for it, under the name a new pad gets.
+		$etherpadClient->method('createGroup')->willReturn('g.grp');
+		$etherpadClient->expects(self::once())->method('createGroupPad')->with('g.grp', 'p-new')->willReturn('g.grp$pad');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 		// The template's formatting is what reaches the pad, not its text.
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
@@ -646,25 +746,22 @@ class PadCreationServiceTest extends TestCase {
 		]);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, new PadSnapshot('Datum: 18.05.2026', '', 0), $this->isType('string'))
+			->with(99, 'g.AbCdEfGh12345678$p-fresh', BindingService::ACCESS_PROTECTED, new PadSnapshot('Datum: 18.05.2026', '', 0), $this->isType('string'))
 			->willReturn('doc');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->expects($this->once())
-			->method('provisionPadId')
-			->with(BindingService::ACCESS_PROTECTED)
-			->willReturn('p-fresh');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
 			->method('createBinding')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED);
+			->with(99, 'g.AbCdEfGh12345678$p-fresh', BindingService::ACCESS_PROTECTED);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/p-fresh');
+		$etherpadClient->expects($this->once())->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-fresh');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/g.AbCdEfGh12345678$p-fresh');
 		// No HTML in this template, so seeding is the plain-text call.
-		$etherpadClient->expects($this->once())->method('setText')->with('p-fresh', 'Datum: 18.05.2026');
+		$etherpadClient->expects($this->once())->method('setText')->with('g.AbCdEfGh12345678$p-fresh', 'Datum: 18.05.2026');
 
 		$user = $this->createMock(\OCP\IUser::class);
 		$user->method('getDisplayName')->willReturn('Alice');
@@ -676,7 +773,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->assertSame('/Meetings/Protokoll 18.05.2026.pad', $result['file']);
 		$this->assertSame(99, $result['file_id']);
-		$this->assertSame('p-fresh', $result['pad_id']);
+		$this->assertSame('g.AbCdEfGh12345678$p-fresh', $result['pad_id']);
 		$this->assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
@@ -754,7 +851,7 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+		$bootstrap->method('newPadId')->willReturn('nc-fresh');
 
 		// Written, then the binding fails.
 		$bindingService = $this->createMock(BindingService::class);
@@ -811,13 +908,13 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+		$bootstrap->method('newPadId')->willReturn('nc-fresh');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('binding failed'));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
+		$etherpadClient->expects($this->once())->method('deletePad')->with('nc-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
@@ -996,14 +1093,13 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
-		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('provisionPadId')->willReturn($padId);
+		// A protected pad, in a group made for it.
+		$etherpadClient->method('createGroupPad')->willReturn($padId);
 
 		return $this->buildService(
 			padFileService: $padFileService,
 			bindingService: $bindingService,
 			etherpadClient: $etherpadClient,
-			bootstrap: $bootstrap,
 			padTypePolicy: $this->buildPadTypePolicy(true, false),
 		);
 	}
@@ -1185,6 +1281,7 @@ class PadCreationServiceTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?\OCA\EtherpadNextcloud\Service\PadTypePolicy $padTypePolicy = null,
 		?LoggerInterface $logger = null,
+		?LoggerInterface $padLifecycleLogger = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
 			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000));
@@ -1206,7 +1303,7 @@ class PadCreationServiceTest extends TestCase {
 			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			new ManagedPadLifecycle($etherpadClient, $padLifecycleLogger ?? $this->createMock(LoggerInterface::class)),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,
 			$externalPadSeeder,

@@ -12,8 +12,10 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
+use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -38,20 +40,73 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * A group pad this file names has to be a group pad that is there.
-	 * `g.<their-group>$invented` collides with no binding while naming a
-	 * real group, and the session issued on open grants all of it. Fails
-	 * closed: a refused migration is retried, a waved-through one is not.
+	 * Whether the group a group pad names lists it; true for a pad that
+	 * names no group. `g.<their-group>$invented` collides with no binding
+	 * while naming a real group, and the session issued on open grants all
+	 * of it. A group Etherpad does not know counts as one without the pad,
+	 * so the answer does not tell whether the group is there; any other
+	 * refusal or failure goes on. Fails closed: a refused migration is
+	 * retried, a waved-through one is not.
 	 */
-	private function assertGroupPadExists(string $sourcePadId): void {
+	private function groupHolds(string $sourcePadId): bool {
 		$groupId = PadId::groupIdOf($sourcePadId);
 		if ($groupId === null) {
-			return;
+			return true;
 		}
+		try {
+			return in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true);
+		} catch (EtherpadRefusedException $e) {
+			if (EtherpadErrorClassifier::isGroupUnknown($e)) {
+				return false;
+			}
+			throw $e;
+		}
+	}
 
-		if (!in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true)) {
-			throw new LegacyPadNotFoundException('The legacy .pad file names a pad that does not exist in its Etherpad group.');
+	/**
+	 * A row that binds the pad under other capitals: with Etherpad's
+	 * lowerCasePadIds on, one of the two ids can reach the other's pad
+	 * (PadId::isValid()). Not asked for a group pad: groupHolds() takes only
+	 * an id its group lists, which the API acts on as it is.
+	 */
+	private function rowInOtherCase(string $sourcePadId): ?Binding {
+		return PadId::groupIdOf($sourcePadId) === null
+			? $this->bindingService->findByPadIdInOtherCase($sourcePadId)
+			: null;
+	}
+
+	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision, string $reason, string $why, ?int $boundFileId = null): LegacyPadNotFoundException {
+		$context = [
+			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, $collision),
+			'reason' => $reason,
+		];
+		if ($boundFileId !== null) {
+			$context['boundFileId'] = $boundFileId;
 		}
+		$this->logger->warning('Refused legacy Ownpad migration - the pad it names cannot be linked.', $context);
+		return new LegacyPadNotFoundException($why);
+	}
+
+	/**
+	 * The fields of every same-origin line (docs/legacy-ownpad-migration.md,
+	 * "Audit log"); `collision` only where a row was looked up and decided -
+	 * $collision is null otherwise, and the field left out.
+	 *
+	 * @return array<string,int|string>
+	 */
+	private function sameOriginContext(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision): array {
+		$context = [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
+			'originBranch' => 'same',
+			'accessMode' => $accessMode,
+		];
+		if ($collision !== null) {
+			$context['collision'] = $collision;
+		}
+		$context['uid'] = $uid;
+		return $context;
 	}
 
 	/**
@@ -70,15 +125,7 @@ class PadLegacyMigrationService {
 		if ($this->legacyImportPolicy->allowsProtectedImport()) {
 			return;
 		}
-		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-			'originBranch' => 'same',
-			'accessMode' => $accessMode,
-			'collision' => 'none',
-			'uid' => $uid,
-		]);
+		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 		throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
 	}
 
@@ -92,6 +139,8 @@ class PadLegacyMigrationService {
 	 *   a file the requesting user has no access to.
 	 * @throws LegacyProtectedImportDisabledException when the file names a
 	 *   group pad and this instance does not import those.
+	 * @throws LegacyPadNotFoundException when the file names a pad it cannot
+	 *   be linked to.
 	 */
 	public function migrate(string $uid, File $file, array $legacyShortcut): void {
 		$fileId = (int)$file->getId();
@@ -115,15 +164,30 @@ class PadLegacyMigrationService {
 		}
 
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
+		// Before any row is looked up, on every way below - a copy and a
+		// finish too: an id Etherpad's API rewrites would reach another
+		// file's pad past the collision rule. The document is built now so
+		// the format refuses an id it cannot hold before a row is made; and
+		// invalid UTF-8 and NUL must not reach PostgreSQL, which refuses them.
+		$document = PadId::isValid($sourcePadId) ? $this->managedDocument($fileId, $sourcePadId, $accessMode) : null;
+		if ($document === null) {
+			throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, null, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');
+		}
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
-			// After the refusal: asking first would answer three ways and
-			// make this an existence oracle on a privileged API.
-			$this->assertGroupPadExists($sourcePadId);
+			// After the switched-off refusal: asking first would answer three
+			// ways and make this an existence oracle on a privileged API.
+			if (!$this->groupHolds($sourcePadId)) {
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'not_in_group', 'The legacy .pad file names a pad its Etherpad group does not hold.');
+			}
+			$otherCase = $this->rowInOtherCase($sourcePadId);
+			if ($otherCase !== null) {
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'case_variant', 'The legacy .pad file names a pad bound under other capitals.', $otherCase->fileId);
+			}
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
 			// between findByPadId and createBinding), we re-classify as a
@@ -143,24 +207,12 @@ class PadLegacyMigrationService {
 					// so the open retry sees a clear "could not initialize".
 					throw $e;
 				}
-				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					'uid' => $uid,
-				]);
+				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, null));
 				// Fall through to the collision-with-access handling below.
 			}
 			if ($existingBinding === null) {
-				$this->writeManagedFrontmatter($file, $fileId, $sourcePadId, $accessMode);
-				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-					'originBranch' => 'same',
-					'accessMode' => $accessMode,
-					'collision' => 'none',
-					'uid' => $uid,
-				]);
+				$file->putContent($document);
+				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 				return;
 			}
 		}
@@ -171,16 +223,8 @@ class PadLegacyMigrationService {
 			// succeeded in creating the binding but failed before the file
 			// write. Just finish the file-side work; the binding already
 			// covers us.
-			$this->writeManagedFrontmatter($file, $fileId, $sourcePadId, $accessMode);
-			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-				'originBranch' => 'same',
-				'accessMode' => $accessMode,
-				'collision' => 'self',
-				'uid' => $uid,
-			]);
+			$file->putContent($document);
+			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'self'));
 			return;
 		}
 
@@ -188,12 +232,8 @@ class PadLegacyMigrationService {
 			$this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
 		} catch (NotFoundException) {
 			$this->logger->warning('Refused legacy Ownpad migration — pad already bound to a file the user cannot read.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
+				...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'no_access'),
 				'boundFileId' => $boundFileId,
-				'collision' => 'no_access',
-				'uid' => $uid,
 			]);
 			throw new LegacyPadCollisionException(
 				'This pad is already linked to another file you do not have access to.',
@@ -203,27 +243,24 @@ class PadLegacyMigrationService {
 		// Collision-with-access: write managed frontmatter but do NOT create
 		// a second binding row. The file becomes a "copy of a pad" in our
 		// model and the existing copy-handling flow takes over.
-		$this->writeManagedFrontmatter($file, $fileId, $sourcePadId, $accessMode);
+		$file->putContent($document);
 		$this->logger->info('Migrated legacy Ownpad .pad as copy of an already-bound pad.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-			'originBranch' => 'same',
-			'accessMode' => $accessMode,
-			'collision' => 'with_access',
+			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'with_access'),
 			'boundFileId' => $boundFileId,
-			'uid' => $uid,
 		]);
 	}
 
-	private function writeManagedFrontmatter(File $file, int $fileId, string $padId, string $accessMode): void {
-		$padUrl = $this->etherpadClient->buildPadUrl($padId);
-		$content = $this->padFileService->buildInitialDocument(
-			$fileId,
-			$padId,
-			$accessMode,
-			padUrl: $padUrl,
-		);
-		$file->putContent($content);
+	/** The managed `.pad` document naming the pad, or null where the format cannot hold its id. */
+	private function managedDocument(int $fileId, string $padId, string $accessMode): ?string {
+		try {
+			return $this->padFileService->buildInitialDocument(
+				$fileId,
+				$padId,
+				$accessMode,
+				padUrl: $this->etherpadClient->buildPadUrl($padId),
+			);
+		} catch (PadFileFormatException) {
+			return null;
+		}
 	}
 }

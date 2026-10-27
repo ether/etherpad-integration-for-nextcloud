@@ -84,7 +84,7 @@ final class SensitiveMethods {
 		// to Etherpad or compared with what it holds, read from the file
 		// and split, put together and written, a template filled in or
 		// stored, a pad's HTML made safe to show.
-		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed', 'isMadeAnew'],
+		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed', 'provisionSeeded', 'isMadeAnew'],
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
 			'parsePadFile', 'readPad', 'serialize', 'parseLegacyOwnpadShortcut',
 			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',

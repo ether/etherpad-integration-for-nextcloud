@@ -39,6 +39,13 @@ class EtherpadErrorClassifierTest extends TestCase {
 		];
 	}
 
+	/** Etherpad not knowing a group, and nothing else: not a pad it does not know, nor a group it was not given. */
+	public function testReadsAGroupAsUnknownOnlyForThatAnswer(): void {
+		self::assertTrue(EtherpadErrorClassifier::isGroupUnknown(new \RuntimeException('Etherpad API error (listPads): groupID does not exist')));
+		self::assertFalse(EtherpadErrorClassifier::isGroupUnknown(new \RuntimeException('padID does not exist')));
+		self::assertFalse(EtherpadErrorClassifier::isGroupUnknown(new \RuntimeException('groupID is required')));
+	}
+
 	public function testReadsASessionAsGoneOnlyForASessionAnswer(): void {
 		self::assertTrue(EtherpadErrorClassifier::isSessionAlreadyGone(new \RuntimeException('sessionID does not exist')));
 		self::assertFalse(EtherpadErrorClassifier::isSessionAlreadyGone(new \RuntimeException('padID does not exist')));

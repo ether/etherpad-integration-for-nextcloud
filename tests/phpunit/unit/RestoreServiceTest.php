@@ -130,8 +130,8 @@ class RestoreServiceTest extends TestCase {
 
 	/**
 	 * Seeding can fail after the pad is made. Nothing names it yet - the
-	 * claim comes later - so it goes, and the file and its row are left as
-	 * they were.
+	 * claim comes later - so it goes without the binding table being asked,
+	 * and the file and its row are left as they were.
 	 */
 	public function testRestoreRemovesAReplacementItCouldNotSeed(): void {
 		$fileId = 95;
@@ -139,6 +139,7 @@ class RestoreServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('rebind');
 		$bindingService->expects($this->never())->method('deleteActiveBinding');
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('Database gone'));
 
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
 		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
@@ -150,6 +151,69 @@ class RestoreServiceTest extends TestCase {
 
 		$this->expectException(LifecycleException::class);
 		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
+	}
+
+	/**
+	 * A failure after the seed, building the content that names the new pad,
+	 * lets the pad go as well: no row names it yet.
+	 */
+	public function testRestoreLetsANewPadGoWhenItsContentCannotBeBuilt(): void {
+		$fileId = 96;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('padID does not exist'));
+		$etherpadClient->method('buildPadUrl')->willThrowException(new \RuntimeException('No Etherpad address'));
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->padFile($fileId, 'Restored.pad');
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
+	}
+
+	/** A replacement that cannot be seeded nor taken down is named in the log with its file and its way. */
+	public function testAReplacementLeftOverIsNamedWithItsFile(): void {
+		$fileId = 95;
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->method('setText')->willThrowException(new \RuntimeException('Connection reset'));
+		$etherpadClient->method('deletePad')->willThrowException(new \RuntimeException('Connection reset'));
+		$lines = [];
+		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
+		$padLifecycleLogger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[$message] = [$context['fileId'] ?? null, $context['operation'] ?? null];
+		});
+
+		try {
+			$this->buildRowRestoreService($fileId, 'old-pad', $this->createMock(BindingService::class), $etherpadClient, padLifecycleLogger: $padLifecycleLogger)->restore($this->padFile($fileId, 'Restored.pad'));
+			$this->fail('the seed\'s failure goes on');
+		} catch (LifecycleException) {
+			// The seed's failure, as the restore reports it.
+		}
+
+		$this->assertSame([$fileId, 'restore from snapshot'], $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
+	}
+
+	/**
+	 * After the seed, a row that cannot be read keeps the new pad: it might
+	 * name it, and a pad a row names is not taken down.
+	 */
+	public function testANewPadARowMightNameIsKept(): void {
+		$fileId = 97;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('Database gone'));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('padID does not exist'));
+		$etherpadClient->method('buildPadUrl')->willThrowException(new \RuntimeException('No Etherpad address'));
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($this->padFile($fileId, 'Restored.pad'));
 	}
 
 	/**
@@ -344,7 +408,8 @@ class RestoreServiceTest extends TestCase {
 
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
 		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
-		$etherpadClient->method('createGroupPad')->willReturn($newPadId);
+		// A protected replacement is named `restored-` and its suffix.
+		$etherpadClient->method('createGroupPad')->with('g.NEWGROUPID12345', 'restored-abc123def456')->willReturn($newPadId);
 		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.NEWGROUPID12345');
 		$etherpadClient->expects($this->never())->method('listPads');
 
@@ -516,11 +581,11 @@ class RestoreServiceTest extends TestCase {
 	 * Each replacement is named after the pad before it. Built on an earlier
 	 * restore's name it grew by fifteen characters each time, and Etherpad
 	 * refuses a pad name past fifty: the second replacement of one file
-	 * already failed.
+	 * already failed. A base cut at a dash loses the dash.
 	 */
 	public function testAReplacementNameDoesNotGrowAndFitsEtherpad(): void {
 		$created = [];
-		foreach (['r-nc-abcdefghijklmnopqrstuvwx-zyxwvutsrqpo', 'legacy-' . str_repeat('x', 80)] as $oldPadId) {
+		foreach (['r-nc-abcdefghijklmnopqrstuvwx-zyxwvutsrqpo', 'legacy-' . str_repeat('x', 80), str_repeat('a', 34) . '-' . str_repeat('b', 10)] as $oldPadId) {
 			$bindingService = $this->createMock(BindingService::class);
 			$bindingService->method('rebind')->willReturn(true);
 			$etherpadClient = $this->buildEtherpadWithoutThePad();
@@ -533,6 +598,7 @@ class RestoreServiceTest extends TestCase {
 		$this->assertSame('r-nc-abcdefghijklmnopqrstuvwx-abc123def456', $created[0]);
 		$this->assertSame('r-legacy-' . str_repeat('x', 28) . '-abc123def456', $created[1]);
 		$this->assertSame(50, strlen($created[1]));
+		$this->assertSame('r-' . str_repeat('a', 34) . '-abc123def456', $created[2]);
 	}
 
 	public function testRestoreWithoutBindingRecreatesManagedPublicPad(): void {

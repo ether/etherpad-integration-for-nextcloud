@@ -442,6 +442,37 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
+	/**
+	 * The names a new pad gets: what the first open, and a template, make it
+	 * under - and what a new file's create asks for, made in Etherpad.
+	 */
+	public function testNamesANewPad(): void {
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturnCallback(
+			static fn (int $length, string $characters): string => $characters === ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS ? str_repeat('x', $length) : '?'
+		);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('createPad')->with('nc-' . str_repeat('x', 24));
+		$etherpadClient->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$etherpadClient->expects($this->once())->method('createGroupPad')->with('g.ABCDEFGHIJKLMNOP', 'p-' . str_repeat('x', 20))->willReturn('g.ABCDEFGHIJKLMNOP$p-' . str_repeat('x', 20));
+		$service = new PadBootstrapService(
+			$this->createMock(BindingService::class),
+			$this->createMock(PadFileService::class),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$secureRandom,
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($this->writableFile()),
+			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		);
+
+		$this->assertSame('nc-' . str_repeat('x', 24), $service->newPadId());
+		$this->assertSame('p-' . str_repeat('x', 20), $service->newGroupPadName());
+		$this->assertSame('nc-' . str_repeat('x', 24), $service->provisionPadId(BindingService::ACCESS_PUBLIC));
+		$this->assertSame('g.ABCDEFGHIJKLMNOP$p-' . str_repeat('x', 20), $service->provisionPadId(BindingService::ACCESS_PROTECTED));
+	}
+
 	private function buildService(
 		BindingService $bindingService,
 		PadFileService $padFileService,

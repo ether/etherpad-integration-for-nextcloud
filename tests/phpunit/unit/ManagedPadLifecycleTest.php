@@ -336,15 +336,17 @@ class ManagedPadLifecycleTest extends TestCase {
 
 	/**
 	 * A pad that was there before the call is not ours to undo: deleting it
-	 * would destroy live content.
+	 * would destroy live content, and nothing is seeded into it.
 	 */
 	public function testLeavesAPadThatWasAlreadyThere(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('createPad')->willThrowException(new \RuntimeException('padID does already exist'));
+		$client->method('createPad')->willThrowException(new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'));
+		$client->expects($this->never())->method('setHTML');
+		$client->expects($this->never())->method('setText');
 		$client->expects($this->never())->method('deletePad');
 
-		$this->expectException(\RuntimeException::class);
-		$this->provisionPublic($client, 'nc-abcdef0123456789');
+		$this->expectException(EtherpadRefusedException::class);
+		$this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-abcdef0123456789', static fn (): string => 'p-unused', 'text', '<p>text</p>');
 	}
 
 	/**
@@ -509,7 +511,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('setText');
 		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(2);
 
-		$this->assertSame(2, $this->lifecycle($client)->seed('nc-pad', 'text', '<p>text</p>'));
+		$this->assertSame(['nc-pad', 2], $this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '<p>text</p>'));
 	}
 
 	/** Etherpad not saying how many revisions leaves the file to its first sync. */
@@ -519,7 +521,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
 		$client->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
 
-		$this->assertSame(-1, $this->lifecycle($client)->seed('nc-pad', 'text', '   '));
+		$this->assertSame(['nc-pad', -1], $this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '   '));
 	}
 
 	/** Never both: setText replaces, so it would wipe the HTML just imported. */
@@ -533,7 +535,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('warning')
-			->with($this->anything(), $this->callback(
+			->with('Could not import the HTML snapshot; falling back to plain text.', $this->callback(
 				// The file, not the pad: a pad id plus the configured host is
 				// a link into a public pad, and the caller's fileId leads to
 				// it through ep_pad_bindings anyway.
@@ -541,6 +543,122 @@ class ManagedPadLifecycleTest extends TestCase {
 					&& !isset($context['padId'])
 			));
 
-		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
+		(new ManagedPadLifecycle($client, $logger))->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '<p>text</p>', ['fileId' => 7]);
+	}
+
+	public function testMakesAndSeedsAPadAsOneStep(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('createPad')->with('nc-pad');
+		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
+		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(1);
+		$client->expects($this->never())->method('deletePad');
+
+		$this->assertSame(['nc-pad', 1], $this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '', ['fileId' => 7]));
+	}
+
+	/**
+	 * A seed that fails takes its new pad down before the failure goes on:
+	 * a public pad by its id, a protected one with its group, which holds
+	 * nothing else to ask about. An error, not only an exception.
+	 */
+	public function testASeedThatFailsTakesItsNewPadDown(): void {
+		$cases = [
+			BindingService::ACCESS_PUBLIC => ['deletePad', 'nc-pad', new EtherpadClientException('Etherpad API request failed: setText')],
+			BindingService::ACCESS_PROTECTED => ['deleteGroup', 'g.AbCdEfGh12345678', new \TypeError('a seed gone wrong')],
+		];
+		foreach ($cases as $accessMode => [$discard, $id, $failure]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('createGroup')->willReturn('g.AbCdEfGh12345678');
+			$client->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-new');
+			$client->method('setText')->willThrowException($failure);
+			$client->expects($this->once())->method($discard)->with($id);
+			$client->expects($this->never())->method('listPads');
+
+			try {
+				$this->lifecycle($client)->provisionSeeded($accessMode, static fn (): string => 'nc-pad', static fn (): string => 'p-new', 'text', '');
+				$this->fail($accessMode . ': the seed\'s failure goes on');
+			} catch (\Throwable $e) {
+				$this->assertSame($failure, $e, $accessMode);
+			}
+		}
+	}
+
+	/**
+	 * An error from the cleanup, not only an exception, leaves the seed's
+	 * failure the one that goes on; the line names the pad left over and
+	 * its file, as no row leads to it.
+	 */
+	public function testANewPadThatCannotBeTakenDownIsNamed(): void {
+		$refused = new EtherpadClientException('Etherpad API request failed: setText');
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('setText')->willThrowException($refused);
+		$client->method('deletePad')->willThrowException(new \TypeError('a cleanup gone wrong'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
+				static fn (array $context): bool => ($context['app'] ?? null) === 'etherpad_nextcloud'
+					&& ($context['padId'] ?? null) === 'nc-pad'
+					&& ($context['fileId'] ?? null) === 7
+					&& ($context['error'] ?? null) === \TypeError::class
+			));
+
+		try {
+			(new ManagedPadLifecycle($client, $logger))->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '', ['fileId' => 7]);
+			$this->fail('the seed\'s failure goes on');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame($refused, $e);
+		}
+	}
+
+	/** Each of the five on its own, so none can drop out of the pattern unnoticed. */
+	public function testAPublicIdCreatePadRefusesIsNotTried(): void {
+		foreach (['a$b', 'a/b', 'a?b', 'a&b', 'a#b'] as $padId) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->expects($this->never())->method('createPad');
+			$client->expects($this->never())->method('deletePad');
+
+			try {
+				$this->provisionPublic($client, $padId);
+				$this->fail($padId . ' should have been refused');
+			} catch (\InvalidArgumentException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
+
+	/**
+	 * The lines' own fields win over a caller's: a context naming another
+	 * app or error, or for the left-over line another pad, does not make
+	 * the line say so.
+	 */
+	public function testALinesOwnFieldsWinOverTheCallers(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('setHTML')->willThrowException(new \RuntimeException('setHTML unsupported'));
+		$client->method('setText')->willThrowException(new EtherpadClientException('Etherpad API request failed: setText'));
+		$client->method('deletePad')->willThrowException(new \TypeError('a cleanup gone wrong'));
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[$message] = [$context['app'] ?? null, $context['padId'] ?? null, $context['error'] ?? null];
+		});
+
+		try {
+			(new ManagedPadLifecycle($client, $logger))->provisionSeeded(
+				BindingService::ACCESS_PUBLIC,
+				static fn (): string => 'nc-pad',
+				static fn (): string => 'p-unused',
+				'text',
+				'<p>text</p>',
+				['fileId' => 7, 'app' => 'other', 'padId' => 'other', 'error' => 'other'],
+			);
+			$this->fail('the seed\'s failure goes on');
+		} catch (EtherpadClientException) {
+			// The seed's failure, as the step lets it go on.
+		}
+
+		$fallback = $lines['Could not import the HTML snapshot; falling back to plain text.'] ?? [];
+		$this->assertSame(['etherpad_nextcloud', \RuntimeException::class], [$fallback[0] ?? null, $fallback[2] ?? null]);
+		$this->assertSame(['etherpad_nextcloud', 'nc-pad', \TypeError::class], $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
 	}
 }

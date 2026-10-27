@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
+use OCA\EtherpadNextcloud\Util\PadId;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use Psr\Log\LoggerInterface;
@@ -173,7 +174,7 @@ class GoneFileSweep {
 	 * The pad and row of a file gone for good, once the file cache confirms
 	 * it. Left when the file is there after all, the row changed, or
 	 * Etherpad refused - then tried again an hour later, with a warning the
-	 * first time.
+	 * first time. Under an id PadId::isValid() refuses, only the row goes.
 	 *
 	 * @return bool whether pad and row went
 	 * @throws RunBudgetSpentException
@@ -181,6 +182,21 @@ class GoneFileSweep {
 	 */
 	private function discard(Binding $binding, RunBudget $budget): bool {
 		if (!$this->bindingService->isFileGone($binding->fileId)) {
+			return false;
+		}
+		if (!PadId::isValid($binding->padId)) {
+			// Etherpad's API may rewrite such an id onto another pad and
+			// delete that one; an earlier version bound some. The line leaves
+			// the id out, as it may lead to another file's pad.
+			if ($budget->exhausted()) {
+				throw new RunBudgetSpentException('No time left in the run for another row.');
+			}
+			if ($this->bindingService->deleteInState($binding->fileId, $binding->padId, BindingService::STATE_PENDING_DELETE)) {
+				$this->logger->warning('The file of a pad is gone for good; its row goes, but the pad stays: Etherpad\'s API may not act on its id as it is.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $binding->fileId,
+				]);
+			}
 			return false;
 		}
 		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $binding->fileId, 'padId' => $binding->padId];

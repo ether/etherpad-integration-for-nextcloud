@@ -81,6 +81,12 @@ class ManagedPadLifecycle {
 	 * nothing.
 	 */
 	private function provisionPad(string $padId): void {
+		// createPad refuses $ / ? & # before it makes anything, and
+		// deletePad takes / ? & # - and $ for a group pad: the delete after
+		// that refusal could take down a pad already under the id.
+		if (preg_match('~[$/?&#]~', $padId) === 1) {
+			throw new \InvalidArgumentException('A public pad id holds none of $ / ? & #.');
+		}
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
@@ -110,7 +116,8 @@ class ManagedPadLifecycle {
 	 *
 	 * @param callable():string $padId the id a public pad is created under
 	 * @param callable():string $groupPadName the name a protected pad carries
-	 * @throws \InvalidArgumentException when $accessMode is not a known mode
+	 * @throws \InvalidArgumentException when $accessMode is not a known mode,
+	 *   or a public pad's id holds one of $ / ? & #
 	 */
 	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
 		$mode = PadAccessMode::tryFrom($accessMode);
@@ -153,19 +160,17 @@ class ManagedPadLifecycle {
 	 *
 	 * @param array<string,mixed> $context extra keys for the fallback's log
 	 *   line; `app` and SafeError's `error`, `error_message` and
-	 *   `error_origin` are set here and win a collision. Do not pass a pad
-	 *   id - the fileId every caller already supplies is the handle
+	 *   `error_origin` are set here and win a collision. No pad id: with
+	 *   the configured host it is a working link into a public pad, where a
+	 *   fileId leads to the pad only through its row
 	 * @return int the pad's revisions once seeded, -1 when not known
 	 */
-	public function seed(string $padId, string $text, string $html, array $context = []): int {
+	private function seed(string $padId, string $text, string $html, array $context = []): int {
 		if (trim($html) !== '') {
 			try {
 				$this->etherpadClient->setHTML($padId, $html);
 				return $this->revisionsOfSeeded($padId);
 			} catch (\Throwable $htmlError) {
-				// Every caller supplies a fileId in $context, which is the
-				// handle to keep: a pad id plus the configured host is a
-				// working link into a public pad.
 				$this->logger->warning('Could not import the HTML snapshot; falling back to plain text.', [
 					'app' => 'etherpad_nextcloud',
 					...SafeError::context($htmlError),
@@ -175,6 +180,38 @@ class ManagedPadLifecycle {
 
 		$this->etherpadClient->setText($padId, $text);
 		return $this->revisionsOfSeeded($padId);
+	}
+
+	/**
+	 * A new pad (provisionFor()) seeded with a snapshot (seed()), the only
+	 * way to seed one. A seed that fails has the pad taken down, as no row
+	 * names it yet, and its failure goes on. Only what this call made goes -
+	 * a group pad with its own new group - never a pad that was there
+	 * before; one that cannot be taken down is named in the log, the only
+	 * handle left on it.
+	 *
+	 * @param callable():string $padId as for provisionFor()
+	 * @param callable():string $groupPadName as for provisionFor()
+	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
+	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
+	 * @throws \InvalidArgumentException as provisionFor()
+	 */
+	public function provisionSeeded(string $accessMode, callable $padId, callable $groupPadName, string $text, string $html, array $context = []): array {
+		$madeId = $this->provisionFor($accessMode, $padId, $groupPadName);
+		try {
+			return [$madeId, $this->seed($madeId, $text, $html, $context)];
+		} catch (\Throwable $e) {
+			try {
+				$this->discardProvisioned($madeId);
+			} catch (\Throwable $cleanupError) {
+				$this->logger->warning('Could not remove a new Etherpad pad after seeding it failed.', [
+					'app' => 'etherpad_nextcloud',
+					'padId' => $madeId,
+					...SafeError::context($cleanupError),
+				] + $context);
+			}
+			throw $e;
+		}
 	}
 
 	private function revisionsOfSeeded(string $padId): int {

@@ -105,6 +105,42 @@ class BindingService {
 	}
 
 	/**
+	 * A row, in any state, whose pad id is $padId in other capitals: the
+	 * same once lowered - the column by the database's LOWER(), $padId by
+	 * mb_strtolower() - yet not the same as it is; as close to Etherpad's
+	 * lowering as the database's locale and mbstring come to Node's. A
+	 * final sigma counts as σ on both sides: JavaScript lowers Σ to ς at a
+	 * word's end, where a database lowering letter by letter makes σ of it,
+	 * and so does PHP before 8.3. The id as it is is told apart here, not
+	 * in the query, where a case-insensitive collation would take the rows
+	 * sought for it; the table holds it once at most, so two rows are
+	 * enough. No index serves it.
+	 */
+	public function findByPadIdInOtherCase(string $padId): ?Binding {
+		$qb = $this->db->getQueryBuilder();
+		$qb->createNamedParameter('ς', IQueryBuilder::PARAM_STR, ':finalsigma');
+		$qb->createNamedParameter('σ', IQueryBuilder::PARAM_STR, ':sigma');
+		$qb->select('*')
+			->from(self::TABLE)
+			->where($qb->expr()->eq(
+				$qb->createFunction('REPLACE(LOWER(' . $qb->getColumnName('pad_id') . '), :finalsigma, :sigma)'),
+				$qb->createNamedParameter(str_replace('ς', 'σ', mb_strtolower($padId, 'UTF-8'))),
+			))
+			->setMaxResults(2);
+
+		$result = $qb->executeQuery();
+		$found = null;
+		while ($found === null && ($row = DbRows::one($result->fetch())) !== null) {
+			if (DbRows::string($row, 'pad_id') !== $padId) {
+				$found = Binding::fromRow($row);
+			}
+		}
+		$result->closeCursor();
+
+		return $found;
+	}
+
+	/**
 	 * Move one binding from one state to another, but only if it is still
 	 * in the first and still names this pad. Whoever finds the row changed
 	 * has lost to whoever changed it, and gets false rather than an

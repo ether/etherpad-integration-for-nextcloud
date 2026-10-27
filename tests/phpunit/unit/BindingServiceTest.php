@@ -154,6 +154,36 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
+	 * A pad's row under other capitals, in any state: lowered as the
+	 * database lowers the column and PHP the id - a Kelvin sign is a `k`
+	 * to PHP - with a final sigma as σ, which PHP before 8.3 makes of Σ
+	 * where JavaScript makes ς, and an id may write ς itself. The same id
+	 * as it is, or another once lowered, is none - told apart after the
+	 * query, which answers two rows at most. Its result is closed.
+	 */
+	public function testFindsAPadsRowUnderOtherCapitals(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(5, 'nc-abc', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(10, 'team-notes', BindingService::STATE_ACTIVE),
+			self::bindingRow(6, 'Team-Notes', BindingService::STATE_ACTIVE),
+			self::bindingRow(7, 'nc-kelvin', BindingService::STATE_ACTIVE),
+			self::bindingRow(8, 'σημειώσεις', BindingService::STATE_ACTIVE),
+			self::bindingRow(9, 'ας', BindingService::STATE_ACTIVE),
+		]);
+		$service = new BindingService($table, new FixedClock(500));
+
+		$this->assertSame(5, $service->findByPadIdInOtherCase('NC-ABC')?->fileId);
+		$this->assertSame(6, $service->findByPadIdInOtherCase('team-notes')?->fileId);
+		$this->assertSame(7, $service->findByPadIdInOtherCase("nc-\u{212A}elvin")?->fileId);
+		$this->assertSame(8, $service->findByPadIdInOtherCase('ΣΗΜΕΙΏΣΕΙΣ')?->fileId);
+		$this->assertSame(9, $service->findByPadIdInOtherCase('Ας')?->fileId);
+		$this->assertNull($service->findByPadIdInOtherCase('nc-abc'), 'the same id');
+		$this->assertNull($service->findByPadIdInOtherCase('NC-ABD'), 'another id');
+		$this->assertSame([2, 2, 2, 2, 2, 2, 2], $table->limits);
+		$this->assertSame(0, $table->openResults);
+	}
+
+	/**
 	 * Files seen deleted for good: their active rows wait for their pads to
 	 * go, dated now, deleted_at and updated_at alike; a row that waits
 	 * already keeps its dates, and the other rows are left alone. Files the
