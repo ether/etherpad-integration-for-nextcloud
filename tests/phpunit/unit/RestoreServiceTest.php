@@ -130,8 +130,8 @@ class RestoreServiceTest extends TestCase {
 
 	/**
 	 * Seeding can fail after the pad is made. Nothing names it yet - the
-	 * claim comes later - so it goes, and the file and its row are left as
-	 * they were.
+	 * claim comes later - so it goes without the binding table being asked,
+	 * and the file and its row are left as they were.
 	 */
 	public function testRestoreRemovesAReplacementItCouldNotSeed(): void {
 		$fileId = 95;
@@ -139,6 +139,7 @@ class RestoreServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('rebind');
 		$bindingService->expects($this->never())->method('deleteActiveBinding');
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('Database gone'));
 
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
 		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
@@ -173,6 +174,46 @@ class RestoreServiceTest extends TestCase {
 
 		$this->expectException(LifecycleException::class);
 		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
+	}
+
+	/** A replacement that cannot be seeded nor taken down is named in the log with its file. */
+	public function testAReplacementLeftOverIsNamedWithItsFile(): void {
+		$fileId = 95;
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->method('setText')->willThrowException(new \RuntimeException('Connection reset'));
+		$etherpadClient->method('deletePad')->willThrowException(new \RuntimeException('Connection reset'));
+		$lines = [];
+		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
+		$padLifecycleLogger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[$message] = $context['fileId'] ?? null;
+		});
+
+		try {
+			$this->buildRowRestoreService($fileId, 'old-pad', $this->createMock(BindingService::class), $etherpadClient, padLifecycleLogger: $padLifecycleLogger)->restore($this->padFile($fileId, 'Restored.pad'));
+			$this->fail('the seed\'s failure goes on');
+		} catch (LifecycleException) {
+			// The seed's failure, as the restore reports it.
+		}
+
+		$this->assertSame($fileId, $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
+	}
+
+	/**
+	 * After the seed, a row that cannot be read keeps the new pad: it might
+	 * name it, and a pad a row names is not taken down.
+	 */
+	public function testANewPadARowMightNameIsKept(): void {
+		$fileId = 97;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('Database gone'));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('padID does not exist'));
+		$etherpadClient->method('buildPadUrl')->willThrowException(new \RuntimeException('No Etherpad address'));
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($this->padFile($fileId, 'Restored.pad'));
 	}
 
 	/**

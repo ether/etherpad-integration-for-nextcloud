@@ -157,7 +157,7 @@ class ManagedPadLifecycle {
 	 *   id - the fileId every caller already supplies is the handle
 	 * @return int the pad's revisions once seeded, -1 when not known
 	 */
-	public function seed(string $padId, string $text, string $html, array $context = []): int {
+	private function seed(string $padId, string $text, string $html, array $context = []): int {
 		if (trim($html) !== '') {
 			try {
 				$this->etherpadClient->setHTML($padId, $html);
@@ -178,14 +178,13 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * A pad $provision makes, seeded with a snapshot (seed()), as one step.
-	 * A seed that fails has the pad taken down before its failure goes on,
-	 * as no row names it yet; a pad that cannot be taken down is named in
-	 * the log, the only handle left on it, and the seed's failure still
-	 * goes on.
+	 * A new pad seeded with a snapshot (seed()), the only way to seed one. A
+	 * seed that fails has the pad taken down, as no row names it yet, and
+	 * its failure goes on; a pad that cannot be taken down is named in the
+	 * log, the only handle left on it.
 	 *
-	 * @param \Closure(): string $provision makes a new pad (provisionFor()) and gives its id - for a
-	 *   group pad, in a group made for it. Never one that was there before: a failed seed takes
+	 * @param \Closure(): string $provision makes a new pad (provisionFor()) and gives its id - a
+	 *   group pad in a group made for it. Never one that was there before: a failed seed takes
 	 *   the pad down, a group pad with its group
 	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
 	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)

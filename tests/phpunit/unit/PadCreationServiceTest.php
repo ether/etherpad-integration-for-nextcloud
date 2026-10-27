@@ -373,7 +373,9 @@ class PadCreationServiceTest extends TestCase {
 
 	/**
 	 * A template's pad Etherpad will not take the content for goes before
-	 * the failure does: no row names it, and the file is left unwritten.
+	 * the failure does, without asking the binding table - no row can name
+	 * a pad just made, and a table that cannot answer would keep it - and
+	 * the file is left unwritten.
 	 */
 	public function testATemplatesPadThatCannotBeSeededGoes(): void {
 		$template = $this->createMock(\OCP\Files\File::class);
@@ -382,7 +384,10 @@ class PadCreationServiceTest extends TestCase {
 
 		$target = $this->createMock(\OCP\Files\File::class);
 		$target->method('getId')->willReturn(4321);
-		$target->expects($this->never())->method('putContent');
+		$written = $this->createMock(\OCP\Files\File::class);
+		$written->expects($this->never())->method('putContent');
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($written);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
@@ -407,10 +412,12 @@ class PadCreationServiceTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('createBinding');
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('Database gone'));
 
 		try {
 			$this->buildService(
 				padFileService: $padFileService,
+				userNodeResolver: $resolver,
 				bindingService: $bindingService,
 				etherpadClient: $etherpadClient,
 				bootstrap: $bootstrap,
@@ -419,6 +426,48 @@ class PadCreationServiceTest extends TestCase {
 		} catch (EtherpadClientException $e) {
 			$this->assertSame($refused, $e);
 		}
+	}
+
+	/** A template's pad that cannot be taken down either is named in the log with its file. */
+	public function testATemplatesPadLeftOverIsNamedWithItsFile(): void {
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '']);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('nc-new');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('setText')->willThrowException(new EtherpadClientException('Etherpad API request failed: setText'));
+		$etherpadClient->method('deletePad')->willThrowException(new EtherpadClientException('Etherpad API request failed: deletePad'));
+		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
+		$padLifecycleLogger->expects($this->once())
+			->method('warning')
+			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
+				static fn (array $context): bool => ($context['fileId'] ?? null) === 4321 && ($context['padId'] ?? null) === 'nc-new'
+			));
+
+		$this->expectException(EtherpadClientException::class);
+
+		$this->buildService(
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			bootstrap: $bootstrap,
+			padLifecycleLogger: $padLifecycleLogger,
+		)->materializeTemplateInto($target, $template, $this->materializeUser());
 	}
 
 	public function testATemplatesPadWhoseRevisionsEtherpadDoesNotSayStartsAtZero(): void {
@@ -1235,6 +1284,7 @@ class PadCreationServiceTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?\OCA\EtherpadNextcloud\Service\PadTypePolicy $padTypePolicy = null,
 		?LoggerInterface $logger = null,
+		?LoggerInterface $padLifecycleLogger = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
 			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000));
@@ -1256,7 +1306,7 @@ class PadCreationServiceTest extends TestCase {
 			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			new ManagedPadLifecycle($etherpadClient, $padLifecycleLogger ?? $this->createMock(LoggerInterface::class)),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,
 			$externalPadSeeder,

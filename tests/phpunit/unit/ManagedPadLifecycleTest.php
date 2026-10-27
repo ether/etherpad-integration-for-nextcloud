@@ -509,7 +509,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('setText');
 		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(2);
 
-		$this->assertSame(2, $this->lifecycle($client)->seed('nc-pad', 'text', '<p>text</p>'));
+		$this->assertSame(['nc-pad', 2], $this->lifecycle($client)->provisionSeeded(static fn (): string => 'nc-pad', 'text', '<p>text</p>'));
 	}
 
 	/** Etherpad not saying how many revisions leaves the file to its first sync. */
@@ -519,7 +519,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
 		$client->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
 
-		$this->assertSame(-1, $this->lifecycle($client)->seed('nc-pad', 'text', '   '));
+		$this->assertSame(['nc-pad', -1], $this->lifecycle($client)->provisionSeeded(static fn (): string => 'nc-pad', 'text', '   '));
 	}
 
 	/** Never both: setText replaces, so it would wipe the HTML just imported. */
@@ -533,7 +533,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('warning')
-			->with($this->anything(), $this->callback(
+			->with('Could not import the HTML snapshot; falling back to plain text.', $this->callback(
 				// The file, not the pad: a pad id plus the configured host is
 				// a link into a public pad, and the caller's fileId leads to
 				// it through ep_pad_bindings anyway.
@@ -541,7 +541,7 @@ class ManagedPadLifecycleTest extends TestCase {
 					&& !isset($context['padId'])
 			));
 
-		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
+		(new ManagedPadLifecycle($client, $logger))->provisionSeeded(static fn (): string => 'nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
 
 	public function testMakesAndSeedsAPadAsOneStep(): void {
@@ -563,21 +563,19 @@ class ManagedPadLifecycleTest extends TestCase {
 	/**
 	 * A seed that fails takes its new pad down before the failure goes on:
 	 * a public pad by its id, a protected one with its group, which holds
-	 * nothing else.
+	 * nothing else to ask about. An error, not only an exception.
 	 */
 	public function testASeedThatFailsTakesItsNewPadDown(): void {
 		$cases = [
-			BindingService::ACCESS_PUBLIC => ['deletePad', 'nc-pad'],
-			BindingService::ACCESS_PROTECTED => ['deleteGroup', 'g.AbCdEfGh12345678'],
+			BindingService::ACCESS_PUBLIC => ['deletePad', 'nc-pad', new EtherpadClientException('Etherpad API request failed: setText')],
+			BindingService::ACCESS_PROTECTED => ['deleteGroup', 'g.AbCdEfGh12345678', new \TypeError('a seed gone wrong')],
 		];
-		foreach ($cases as $accessMode => [$discard, $id]) {
-			$refused = new EtherpadClientException('Etherpad API request failed: setText');
+		foreach ($cases as $accessMode => [$discard, $id, $failure]) {
 			$client = $this->createMock(EtherpadClient::class);
 			$client->method('createGroup')->willReturn('g.AbCdEfGh12345678');
 			$client->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-new');
-			$client->method('setText')->willThrowException($refused);
+			$client->method('setText')->willThrowException($failure);
 			$client->expects($this->once())->method($discard)->with($id);
-			// Made in this step, so its group holds nothing else to ask about.
 			$client->expects($this->never())->method('listPads');
 			$lifecycle = $this->lifecycle($client);
 
@@ -588,8 +586,8 @@ class ManagedPadLifecycleTest extends TestCase {
 					'',
 				);
 				$this->fail($accessMode . ': the seed\'s failure goes on');
-			} catch (EtherpadClientException $e) {
-				$this->assertSame($refused, $e, $accessMode);
+			} catch (\Throwable $e) {
+				$this->assertSame($failure, $e, $accessMode);
 			}
 		}
 	}
@@ -597,20 +595,20 @@ class ManagedPadLifecycleTest extends TestCase {
 	/**
 	 * A new pad that cannot be taken down is named in the log - no row
 	 * names it, so nothing else leads to it - and the seed's failure, not
-	 * the cleanup's, goes on.
+	 * the cleanup's, goes on, whatever the cleanup throws.
 	 */
 	public function testANewPadThatCannotBeTakenDownIsNamed(): void {
 		$refused = new EtherpadClientException('Etherpad API request failed: setText');
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('setText')->willThrowException($refused);
-		$client->method('deletePad')->willThrowException(new \RuntimeException('Connection reset'));
+		$client->method('deletePad')->willThrowException(new \TypeError('a cleanup gone wrong'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('warning')
 			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
 				static fn (array $context): bool => ($context['padId'] ?? null) === 'nc-pad'
 					&& ($context['fileId'] ?? null) === 7
-					&& ($context['error'] ?? null) === \RuntimeException::class
+					&& ($context['error'] ?? null) === \TypeError::class
 			));
 
 		try {
@@ -619,20 +617,5 @@ class ManagedPadLifecycleTest extends TestCase {
 		} catch (EtherpadClientException $e) {
 			$this->assertSame($refused, $e);
 		}
-	}
-
-	/** The seed's own line, an HTML snapshot Etherpad refuses, names the file the step was for. */
-	public function testTheSeedSaysWhichFileItIsFor(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('setHTML')->willThrowException(new \RuntimeException('setHTML unsupported'));
-		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
-			->method('warning')
-			->with('Could not import the HTML snapshot; falling back to plain text.', $this->callback(
-				static fn (array $context): bool => ($context['fileId'] ?? null) === 7
-			));
-
-		(new ManagedPadLifecycle($client, $logger))->provisionSeeded(static fn (): string => 'nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
 }
