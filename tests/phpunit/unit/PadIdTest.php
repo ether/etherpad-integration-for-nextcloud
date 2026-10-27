@@ -46,14 +46,17 @@ class PadIdTest extends TestCase {
 		yield 'fifty-two UTF-16 units of characters past the BMP' => [str_repeat('😀', 26), false];
 		yield 'forty-nine characters and one past the BMP' => [str_repeat('a', 49) . '😀', false];
 		yield 'fifty characters and a line break' => [str_repeat('a', 50) . "\n", false];
+		// The line break is part of the name, so this is not the dot name.
+		yield 'a dot and a line break' => [".\n", true];
 		yield 'not UTF-8' => ["\xff", false];
 	}
 
 	/**
 	 * Etherpad's rule from 3.3.3 (isValidPadId() in its PadManager): the
-	 * name counted in UTF-16 units, as JavaScript counts it, up to the
-	 * string's very end - a final line break gives it no room. The dot after
-	 * `g` is a dot, stricter than Etherpad's pattern.
+	 * name counted in UTF-16 units, as JavaScript counts it, and the
+	 * pattern's end the string's very end - a final line break is part of
+	 * the name, as in Etherpad. The dot after `g` is a dot, stricter than
+	 * Etherpad's pattern.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('ids')]
 	public function testAPadIdIsValidAsEtherpadSaysIt(string $padId, bool $valid): void {

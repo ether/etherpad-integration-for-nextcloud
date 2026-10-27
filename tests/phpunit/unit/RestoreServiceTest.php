@@ -408,7 +408,8 @@ class RestoreServiceTest extends TestCase {
 
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
 		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
-		$etherpadClient->method('createGroupPad')->willReturn($newPadId);
+		// A protected replacement is named `restored-` and its suffix.
+		$etherpadClient->method('createGroupPad')->with('g.NEWGROUPID12345', 'restored-abc123def456')->willReturn($newPadId);
 		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.NEWGROUPID12345');
 		$etherpadClient->expects($this->never())->method('listPads');
 
@@ -580,11 +581,11 @@ class RestoreServiceTest extends TestCase {
 	 * Each replacement is named after the pad before it. Built on an earlier
 	 * restore's name it grew by fifteen characters each time, and Etherpad
 	 * refuses a pad name past fifty: the second replacement of one file
-	 * already failed.
+	 * already failed. A base cut at a dash loses the dash.
 	 */
 	public function testAReplacementNameDoesNotGrowAndFitsEtherpad(): void {
 		$created = [];
-		foreach (['r-nc-abcdefghijklmnopqrstuvwx-zyxwvutsrqpo', 'legacy-' . str_repeat('x', 80)] as $oldPadId) {
+		foreach (['r-nc-abcdefghijklmnopqrstuvwx-zyxwvutsrqpo', 'legacy-' . str_repeat('x', 80), str_repeat('a', 34) . '-' . str_repeat('b', 10)] as $oldPadId) {
 			$bindingService = $this->createMock(BindingService::class);
 			$bindingService->method('rebind')->willReturn(true);
 			$etherpadClient = $this->buildEtherpadWithoutThePad();
@@ -597,6 +598,7 @@ class RestoreServiceTest extends TestCase {
 		$this->assertSame('r-nc-abcdefghijklmnopqrstuvwx-abc123def456', $created[0]);
 		$this->assertSame('r-legacy-' . str_repeat('x', 28) . '-abc123def456', $created[1]);
 		$this->assertSame(50, strlen($created[1]));
+		$this->assertSame('r-' . str_repeat('a', 34) . '-abc123def456', $created[2]);
 	}
 
 	public function testRestoreWithoutBindingRecreatesManagedPublicPad(): void {

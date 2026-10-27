@@ -595,10 +595,11 @@ class RestoreService {
 
 	/**
 	 * `r-<base>-<suffix>`, within the length Etherpad allows a pad name
-	 * (PadId::MAX_NAME_UNITS). The base is the old id without an earlier restore's `r-` and
-	 * suffix, so a pad restored again does not grow by them each time, and
-	 * is cut to what is left. `$` stays out: in a public id Etherpad refuses
-	 * it, since it marks a group pad.
+	 * (PadId::MAX_NAME_UNITS) - in bytes here, as the name is ASCII once
+	 * normalised. The base is the old id without an earlier restore's `r-`
+	 * and suffix, so a pad restored again does not grow by them each time,
+	 * and is cut to what is left. `$` stays out: in a public id Etherpad
+	 * refuses it, since it marks a group pad.
 	 */
 	private function buildPublicRestorePadId(string $oldPadId): string {
 		$suffix = $this->secureRandom->generate(12, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);

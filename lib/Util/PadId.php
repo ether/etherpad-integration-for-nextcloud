@@ -58,7 +58,10 @@ final class PadId {
 			return false;
 		}
 		// Counted as Etherpad counts it: a character past the Basic
-		// Multilingual Plane is two units.
-		return strlen((string)mb_convert_encoding($matches[1], 'UTF-16LE', 'UTF-8')) <= 2 * self::MAX_NAME_UNITS;
+		// Multilingual Plane is two units. A string, as the pattern has
+		// taken the name as UTF-8.
+		/** @var string $utf16 */
+		$utf16 = mb_convert_encoding($matches[1], 'UTF-16LE', 'UTF-8');
+		return strlen($utf16) <= 2 * self::MAX_NAME_UNITS;
 	}
 }

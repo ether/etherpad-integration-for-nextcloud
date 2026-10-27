@@ -341,10 +341,12 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('newGroupPadName')->willReturn('p-new');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		// A protected pad, in a group made for it.
-		$etherpadClient->expects(self::once())->method('createGroupPad')->willReturn('g.grp$pad');
+		// A protected pad, in a group made for it, under the name a new pad gets.
+		$etherpadClient->method('createGroup')->willReturn('g.grp');
+		$etherpadClient->expects(self::once())->method('createGroupPad')->with('g.grp', 'p-new')->willReturn('g.grp$pad');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 		// The template's formatting is what reaches the pad, not its text.
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
@@ -496,10 +498,12 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('newGroupPadName')->willReturn('p-new');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		// A protected pad, in a group made for it.
-		$etherpadClient->expects(self::once())->method('createGroupPad')->willReturn('g.grp$pad');
+		// A protected pad, in a group made for it, under the name a new pad gets.
+		$etherpadClient->method('createGroup')->willReturn('g.grp');
+		$etherpadClient->expects(self::once())->method('createGroupPad')->with('g.grp', 'p-new')->willReturn('g.grp$pad');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 		// The template's formatting is what reaches the pad, not its text.
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
@@ -742,7 +746,7 @@ class PadCreationServiceTest extends TestCase {
 		]);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, new PadSnapshot('Datum: 18.05.2026', '', 0), $this->isType('string'))
+			->with(99, 'g.AbCdEfGh12345678$p-fresh', BindingService::ACCESS_PROTECTED, new PadSnapshot('Datum: 18.05.2026', '', 0), $this->isType('string'))
 			->willReturn('doc');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
@@ -751,13 +755,13 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
 			->method('createBinding')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED);
+			->with(99, 'g.AbCdEfGh12345678$p-fresh', BindingService::ACCESS_PROTECTED);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())->method('createGroupPad')->willReturn('p-fresh');
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/p-fresh');
+		$etherpadClient->expects($this->once())->method('createGroupPad')->willReturn('g.AbCdEfGh12345678$p-fresh');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/g.AbCdEfGh12345678$p-fresh');
 		// No HTML in this template, so seeding is the plain-text call.
-		$etherpadClient->expects($this->once())->method('setText')->with('p-fresh', 'Datum: 18.05.2026');
+		$etherpadClient->expects($this->once())->method('setText')->with('g.AbCdEfGh12345678$p-fresh', 'Datum: 18.05.2026');
 
 		$user = $this->createMock(\OCP\IUser::class);
 		$user->method('getDisplayName')->willReturn('Alice');
@@ -769,7 +773,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->assertSame('/Meetings/Protokoll 18.05.2026.pad', $result['file']);
 		$this->assertSame(99, $result['file_id']);
-		$this->assertSame('p-fresh', $result['pad_id']);
+		$this->assertSame('g.AbCdEfGh12345678$p-fresh', $result['pad_id']);
 		$this->assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
@@ -847,7 +851,7 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('newPadId')->willReturn('p-fresh');
+		$bootstrap->method('newPadId')->willReturn('nc-fresh');
 
 		// Written, then the binding fails.
 		$bindingService = $this->createMock(BindingService::class);
@@ -904,13 +908,13 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('newPadId')->willReturn('p-fresh');
+		$bootstrap->method('newPadId')->willReturn('nc-fresh');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('binding failed'));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
+		$etherpadClient->expects($this->once())->method('deletePad')->with('nc-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),

@@ -442,6 +442,29 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
+	/** The names a new pad gets: what the first open, and a template, make it under. */
+	public function testNamesANewPad(): void {
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturnCallback(
+			static fn (int $length, string $characters): string => $characters === ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS ? str_repeat('x', $length) : '?'
+		);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$service = new PadBootstrapService(
+			$this->createMock(BindingService::class),
+			$this->createMock(PadFileService::class),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$secureRandom,
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($this->writableFile()),
+			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		);
+
+		$this->assertSame('nc-' . str_repeat('x', 24), $service->newPadId());
+		$this->assertSame('p-' . str_repeat('x', 20), $service->newGroupPadName());
+	}
+
 	private function buildService(
 		BindingService $bindingService,
 		PadFileService $padFileService,

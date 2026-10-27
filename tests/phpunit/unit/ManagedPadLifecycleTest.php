@@ -607,4 +607,38 @@ class ManagedPadLifecycleTest extends TestCase {
 			$this->assertSame($refused, $e);
 		}
 	}
+
+	/**
+	 * A pad that was there before the step is not the step's: Etherpad
+	 * refusing to make it again leaves it alone, and nothing is seeded.
+	 */
+	public function testAPadThatWasThereIsNeitherSeededNorTakenDown(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('createPad')->willThrowException(new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'));
+		$client->expects($this->never())->method('setText');
+		$client->expects($this->never())->method('deletePad');
+
+		$this->expectException(EtherpadRefusedException::class);
+		$this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '');
+	}
+
+	/**
+	 * An id Etherpad's createPad refuses before it makes anything is refused
+	 * here: a delete after that refusal would take down a pad already under
+	 * the id.
+	 */
+	public function testAPublicIdCreatePadRefusesIsNotTried(): void {
+		foreach (['a$b', 'a/b', 'a?b', 'a&b', 'a#b'] as $padId) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->expects($this->never())->method('createPad');
+			$client->expects($this->never())->method('deletePad');
+
+			try {
+				$this->provisionPublic($client, $padId);
+				$this->fail($padId . ' should have been refused');
+			} catch (\InvalidArgumentException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
 }

@@ -81,6 +81,12 @@ class ManagedPadLifecycle {
 	 * nothing.
 	 */
 	private function provisionPad(string $padId): void {
+		// What Etherpad's createPad refuses before it makes anything, refused
+		// here: a delete after that refusal would take down a pad that has
+		// the id already.
+		if (preg_match('~[$/?&#]~', $padId) === 1) {
+			throw new \InvalidArgumentException('A public pad id holds none of $ / ? & #.');
+		}
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
@@ -183,22 +189,22 @@ class ManagedPadLifecycle {
 	 * so that nothing but a pad of this call - a group pad in its own new
 	 * group - can be taken down, never one that was there before.
 	 *
-	 * @param callable():string $padId the id a public pad is created under
-	 * @param callable():string $groupPadName the name a protected pad carries
+	 * @param callable():string $padId as for provisionFor()
+	 * @param callable():string $groupPadName as for provisionFor()
 	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
 	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
 	 */
 	public function provisionSeeded(string $accessMode, callable $padId, callable $groupPadName, string $text, string $html, array $context = []): array {
-		$padId = $this->provisionFor($accessMode, $padId, $groupPadName);
+		$madeId = $this->provisionFor($accessMode, $padId, $groupPadName);
 		try {
-			return [$padId, $this->seed($padId, $text, $html, $context)];
+			return [$madeId, $this->seed($madeId, $text, $html, $context)];
 		} catch (\Throwable $e) {
 			try {
-				$this->discardProvisioned($padId);
+				$this->discardProvisioned($madeId);
 			} catch (\Throwable $cleanupError) {
 				$this->logger->warning('Could not remove a new Etherpad pad after seeding it failed.', [
 					'app' => 'etherpad_nextcloud',
-					'padId' => $padId,
+					'padId' => $madeId,
 					...SafeError::context($cleanupError),
 				] + $context);
 			}
