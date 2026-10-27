@@ -14,9 +14,9 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 /**
  * One statement against an InMemoryBindingTable: select, update and delete
  * on the binding table, selects on the file cache, the joins between the
- * two the sweeps use, counts, and a column lowered. Conditions are
- * evaluated, not recorded, so a condition left out changes which rows are
- * hit.
+ * two the sweeps use, counts, and a column lowered or with a character
+ * replaced (`LOWER()`, `REPLACE()`). Conditions are evaluated, not
+ * recorded, so a condition left out changes which rows are hit.
  *
  * A column is named as the statement names it: plain on a table without
  * an alias, `alias.column` once aliased. A condition's second operand is a

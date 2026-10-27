@@ -417,8 +417,8 @@ solely by the separate external-pad policy, not by these two settings.
   - Params: `fileId`
   - Purpose: the vanished row (see `consistency-check`) of `fileId`,
     while it is still vanished, is marked as a file deleted for good, and
-    the sweep deletes its pad as for any such file - within minutes, or at
-    once through `settle-pending`. With `delete_pad_with_file` off it
+    the sweep takes it as any such file - within minutes, or at once
+    through `settle-pending`. With `delete_pad_with_file` off it
     marks nothing, and `message` says so. When to use it, and when not:
     `docs/deleting-pads.md`.
   - Result: `marked` (`1` or `0`), and the list as it is after the

@@ -64,10 +64,10 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * The row that binds the pad under other capitals, which Etherpad's
-	 * lowerCasePadIds would lower onto it (PadId::isValid()). Not asked for
-	 * a group pad: groupHolds() takes only an id its group lists, which the
-	 * API acts on as it is.
+	 * A row that binds the pad under other capitals: with Etherpad's
+	 * lowerCasePadIds on, one of the two ids can reach the other's pad
+	 * (PadId::isValid()). Not asked for a group pad: groupHolds() takes only
+	 * an id its group lists, which the API acts on as it is.
 	 */
 	private function rowInOtherCase(string $sourcePadId): ?Binding {
 		return PadId::groupIdOf($sourcePadId) === null

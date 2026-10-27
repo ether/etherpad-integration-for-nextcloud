@@ -108,8 +108,9 @@ class BindingService {
 	 * A row, in any state, whose pad id is $padId in other capitals: the
 	 * same once lowered - the column by the database's LOWER(), $padId by
 	 * mb_strtolower() - yet not the same as it is. A final sigma counts as
-	 * σ on both sides: PHP before 8.3 lowers Σ to σ wherever it stands,
-	 * JavaScript to ς at a word's end. No index serves it.
+	 * σ on both sides: JavaScript lowers Σ to ς at a word's end, where a
+	 * database lowering letter by letter makes σ of it, and so does PHP
+	 * before 8.3. No index serves it.
 	 */
 	public function findByPadIdInOtherCase(string $padId): ?Binding {
 		$qb = $this->db->getQueryBuilder();

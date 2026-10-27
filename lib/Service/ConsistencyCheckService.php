@@ -98,7 +98,7 @@ class ConsistencyCheckService {
 			if ($marked > 0) {
 				// The sweep's lines that follow read as deletions seen; this
 				// says whose word they were.
-				$this->logger->info('An admin marked the rows of vanished files as deleted for good; the sweep deletes their pads.', [
+				$this->logger->info('An admin marked the rows of vanished files as deleted for good; the sweep takes them as such.', [
 					'app' => Application::APP_ID,
 					'count' => $marked,
 				]);
@@ -117,7 +117,7 @@ class ConsistencyCheckService {
 		if (!$this->bindingService->isFileGone($fileId) || $this->bindingService->markGone([$fileId]) === 0) {
 			return false;
 		}
-		$this->logger->info('An admin marked the row of a vanished file as deleted for good; the sweep deletes its pad.', [
+		$this->logger->info('An admin marked the row of a vanished file as deleted for good; the sweep takes it as such.', [
 			'app' => Application::APP_ID,
 			'fileId' => $fileId,
 		]);
