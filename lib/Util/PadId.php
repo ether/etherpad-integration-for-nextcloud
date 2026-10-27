@@ -35,7 +35,7 @@ final class PadId {
 	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:]+)$/uD';
 
 	/** The longest name Etherpad takes, in UTF-16 code units, as JavaScript counts a string. */
-	private const MAX_NAME_UNITS = 50;
+	public const MAX_NAME_UNITS = 50;
 
 	/** The group a pad belongs to, or null if the id does not name one. */
 	public static function groupIdOf(string $padId): ?string {
@@ -59,7 +59,6 @@ final class PadId {
 		}
 		// Counted as Etherpad counts it: a character past the Basic
 		// Multilingual Plane is two units.
-		$utf16 = mb_convert_encoding($matches[1], 'UTF-16LE', 'UTF-8');
-		return $utf16 !== false && strlen($utf16) <= 2 * self::MAX_NAME_UNITS;
+		return strlen((string)mb_convert_encoding($matches[1], 'UTF-16LE', 'UTF-8')) <= 2 * self::MAX_NAME_UNITS;
 	}
 }

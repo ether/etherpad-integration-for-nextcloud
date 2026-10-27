@@ -19,6 +19,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
+use OCA\EtherpadNextcloud\Util\PadId;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Lock\LockedException;
@@ -38,8 +39,6 @@ use Psr\Log\LoggerInterface;
  * finds no pad (recoverFromSnapshot(), from PadLifecycleController).
  */
 class RestoreService {
-	/** Etherpad refuses a longer pad name, measured against 2.x. */
-	private const MAX_PAD_NAME_LENGTH = 50;
 	/** Etherpad gave no answer for a restored file's pad: the next open asks again. */
 	public const REASON_PRESENCE_UNKNOWN = 'pad_presence_unknown';
 	/** The file could not be read, so there was no revision to hold its pad to. */
@@ -166,10 +165,12 @@ class RestoreService {
 		// Nobody else knows the new pad's id yet to have changed it, so the
 		// file records what seeding left as synced.
 		[$newPadId, $revisions] = $this->padLifecycle->provisionSeeded(
-			fn (): string => $this->provisionRestorePadId($accessMode, $oldPadId),
+			$accessMode,
+			fn (): string => $this->buildPublicRestorePadId($oldPadId),
+			$this->buildProtectedRestorePadName(...),
 			$snapshot['text'],
 			$snapshot['html'],
-			['fileId' => $fileId],
+			['fileId' => $fileId, 'operation' => 'restore from snapshot'],
 		);
 		try {
 			$content = $this->padFileService->withRestoredSnapshot(
@@ -592,18 +593,9 @@ class RestoreService {
 		}
 	}
 
-	/** Make the pad a restored snapshot goes into; the names say so. */
-	private function provisionRestorePadId(string $accessMode, string $oldPadId): string {
-		return $this->padLifecycle->provisionFor(
-			$accessMode,
-			padId: fn (): string => $this->buildPublicRestorePadId($oldPadId),
-			groupPadName: fn (): string => $this->buildProtectedRestorePadName(),
-		);
-	}
-
 	/**
-	 * `r-<base>-<suffix>`, within the 50 characters Etherpad allows a pad
-	 * name. The base is the old id without an earlier restore's `r-` and
+	 * `r-<base>-<suffix>`, within the length Etherpad allows a pad name
+	 * (PadId::MAX_NAME_UNITS). The base is the old id without an earlier restore's `r-` and
 	 * suffix, so a pad restored again does not grow by them each time, and
 	 * is cut to what is left. `$` stays out: in a public id Etherpad refuses
 	 * it, since it marks a group pad.
@@ -612,7 +604,7 @@ class RestoreService {
 		$suffix = $this->secureRandom->generate(12, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 		$base = preg_replace('/^r-(.+)-[a-z0-9]{12}$/', '$1', $oldPadId) ?? $oldPadId;
 		$normalized = trim(preg_replace('/[^a-zA-Z0-9._-]+/', '-', $base) ?? '', '-');
-		$normalized = rtrim(substr($normalized, 0, self::MAX_PAD_NAME_LENGTH - strlen('r--') - strlen($suffix)), '-');
+		$normalized = rtrim(substr($normalized, 0, PadId::MAX_NAME_UNITS - strlen('r--') - strlen($suffix)), '-');
 		return 'r-' . ($normalized === '' ? 'pad' : $normalized) . '-' . $suffix;
 	}
 

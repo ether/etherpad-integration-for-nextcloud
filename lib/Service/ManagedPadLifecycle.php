@@ -176,19 +176,20 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * A new pad seeded with a snapshot (seed()), the only way to seed one. A
-	 * seed that fails has the pad taken down, as no row names it yet, and
-	 * its failure goes on; a pad that cannot be taken down is named in the
-	 * log, the only handle left on it.
+	 * A pad made here (provisionFor()) and seeded with a snapshot (seed()),
+	 * the only way to seed one. A seed that fails has the pad taken down,
+	 * as no row names it yet, and its failure goes on; a pad that cannot be
+	 * taken down is named in the log, the only handle left on it. Made here
+	 * so that nothing but a pad of this call - a group pad in its own new
+	 * group - can be taken down, never one that was there before.
 	 *
-	 * @param \Closure(): string $provision makes a new pad (provisionFor()) and gives its id - a
-	 *   group pad in a group made for it. Never one that was there before: a failed seed takes
-	 *   the pad down, a group pad with its group
+	 * @param callable():string $padId the id a public pad is created under
+	 * @param callable():string $groupPadName the name a protected pad carries
 	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
 	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
 	 */
-	public function provisionSeeded(\Closure $provision, string $text, string $html, array $context = []): array {
-		$padId = $provision();
+	public function provisionSeeded(string $accessMode, callable $padId, callable $groupPadName, string $text, string $html, array $context = []): array {
+		$padId = $this->provisionFor($accessMode, $padId, $groupPadName);
 		try {
 			return [$padId, $this->seed($padId, $text, $html, $context)];
 		} catch (\Throwable $e) {

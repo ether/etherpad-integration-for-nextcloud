@@ -31,11 +31,17 @@ class PadBootstrapService {
 
 	/** Make the pad a `.pad` file's first open needs; the names say so. */
 	public function provisionPadId(string $accessMode): string {
-		return $this->padLifecycle->provisionFor(
-			$accessMode,
-			padId: fn (): string => 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS),
-			groupPadName: fn (): string => $this->buildProtectedPadName(),
-		);
+		return $this->padLifecycle->provisionFor($accessMode, padId: $this->newPadId(...), groupPadName: $this->newGroupPadName(...));
+	}
+
+	/** The id a new public pad is created under. */
+	public function newPadId(): string {
+		return 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
+	}
+
+	/** The name a new protected pad carries in its group. */
+	public function newGroupPadName(): string {
+		return 'p-' . $this->secureRandom->generate(20, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 	}
 
 	/**
@@ -132,10 +138,6 @@ class PadBootstrapService {
 
 	private function rollbackProvisionedPad(int $fileId, string $padId): void {
 		$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
-	}
-
-	private function buildProtectedPadName(): string {
-		return 'p-' . $this->secureRandom->generate(20, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 	}
 
 }

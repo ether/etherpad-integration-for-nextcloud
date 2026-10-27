@@ -176,7 +176,7 @@ class RestoreServiceTest extends TestCase {
 		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
 	}
 
-	/** A replacement that cannot be seeded nor taken down is named in the log with its file. */
+	/** A replacement that cannot be seeded nor taken down is named in the log with its file and its way. */
 	public function testAReplacementLeftOverIsNamedWithItsFile(): void {
 		$fileId = 95;
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
@@ -185,7 +185,7 @@ class RestoreServiceTest extends TestCase {
 		$lines = [];
 		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
 		$padLifecycleLogger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
-			$lines[$message] = $context['fileId'] ?? null;
+			$lines[$message] = [$context['fileId'] ?? null, $context['operation'] ?? null];
 		});
 
 		try {
@@ -195,7 +195,7 @@ class RestoreServiceTest extends TestCase {
 			// The seed's failure, as the restore reports it.
 		}
 
-		$this->assertSame($fileId, $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
+		$this->assertSame([$fileId, 'restore from snapshot'], $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
 	}
 
 	/**

@@ -214,10 +214,12 @@ class PadCreationService {
 		// saved content should Etherpad lose the pad before its first sync,
 		// not only its text (ManagedPadLifecycle::howLost()).
 		[$padId, $revisions] = $this->padLifecycle->provisionSeeded(
-			fn (): string => $this->padBootstrapService->provisionPadId($accessMode),
+			$accessMode,
+			$this->padBootstrapService->newPadId(...),
+			$this->padBootstrapService->newGroupPadName(...),
 			$resolvedText,
 			$resolvedHtml,
-			['fileId' => $fileId],
+			['fileId' => $fileId, 'operation' => 'template materialization'],
 		);
 		try {
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);

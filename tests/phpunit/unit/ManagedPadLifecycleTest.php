@@ -509,7 +509,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('setText');
 		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(2);
 
-		$this->assertSame(['nc-pad', 2], $this->lifecycle($client)->provisionSeeded(static fn (): string => 'nc-pad', 'text', '<p>text</p>'));
+		$this->assertSame(['nc-pad', 2], $this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '<p>text</p>'));
 	}
 
 	/** Etherpad not saying how many revisions leaves the file to its first sync. */
@@ -519,7 +519,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
 		$client->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
 
-		$this->assertSame(['nc-pad', -1], $this->lifecycle($client)->provisionSeeded(static fn (): string => 'nc-pad', 'text', '   '));
+		$this->assertSame(['nc-pad', -1], $this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '   '));
 	}
 
 	/** Never both: setText replaces, so it would wipe the HTML just imported. */
@@ -541,7 +541,7 @@ class ManagedPadLifecycleTest extends TestCase {
 					&& !isset($context['padId'])
 			));
 
-		(new ManagedPadLifecycle($client, $logger))->provisionSeeded(static fn (): string => 'nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
+		(new ManagedPadLifecycle($client, $logger))->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
 
 	public function testMakesAndSeedsAPadAsOneStep(): void {
@@ -550,14 +550,8 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
 		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(1);
 		$client->expects($this->never())->method('deletePad');
-		$lifecycle = $this->lifecycle($client);
 
-		$this->assertSame(['nc-pad', 1], $lifecycle->provisionSeeded(
-			static fn (): string => $lifecycle->provisionFor(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused'),
-			'text',
-			'',
-			['fileId' => 7],
-		));
+		$this->assertSame(['nc-pad', 1], $this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '', ['fileId' => 7]));
 	}
 
 	/**
@@ -577,14 +571,9 @@ class ManagedPadLifecycleTest extends TestCase {
 			$client->method('setText')->willThrowException($failure);
 			$client->expects($this->once())->method($discard)->with($id);
 			$client->expects($this->never())->method('listPads');
-			$lifecycle = $this->lifecycle($client);
 
 			try {
-				$lifecycle->provisionSeeded(
-					static fn (): string => $lifecycle->provisionFor($accessMode, static fn (): string => 'nc-pad', static fn (): string => 'p-new'),
-					'text',
-					'',
-				);
+				$this->lifecycle($client)->provisionSeeded($accessMode, static fn (): string => 'nc-pad', static fn (): string => 'p-new', 'text', '');
 				$this->fail($accessMode . ': the seed\'s failure goes on');
 			} catch (\Throwable $e) {
 				$this->assertSame($failure, $e, $accessMode);
@@ -612,7 +601,7 @@ class ManagedPadLifecycleTest extends TestCase {
 			));
 
 		try {
-			(new ManagedPadLifecycle($client, $logger))->provisionSeeded(static fn (): string => 'nc-pad', 'text', '', ['fileId' => 7]);
+			(new ManagedPadLifecycle($client, $logger))->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '', ['fileId' => 7]);
 			$this->fail('the seed\'s failure goes on');
 		} catch (EtherpadClientException $e) {
 			$this->assertSame($refused, $e);
