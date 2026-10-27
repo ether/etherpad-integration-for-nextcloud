@@ -46,6 +46,7 @@ class ClaimedFileWriter {
 	 * File::putContent() uses its remembered path, which may have been reused
 	 * during provisioning. The content check and write are not atomic.
 	 *
+	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/Node/File.php
 	 * @throws \OCP\Files\NotFoundException
 	 * @throws PadFileChangedException
 	 */

@@ -16,12 +16,12 @@ use Psr\Log\LoggerInterface;
  * Undoes the pad and the binding row when a flow that provisions a pad
  * fails partway. The `.pad` file is each flow's own business.
  *
- * Which method a flow calls turns on what its file says. A first init
- * works on an empty file, so a row naming the new pad is the finished half
- * of the job and the next open writes the rest. A create writes its file
- * before its row, and a restore has a file naming a different pad, so for
- * them a row pointing at this pad contradicts it; a create asks about one
- * only once its binding write began (discardCreated()).
+ * Which method a flow calls turns on what is left of its file. A first
+ * init works on an empty file, so a row naming the new pad is the finished
+ * half of the job and the next open writes the rest. A restore has a file
+ * naming a different pad, so a row pointing at this pad contradicts it. A
+ * failed create gives up its file, and its row and pad go with it; it
+ * asks about the row only once its binding write began (discardCreated()).
  *
  * Only for a pad provisioned in the same call: `discardProvisioned` removes
  * a group outright. A flow that adopted an existing pad - the legacy Ownpad
@@ -60,9 +60,8 @@ class ProvisionedPadRollback {
 		try {
 			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
-			// Both, and the pad id against the rule everywhere else: no
-			// binding row was written, so ep_pad_bindings cannot lead from
-			// the one to the other.
+			// The pad id too, against the rule everywhere else: no row links
+			// the file to this pad, so the line is the only way to it.
 			$this->logger->warning('Could not cleanup failed Etherpad create', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,

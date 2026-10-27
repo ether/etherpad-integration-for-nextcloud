@@ -363,8 +363,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 
 	/**
 	 * The pad is Ownpad's, never the migration's: a write that fails after
-	 * the row was made leaves row and pad, and the next open finishes the
-	 * file the way an earlier attempt's row is finished. Nothing goes in
+	 * the row was made leaves row and pad in place, and nothing goes in
 	 * Etherpad, not even a group pad's group.
 	 */
 	public function testAWriteThatFailsAfterTheRowLeavesRowAndPad(): void {

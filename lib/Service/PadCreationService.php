@@ -132,8 +132,6 @@ class PadCreationService {
 				// API creates start empty; do not replace this baseline with a later read.
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
-				// The pad is materializeTemplateInto()'s, which takes it down
-				// itself before rethrowing; the rollback below is the file's.
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user, $claim);
 
 				return [
@@ -144,11 +142,7 @@ class PadCreationService {
 					'pad_url' => $result['pad_url'],
 				];
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				// File only: materializeTemplateInto() has taken down the pad
-				// it made before rethrowing.
-				$this->rollbackService->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim()),
 		);
 	}
 
