@@ -79,6 +79,13 @@ deleted for good once five minutes have passed, so the pad goes within
 about ten minutes; the admin page's "Check pending pads" does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
+A pad an earlier version bound from a legacy Ownpad file under an id
+Etherpad's API may not act on as it is - with whitespace or a `:` in it,
+say - is the exception: the job removes the file's row and leaves the pad
+in Etherpad, as deleting it could take down another pad. A group pad's
+group stays with it. The same holds for such a pad deleted from the
+consistency check.
+
 On Nextcloud 34, Nextcloud reports the files inside a folder deleted for
 good under the wrong ids - and a trash emptied as a whole, from the Files
 app or with `occ trashbin:cleanup`, is deleted as one folder. The fix

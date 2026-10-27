@@ -376,10 +376,10 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A row an earlier version bound under an id Etherpad's API would
-	 * rewrite onto another pad - `victim pad` onto `victim_pad` - or refuse
-	 * loses only its row once its file is gone: Etherpad is not asked, and
-	 * the warning names the file, not the pad.
+	 * A row an earlier version bound under an id Etherpad's API may rewrite
+	 * onto another pad - `victim pad` onto `victim_pad` - or refuse loses
+	 * only its row once its file is gone: Etherpad is not asked, and the
+	 * warning names the file, not the pad.
 	 */
 	public function testARowUnderAnIdEtherpadDoesNotTakeAsItIsGoesWithoutItsPad(): void {
 		$this->table([
@@ -392,13 +392,50 @@ class GoneFileSweepTest extends TestCase {
 
 		$this->assertSame(['pad-fine' => 1], $this->attempts);
 		$this->assertSame([], $this->fileIds());
-		$line = 'The file of a pad is gone for good; its row goes, but the pad stays: Etherpad would refuse its id, or take it for another pad.';
+		$line = 'The file of a pad is gone for good; its row goes, but the pad stays: Etherpad\'s API may not act on its id as it is.';
 		$this->assertSame([
 			['warning', $line, 11],
 			['warning', $line, 12],
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 13],
 		], $this->lines);
 		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 11], $this->contexts[0]);
+	}
+
+	/**
+	 * Only a row whose file the file cache confirms gone, and that still
+	 * waits and names the pad, goes - with a warning only then.
+	 */
+	public function testARowUnderSuchAnIdGoesOnlyAsAnyRowWould(): void {
+		$this->table([self::row(1, 11, 'a:b', seenAt: 100)], []);
+		$stillThere = new class($this->db, $this->clock) extends BindingService {
+			public function isFileGone(int $fileId): bool {
+				return false;
+			}
+		};
+		$changed = new class($this->db, $this->clock) extends BindingService {
+			public function deleteInState(int $fileId, string $padId, string $state): bool {
+				return false;
+			}
+		};
+
+		$this->assertSame(['checked' => 1, 'deleted' => 0], $this->sweep($stillThere));
+		$this->assertSame(['checked' => 1, 'deleted' => 0], $this->sweep($changed));
+
+		$this->assertSame([11], $this->fileIds());
+		$this->assertSame([], $this->lines);
+	}
+
+	/** A run that has spent its time leaves such a row for the next, as any other. */
+	public function testARowUnderSuchAnIdWaitsOutARunThatHasSpentItsTime(): void {
+		$this->table([self::row(1, 11, 'pad-1', seenAt: 100), self::row(2, 12, 'a:b', seenAt: 101)], []);
+		$this->onDelete = function (): void {
+			$this->clock->advance(19);
+		};
+
+		$this->sweep();
+
+		$this->assertSame([12], $this->fileIds());
+		$this->assertSame([['info', 'The file of a pad is gone for good; the pad is deleted.', 11]], $this->lines);
 	}
 
 	/**
