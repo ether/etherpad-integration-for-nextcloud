@@ -372,10 +372,9 @@ class PadCreationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A template's pad Etherpad will not take the content for goes before
-	 * the failure does, without asking the binding table - no row can name
-	 * a pad just made, and a table that cannot answer would keep it - and
-	 * the file is left unwritten.
+	 * A failed seed takes the template's new pad down without asking the
+	 * binding table. The table throws here: the later rollback's path,
+	 * which does ask, would keep the pad. The file stays unwritten.
 	 */
 	public function testATemplatesPadThatCannotBeSeededGoes(): void {
 		$template = $this->createMock(\OCP\Files\File::class);

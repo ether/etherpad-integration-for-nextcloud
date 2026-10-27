@@ -153,8 +153,9 @@ class ManagedPadLifecycle {
 	 *
 	 * @param array<string,mixed> $context extra keys for the fallback's log
 	 *   line; `app` and SafeError's `error`, `error_message` and
-	 *   `error_origin` are set here and win a collision. Do not pass a pad
-	 *   id - the fileId every caller already supplies is the handle
+	 *   `error_origin` are set here and win a collision. No pad id: with
+	 *   the configured host it is a working link into a public pad, where a
+	 *   fileId leads to the pad only through its row
 	 * @return int the pad's revisions once seeded, -1 when not known
 	 */
 	private function seed(string $padId, string $text, string $html, array $context = []): int {
@@ -163,9 +164,6 @@ class ManagedPadLifecycle {
 				$this->etherpadClient->setHTML($padId, $html);
 				return $this->revisionsOfSeeded($padId);
 			} catch (\Throwable $htmlError) {
-				// Every caller supplies a fileId in $context, which is the
-				// handle to keep: a pad id plus the configured host is a
-				// working link into a public pad.
 				$this->logger->warning('Could not import the HTML snapshot; falling back to plain text.', [
 					'app' => 'etherpad_nextcloud',
 					...SafeError::context($htmlError),

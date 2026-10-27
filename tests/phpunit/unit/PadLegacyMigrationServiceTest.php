@@ -306,9 +306,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A group Etherpad refuses to list holds the pad no more than one that
-	 * lacks it, and is refused the same way: the answer does not tell a
-	 * group that is there from one that is not.
+	 * A group listing Etherpad refuses is refused like a missing pad: the
+	 * answer does not tell whether the group is there.
 	 */
 	public function testSameOriginRefusesAPadWhoseGroupEtherpadDoesNotList(): void {
 		$file = $this->createMock(File::class);

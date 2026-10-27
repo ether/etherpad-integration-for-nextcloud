@@ -38,12 +38,13 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * Whether the group a group pad names holds it; true for a pad that
+	 * Whether the group a group pad names lists it; true for a pad that
 	 * names no group. `g.<their-group>$invented` collides with no binding
 	 * while naming a real group, and the session issued on open grants all
-	 * of it. A group Etherpad refuses to list holds nothing either, so the
-	 * answer says no more than that whether the group is there. Fails
-	 * closed: a refused migration is retried, a waved-through one is not.
+	 * of it. A listing Etherpad refuses counts as one without the pad, so
+	 * the answer does not tell whether the group is there; a failure
+	 * without an answer goes on. Fails closed: a refused migration is
+	 * retried, a waved-through one is not.
 	 */
 	private function groupHolds(string $sourcePadId): bool {
 		$groupId = PadId::groupIdOf($sourcePadId);

@@ -593,9 +593,9 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A new pad that cannot be taken down is named in the log - no row
-	 * names it, so nothing else leads to it - and the seed's failure, not
-	 * the cleanup's, goes on, whatever the cleanup throws.
+	 * An error from the cleanup, not only an exception, leaves the seed's
+	 * failure the one that goes on; the line names the pad left over and
+	 * its file, as no row leads to it.
 	 */
 	public function testANewPadThatCannotBeTakenDownIsNamed(): void {
 		$refused = new EtherpadClientException('Etherpad API request failed: setText');
