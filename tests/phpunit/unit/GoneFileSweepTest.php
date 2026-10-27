@@ -376,6 +376,32 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
+	 * A row an earlier version bound under an id Etherpad's API would
+	 * rewrite onto another pad - `victim pad` onto `victim_pad` - or refuse
+	 * loses only its row once its file is gone: Etherpad is not asked, and
+	 * the warning names the file, not the pad.
+	 */
+	public function testARowUnderAnIdEtherpadDoesNotTakeAsItIsGoesWithoutItsPad(): void {
+		$this->table([
+			self::row(1, 11, 'victim pad', seenAt: 100),
+			self::row(2, 12, 'a:b', seenAt: 101),
+			self::row(3, 13, 'pad-fine', seenAt: 102),
+		], []);
+
+		$this->assertSame(['checked' => 3, 'deleted' => 1], $this->sweep());
+
+		$this->assertSame(['pad-fine' => 1], $this->attempts);
+		$this->assertSame([], $this->fileIds());
+		$line = 'The file of a pad is gone for good; its row goes, but the pad stays: Etherpad would refuse its id, or take it for another pad.';
+		$this->assertSame([
+			['warning', $line, 11],
+			['warning', $line, 12],
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 13],
+		], $this->lines);
+		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 11], $this->contexts[0]);
+	}
+
+	/**
 	 * A file the file cache has again by the time its pad would go keeps it.
 	 */
 	public function testTheFileCacheIsAskedOnceMoreBeforeAPadGoes(): void {

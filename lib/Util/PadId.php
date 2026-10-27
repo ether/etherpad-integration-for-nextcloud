@@ -12,7 +12,7 @@ namespace OCA\EtherpadNextcloud\Util;
  * What an Etherpad pad id says about itself, two ways. Loosely, which group
  * an id names: the one rule every reader of a binding shares, so all of
  * them see the same groups. Strictly, whether Etherpad's API acts on an id
- * that comes from outside as it is (isValid()).
+ * as it is (isValid()).
  *
  * Neither is a permission check: knowing that an id *names* a group says
  * nothing about whose group it is.
@@ -58,7 +58,8 @@ final class PadId {
 	 * fails (getPadSafe()) - a pad an Etherpad before 3.3.3 made with a
 	 * `:`, which its editor still opens, could be neither read, synced nor
 	 * deleted. Syntax only, not whether the pad exists. For an id that
-	 * comes from outside, before it is bound.
+	 * comes from outside, before it is bound, and a bound one, before its
+	 * pad is deleted.
 	 */
 	public static function isValid(string $padId): bool {
 		if (preg_match(self::VALID_PATTERN, $padId, $matches) !== 1) {
