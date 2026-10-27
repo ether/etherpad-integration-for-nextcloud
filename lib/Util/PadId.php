@@ -35,6 +35,7 @@ final class PadId {
 	 * of Etherpad's is named otherwise.
 	 *
 	 * @see https://github.com/ether/etherpad/blob/v3.3.11/src/node/db/PadManager.ts
+	 * @see https://tc39.es/ecma262/multipage/text-processing.html#sec-runtime-semantics-characterclassescape what JavaScript's `\s` takes
 	 */
 	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:\t\n\x{0B}\f\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+)$/uD';
 
@@ -60,6 +61,8 @@ final class PadId {
 	 * still opens, could be neither read, synced nor deleted. Syntax only,
 	 * not whether the pad exists. For an id that comes from outside, before
 	 * it is bound, and a bound one, before its pad is deleted.
+	 *
+	 * @see https://github.com/ether/etherpad/blob/v3.3.11/src/node/handler/APIHandler.ts
 	 */
 	public static function isValid(string $padId): bool {
 		if (preg_match(self::VALID_PATTERN, $padId, $matches) !== 1) {

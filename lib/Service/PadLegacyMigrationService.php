@@ -164,13 +164,11 @@ class PadLegacyMigrationService {
 		}
 
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
-		// Before anything is asked or written, on every way below: an id
-		// Etherpad's API does not act on as it is would be refused, or
-		// rewritten onto another pad - which this file would then open and
-		// sync past the collision rule; one the file's frontmatter cannot
-		// hold - built now, so the format's own rule says so - would fail
-		// every write after a row; and PostgreSQL refuses invalid UTF-8 and
-		// NUL, a server error in place of this refusal.
+		// Before any row is looked up, on every way below - a copy and a
+		// finish too: an id Etherpad's API rewrites would reach another
+		// file's pad past the collision rule. The document is built now so
+		// the format refuses an id it cannot hold before a row is made; and
+		// invalid UTF-8 and NUL must not reach PostgreSQL, which refuses them.
 		$document = PadId::isValid($sourcePadId) ? $this->managedDocument($fileId, $sourcePadId, $accessMode) : null;
 		if ($document === null) {
 			throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, null, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');

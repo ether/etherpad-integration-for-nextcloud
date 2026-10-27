@@ -183,17 +183,18 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * A pad made here (provisionFor()) and seeded with a snapshot (seed()),
-	 * the only way to seed one. A seed that fails has the pad taken down,
-	 * as no row names it yet, and its failure goes on; a pad that cannot be
-	 * taken down is named in the log, the only handle left on it. Made here
-	 * so that nothing but a pad of this call - a group pad in its own new
-	 * group - can be taken down, never one that was there before.
+	 * A new pad (provisionFor()) seeded with a snapshot (seed()), the only
+	 * way to seed one. A seed that fails has the pad taken down, as no row
+	 * names it yet, and its failure goes on. Only what this call made goes -
+	 * a group pad with its own new group - never a pad that was there
+	 * before; one that cannot be taken down is named in the log, the only
+	 * handle left on it.
 	 *
 	 * @param callable():string $padId as for provisionFor()
 	 * @param callable():string $groupPadName as for provisionFor()
 	 * @param array<string,mixed> $context as for seed(), and for the line of a pad left over
 	 * @return array{string,int} the pad's id, and its revisions once seeded (-1 when not known)
+	 * @throws \InvalidArgumentException as provisionFor()
 	 */
 	public function provisionSeeded(string $accessMode, callable $padId, callable $groupPadName, string $text, string $html, array $context = []): array {
 		$madeId = $this->provisionFor($accessMode, $padId, $groupPadName);

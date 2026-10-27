@@ -51,7 +51,7 @@ class PadIdTest extends TestCase {
 			yield sprintf('U+%04X', $codePoint) => ['a' . mb_chr($codePoint, 'UTF-8') . 'b', false];
 		}
 		yield 'whitespace in a group pad\'s name' => ['g.AbCdEfGh12345678$a b', false];
-		// Ones it does not: PCRE's \s or \v takes the first two.
+		// Ones it does not: PCRE's \s takes the first two, its \v the first.
 		yield 'a next line' => ["a\u{85}b", true];
 		yield 'a Mongolian vowel separator' => ["a\u{180E}b", true];
 		yield 'a zero-width space' => ["a\u{200B}b", true];
