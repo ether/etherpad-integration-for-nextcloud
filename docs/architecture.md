@@ -88,11 +88,20 @@ checked-in runtime assets in `js/`.
 
 ### 1) Create
 
-1. `PadCreateController::create` creates an Etherpad pad (public or protected/group). `PadCreationService` asks `PadTypePolicy` first and refuses a pad type the admin switched off; the check sits in the create paths rather than in `PadBootstrapService::provisionPadId`, which also serves existing files.
-2. Creates the `.pad` file.
-3. Writes initial frontmatter.
-4. Creates DB binding.
-5. External create-from-URL is different: it only creates the `.pad` file with external frontmatter plus an optional text snapshot; it does not create or own anything on the remote Etherpad server.
+Every way that pairs a pad with a binding row and a `.pad` file, and what a failure leaves. Order and cleanup follow from two questions: whose is the file, and what may a failed attempt leave behind? A create owns the file it made, so it writes the file before the row and leaves nothing: the file, the pad and - once the binding write began - a row naming the pad go (`ProvisionedPadRollback::discardCreated()`). A file that was there before is not the attempt's to delete: a first init writes the row before the file, and a failure keeps a row naming its pad for the next open to finish; a restore leaves the file naming its old pad. A pad that was there before - a legacy Ownpad file's - is never taken down.
+
+| Way | Entry | The file | Order | A failure leaves |
+|---|---|---|---|---|
+| Blank create | `POST /api/v1/pads` (`PadCreationService::create()`), `POST /api/v1/pads/create-by-parent` (`createInParent()`) | made by the create | file, pad, document, row (`writeAndBind()`) | nothing: the file, the pad, and a row naming the pad once its write began (`PadCreateRollbackService::rollbackFailedCreate()`) |
+| From a template, through the API | `POST /api/v1/pads/from-template` (`createFromTemplate()`) | made by the create | file, pad seeded (`ManagedPadLifecycle::provisionSeeded()`), document, row (`writeAndBind()`) | nothing: `materializeTemplateInto()` takes down the pad, and its row by the same rule, then the file goes |
+| From a template, in Files | Nextcloud's template picker (`FileCreatedFromTemplateListener` → `materializeTemplateInto()`) | Nextcloud's, made before the event | pad seeded, document, row | the pad and its row go as above; the file, unless written meanwhile, is emptied and made a blank pad, or removed when no pad type is enabled ([templates.md](templates.md)) |
+| Blank entry and the app's own tiles, in Files | the same listener → `PadBootstrapService::initializeMissingFrontmatter()` | Nextcloud's | pad, row, document | as a first open |
+| First open of an empty `.pad` | `POST /api/v1/pads/initialize`, `initialize-by-id` (`initializeMissingFrontmatter()`) | the user's | pad, row, document | a row naming the pad keeps it, and the next open writes the file (`ProvisionedPadRollback::discardUnlessBoundToFile()`) |
+| Legacy Ownpad file | its first open (`PadLegacyMigrationService`) | the user's | row, document - no pad is made | the row, for the next open to finish; nothing goes in Etherpad ([legacy-ownpad-migration.md](legacy-ownpad-migration.md)) |
+| External pad | `POST /api/v1/pads/from-url` (`createFromUrl()`) | made by the create | file, with external frontmatter and an optional text snapshot | nothing: the file goes; the app owns nothing on the other server |
+| Restore onto a new pad | a restore without a row or whose pad is lost, `POST /api/v1/pads/recover-from-snapshot/{fileId}` (`RestoreService::restoreOntoNewPad()`) | the user's, naming the old pad | pad seeded, row claimed, document | the new pad and the claim taken back ("The replacement" under Trash/Restore) |
+
+A create refuses a pad type the admin switched off (`PadTypePolicy`); a template, a blank entry and a first open fall back to the other type. The check sits in those paths rather than in `PadBootstrapService::provisionPadId()`, which also serves existing files.
 
 ### 2) Open (authenticated)
 
