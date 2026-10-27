@@ -329,8 +329,9 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	/**
 	 * Bob's file binds the public pad `nc-abc`. Mallory's Ownpad file names
 	 * `NC-ABC`: no row names that id, yet with Etherpad's lowerCasePadIds on
-	 * the API lowers it onto Bob's pad, which the sweep would delete with
-	 * her file. Refused before a row is made.
+	 * the API lowers it onto Bob's pad, which her file would open and sync,
+	 * and the sweep delete with it. Refused before a row is made, the line
+	 * naming Bob's file.
 	 */
 	public function testAPublicIdBoundUnderOtherCapitalsIsNotBound(): void {
 		$file = $this->createMock(File::class);
@@ -353,7 +354,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: new PadFileService(new FixedClock()),
 			etherpadClient: $etherpadClient,
-			logger: $this->refusalLine('the pad it names cannot be linked.', 514, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'case_variant']),
+			logger: $this->refusalLine('the pad it names cannot be linked.', 514, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'case_variant', 'boundFileId' => 999]),
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/NC-ABC',
 			'pad_id' => 'NC-ABC',
@@ -396,8 +397,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		yield 'a colon' => ['a:b', BindingService::ACCESS_PUBLIC];
 		// Bob's file binds `victim_pad`. No row names `victim pad`, so the
 		// collision rule would not stop it, yet Etherpad's API rewrites it to
-		// `victim_pad` before every call - and the sweep, deleting this
-		// file's pad, would take down Bob's.
+		// `victim_pad` before every call: this file would open and sync
+		// Bob's pad.
 		yield 'a space' => ['victim pad', BindingService::ACCESS_PUBLIC];
 		yield 'a no-break space' => ["victim\u{A0}pad", BindingService::ACCESS_PUBLIC];
 		yield 'a line break' => ["a\nb", BindingService::ACCESS_PUBLIC];

@@ -44,6 +44,7 @@ Pads live alongside your other files and behave like any other Nextcloud file:
 - Works with different Etherpad releases via API version detection (fallback supported).
 - This plugin requires Etherpad API key mode (`authenticationMethod: "apikey"`).
 - OAuth-only Etherpad setups are not supported by this plugin.
+- Leave Etherpad's `lowerCasePadIds` off, as it is by default. With it on, Etherpad lowers the capitals of a pad id it has no pad under, so a legacy Ownpad file whose pad id has capitals can reach another file's pad; see [`docs/legacy-ownpad-migration.md`](docs/legacy-ownpad-migration.md).
 
 ## Ownpad Compatibility
 

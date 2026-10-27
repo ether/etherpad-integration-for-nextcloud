@@ -64,22 +64,26 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * Whether a row binds the pad under other capitals. With Etherpad's
-	 * lowerCasePadIds on, its API lowers an id no pad exists under: `NC-ABC`
-	 * would reach the pad of `nc-abc`'s file, one a sweep would then delete
-	 * with this one. Not asked for a group pad: groupHolds() takes only an
-	 * id its group lists, which the API acts on as it is.
+	 * The row that binds the pad under other capitals, which Etherpad's
+	 * lowerCasePadIds would lower onto it (PadId::isValid()). Not asked for
+	 * a group pad: groupHolds() takes only an id its group lists, which the
+	 * API acts on as it is.
 	 */
-	private function boundInOtherCase(string $sourcePadId): bool {
+	private function rowInOtherCase(string $sourcePadId): ?Binding {
 		return PadId::groupIdOf($sourcePadId) === null
-			&& $this->bindingService->findByPadIdInOtherCase($sourcePadId) !== null;
+			? $this->bindingService->findByPadIdInOtherCase($sourcePadId)
+			: null;
 	}
 
-	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision, string $reason, string $why): LegacyPadNotFoundException {
-		$this->logger->warning('Refused legacy Ownpad migration - the pad it names cannot be linked.', [
+	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, ?string $collision, string $reason, string $why, ?int $boundFileId = null): LegacyPadNotFoundException {
+		$context = [
 			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, $collision),
 			'reason' => $reason,
-		]);
+		];
+		if ($boundFileId !== null) {
+			$context['boundFileId'] = $boundFileId;
+		}
+		$this->logger->warning('Refused legacy Ownpad migration - the pad it names cannot be linked.', $context);
 		return new LegacyPadNotFoundException($why);
 	}
 
@@ -162,11 +166,11 @@ class PadLegacyMigrationService {
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		// Before anything is asked or written, on every way below: an id
 		// Etherpad's API does not act on as it is would be refused, or
-		// rewritten onto another pad - one a sweep would then delete; one
-		// the file's frontmatter cannot hold - built now, so the format's
-		// own rule says so - would fail every write after a row; and
-		// PostgreSQL refuses invalid UTF-8 and NUL, a server error in place
-		// of this refusal.
+		// rewritten onto another pad - which this file would then open and
+		// sync past the collision rule; one the file's frontmatter cannot
+		// hold - built now, so the format's own rule says so - would fail
+		// every write after a row; and PostgreSQL refuses invalid UTF-8 and
+		// NUL, a server error in place of this refusal.
 		$document = PadId::isValid($sourcePadId) ? $this->managedDocument($fileId, $sourcePadId, $accessMode) : null;
 		if ($document === null) {
 			throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, null, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');
@@ -182,8 +186,9 @@ class PadLegacyMigrationService {
 			if (!$this->groupHolds($sourcePadId)) {
 				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'not_in_group', 'The legacy .pad file names a pad its Etherpad group does not hold.');
 			}
-			if ($this->boundInOtherCase($sourcePadId)) {
-				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'case_variant', 'The legacy .pad file names a pad bound under other capitals.');
+			$otherCase = $this->rowInOtherCase($sourcePadId);
+			if ($otherCase !== null) {
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'case_variant', 'The legacy .pad file names a pad bound under other capitals.', $otherCase->fileId);
 			}
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
