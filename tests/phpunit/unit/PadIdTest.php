@@ -25,6 +25,12 @@ class PadIdTest extends TestCase {
 		yield 'a group of seventeen' => ['g.AbCdEfGh123456789$notes', false];
 		yield 'a group with a dash' => ['g.AbCdEfGh-2345678$notes', false];
 		yield 'a group without its dot' => ['gxAbCdEfGh12345678$notes', false];
+		yield 'a group with a capital G' => ['G.AbCdEfGh12345678$notes', false];
+		yield 'a group with an underscore' => ['g.AbCdEfGh_2345678$notes', false];
+		yield 'a group with a letter past ASCII' => ['g.AbCdEfGhä2345678$notes', false];
+		// The name is counted, not the whole id.
+		yield 'a group pad with a name of fifty' => ['g.AbCdEfGh12345678$' . str_repeat('a', 50), true];
+		yield 'a group pad with a name of fifty-one' => ['g.AbCdEfGh12345678$' . str_repeat('a', 51), false];
 		yield 'a group pad without a name' => ['g.AbCdEfGh12345678$', false];
 		yield 'a second $' => ['g.AbCdEfGh12345678$a$b', false];
 		yield 'a $ in a public name' => ['a$b', false];
@@ -44,10 +50,10 @@ class PadIdTest extends TestCase {
 	}
 
 	/**
-	 * Etherpad 3.3's rule (isValidPadId() in its PadManager): the name
-	 * counted in UTF-16 units, as JavaScript counts it, up to the string's
-	 * very end - a final line break gives it no room - and the dot after `g`
-	 * a dot.
+	 * Etherpad's rule from 3.3.3 (isValidPadId() in its PadManager): the
+	 * name counted in UTF-16 units, as JavaScript counts it, up to the
+	 * string's very end - a final line break gives it no room. The dot after
+	 * `g` is a dot, stricter than Etherpad's pattern.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('ids')]
 	public function testAPadIdIsValidAsEtherpadSaysIt(string $padId, bool $valid): void {
