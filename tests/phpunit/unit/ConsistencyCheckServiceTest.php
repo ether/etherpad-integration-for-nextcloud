@@ -55,7 +55,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$clock = new FixedClock(500);
 		$logger = $this->createMock(LoggerInterface::class);
 		// The sweep's lines that follow read as deletions seen: this one says whose word they were.
-		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['count'] === 501));
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['count'] === 501 && $context['app'] === 'etherpad_nextcloud'));
 		$service = $this->service($db, $clock, $logger);
 
 		$this->assertSame(501, $service->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 501));
@@ -206,7 +206,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->method('info')->willReturnCallback(static function (string $message, array $context) use (&$logged): void {
-			$logged[] = [$context['fileId'], $context['padId'] ?? null];
+			$logged[] = [$context['fileId'], $context['padId'] ?? null, $context['app'] ?? null];
 		});
 		$service = $this->service($db, new FixedClock(500), $logger);
 
@@ -222,7 +222,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 
 		$states = array_map(static fn (array $r): array => [$r['file_id'], $r['state'], $r['deleted_at']], $db->rows);
 		$this->assertSame([[1, BindingService::STATE_ACTIVE, null], [2, BindingService::STATE_PENDING_DELETE, 90], [3, BindingService::STATE_PENDING_DELETE, 500], [5, BindingService::STATE_ACTIVE, null], [6, BindingService::STATE_PENDING_DELETE, 90]], $states);
-		$this->assertSame([[3, null], [4, 'pad-4']], $logged);
+		$this->assertSame([[3, null, 'etherpad_nextcloud'], [4, 'pad-4', 'etherpad_nextcloud']], $logged);
 	}
 
 	private function service(InMemoryBindingTable $db, ?FixedClock $clock = null, ?LoggerInterface $logger = null): ConsistencyCheckService {
