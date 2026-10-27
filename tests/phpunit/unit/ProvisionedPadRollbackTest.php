@@ -73,6 +73,40 @@ class ProvisionedPadRollbackTest extends TestCase {
 			->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'create');
 	}
 
+	/**
+	 * A create's pad before its binding write is the create's beyond doubt:
+	 * it goes without a question the binding table may not answer. Once the
+	 * write began, the table is asked, and without an answer the pad stays.
+	 */
+	public function testACreatesPadIsAskedAboutOnlyOnceItsBindingWriteBegan(): void {
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('isBoundTo')->willThrowException(new \RuntimeException('database gone'));
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
+
+		$rollback = $this->buildRollback($binding, $etherpad);
+		$rollback->discardCreated('nc-abc', null, 4711, 'create');
+		$rollback->discardCreated('nc-abc', 4711, 4711, 'create');
+	}
+
+	/** A pad a create cannot take down is named with its file and way: nothing else leads to it. */
+	public function testACreatesPadLeftOverIsNamedWithItsFileAndWay(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('etherpad down'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Could not cleanup failed Etherpad create', $this->callback(static fn (array $context): bool => array_diff_key($context, ['error_origin' => true]) === [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => 4711,
+			'padId' => 'nc-abc',
+			'operation' => 'template materialization',
+			'error' => \RuntimeException::class,
+			'error_message' => 'etherpad down',
+		]));
+
+		(new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)), $logger))
+			->discardCreated('nc-abc', null, 4711, 'template materialization');
+	}
+
 	private function buildRollback(BindingService $binding, EtherpadClient $etherpad): ProvisionedPadRollback {
 		$logger = $this->createMock(LoggerInterface::class);
 		return new ProvisionedPadRollback($binding, new ManagedPadLifecycle($etherpad, $logger), $logger);

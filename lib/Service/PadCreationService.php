@@ -138,8 +138,8 @@ class PadCreationService {
 				// API creates start empty; do not replace this baseline with a later read.
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
-				// The pad is materializeTemplateInto()'s, which removes it itself
-				// before rethrowing, so the rollback below is file-only.
+				// The pad is materializeTemplateInto()'s, which takes it down
+				// itself before rethrowing; the rollback below is the file's.
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user, $claim);
 
 				return [
@@ -151,22 +151,18 @@ class PadCreationService {
 				];
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				// File only: materializeTemplateInto() has already deleted the
-				// pad it provisioned before rethrowing.
+				// File only: materializeTemplateInto() has taken down the pad
+				// it made before rethrowing.
 				$this->rollbackService->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim());
 			},
 		);
 	}
 
-	/** The file and the row were both made here, so neither outlives the other. */
-	private function unwindMaterializedPad(int $fileId, string $padId): void {
-		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $padId, 'template materialization');
-	}
-
 	/**
 	 * Shared core of the template materialization pipeline: validate the
-	 * template, resolve placeholders, provision a pad, seed it, write the
-	 * target file, bind it. The target file must already exist.
+	 * template, resolve placeholders, provision a pad, seed it, then the
+	 * step every create takes (writeAndBind()). The target file must
+	 * already exist.
 	 *
 	 * This method owns the Etherpad-side lifecycle of the pad it provisions.
 	 * A caller wrapping it in an outer rollback must not also delete that
@@ -221,22 +217,20 @@ class PadCreationService {
 			$resolvedHtml,
 			['fileId' => $fileId, 'operation' => 'template materialization'],
 		);
+		// Its own attempt, for the pad alone: the file is the caller's.
+		$attempt = new PadCreateAttempt();
 		try {
-			$padUrl = $this->etherpadClient->buildPadUrl($padId);
-
-			$content = $this->padFileService->buildInitialDocument(
-				$fileId,
+			$padUrl = $this->writeAndBind(
+				$attempt,
+				$claim,
 				$padId,
 				$accessMode,
 				// Without an answer from Etherpad the file starts at 0, as it
 				// always did: a snapshot's revision is never negative.
-				snapshot: new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
-				padUrl: $padUrl,
+				new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
 			);
-			$this->writeCreatedFile($claim, $content);
-			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 		} catch (\Throwable $e) {
-			$this->unwindMaterializedPad($fileId, $padId);
+			$this->provisionedPadRollback->discardCreated($padId, $attempt->bindingAttemptFileId(), $fileId, 'template materialization');
 			throw $e;
 		}
 
@@ -317,24 +311,37 @@ class PadCreationService {
 		string $path = ''
 	): array {
 		$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
-		$fileId = $claim->fileId;
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
 		$attempt->recordPad($padId);
-		$padUrl = $this->etherpadClient->buildPadUrl($padId);
-
-		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, padUrl: $padUrl);
-		$this->writeCreatedFile($claim, $content);
-		$attempt->recordBindingAttempt($fileId);
-		$this->bindingService->createBinding($fileId, $padId, $accessMode);
+		$padUrl = $this->writeAndBind($attempt, $claim, $padId, $accessMode);
 
 		return [
 			'file' => $attempt->path(),
-			'file_id' => $fileId,
+			'file_id' => $claim->fileId,
 			'pad_id' => $padId,
 			'access_mode' => $accessMode,
 			'pad_url' => $padUrl,
 		];
+	}
+
+	/**
+	 * The step every create takes once it has a pad for the file it made:
+	 * the document naming the pad written into the file, then the row. The
+	 * attempt records the binding write as it begins, as createBinding can
+	 * commit and still throw; a rollback asks the binding table only from
+	 * then on (ProvisionedPadRollback::discardCreated()).
+	 *
+	 * @return string the pad's URL
+	 */
+	private function writeAndBind(PadCreateAttempt $attempt, CreatedFileClaim $claim, string $padId, string $accessMode, ?PadSnapshot $snapshot = null): string {
+		$padUrl = $this->etherpadClient->buildPadUrl($padId);
+		$content = $this->padFileService->buildInitialDocument($claim->fileId, $padId, $accessMode, $snapshot, $padUrl);
+		$this->writeCreatedFile($claim, $content);
+		$attempt->recordBindingAttempt($claim->fileId);
+		$this->bindingService->createBinding($claim->fileId, $padId, $accessMode);
+
+		return $padUrl;
 	}
 
 	/**

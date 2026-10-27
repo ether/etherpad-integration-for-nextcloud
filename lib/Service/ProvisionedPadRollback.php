@@ -16,11 +16,12 @@ use Psr\Log\LoggerInterface;
  * Undoes the pad and the binding row when a flow that provisions a pad
  * fails partway. The `.pad` file is each flow's own business.
  *
- * Which of the two methods a flow calls turns on what its file says. A
- * first init works on an empty file, so a row naming the new pad is the
- * finished half of the job and the next open writes the rest. Every other
- * flow has written the file, or has one naming a different pad, so a row
- * pointing at this pad contradicts it.
+ * Which method a flow calls turns on what its file says. A first init
+ * works on an empty file, so a row naming the new pad is the finished half
+ * of the job and the next open writes the rest. A create writes its file
+ * before its row, and a restore has a file naming a different pad, so for
+ * them a row pointing at this pad contradicts it; a create asks about one
+ * only once its binding write began (discardCreated()).
  *
  * Only for a pad provisioned in the same call: `discardProvisioned` removes
  * a group outright. A flow that adopted an existing pad - the legacy Ownpad
@@ -42,6 +43,34 @@ class ProvisionedPadRollback {
 	/** A row naming this pad goes, then the pad. One naming another stays. */
 	public function removeMatchingBindingAndDiscard(int $fileId, string $padId, string $operation): void {
 		$this->rollback($fileId, $padId, $operation, keepBinding: false);
+	}
+
+	/**
+	 * The pad of a failed create - empty or from a template - with the row
+	 * naming it once the binding write began ($bindingAttemptFileId), as
+	 * createBinding can commit and still throw. Failing earlier, the pad is
+	 * the create's beyond doubt and goes without a database question, which
+	 * is what happens when that question cannot be answered.
+	 */
+	public function discardCreated(string $padId, ?int $bindingAttemptFileId, ?int $fileId, string $operation): void {
+		if ($bindingAttemptFileId !== null) {
+			$this->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, $operation);
+			return;
+		}
+		try {
+			$this->padLifecycle->discardProvisioned($padId);
+		} catch (\Throwable $cleanupError) {
+			// Both, and the pad id against the rule everywhere else: no
+			// binding row was written, so ep_pad_bindings cannot lead from
+			// the one to the other.
+			$this->logger->warning('Could not cleanup failed Etherpad create', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $padId,
+				'operation' => $operation,
+				...SafeError::context($cleanupError),
+			]);
+		}
 	}
 
 	private function rollback(int $fileId, string $padId, string $operation, bool $keepBinding): void {

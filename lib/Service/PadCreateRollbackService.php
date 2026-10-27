@@ -25,10 +25,9 @@ use Psr\Log\LoggerInterface;
  */
 class PadCreateRollbackService {
 	public function __construct(
-		private ManagedPadLifecycle $padLifecycle,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -38,39 +37,16 @@ class PadCreateRollbackService {
 		if ($padId === '') {
 			return;
 		}
-
-		// Only a create that got as far as writing the row has to ask about
-		// one: createBinding can commit and still throw. Failing earlier, the
-		// pad is ours beyond doubt and goes without a database question -
-		// which is what happens when that question cannot be answered.
-		if ($bindingAttemptFileId !== null) {
-			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, 'create');
-			return;
-		}
-
-		try {
-			$this->padLifecycle->discardProvisioned($padId);
-		} catch (\Throwable $cleanupError) {
-			// Both, and the pad id against the rule everywhere else:
-			// reaching here means no binding row was written, so
-			// ep_pad_bindings cannot lead from the one to the other, and the
-			// claim is null whenever the create failed before it was taken.
-			$this->logger->warning('Could not cleanup failed Etherpad create', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $claim?->fileId,
-				'padId' => $padId,
-				...SafeError::context($cleanupError),
-			]);
-		}
+		$this->provisionedPadRollback->discardCreated($padId, $bindingAttemptFileId, $claim?->fileId, 'create');
 	}
 
 	/**
 	 * Remove only the file, leaving the pad alone.
 	 *
 	 * For the flows that clean up their own pad — the template
-	 * materialisation deletes it before rethrowing — so the full rollback
-	 * would delete it a second time, costing a round trip and logging a
-	 * warning about a pad that is already gone.
+	 * materialisation takes it down before rethrowing — so the full
+	 * rollback would delete it a second time, costing a round trip and
+	 * logging a warning about a pad that is already gone.
 	 */
 	public function rollbackCreatedFileOnly(string $uid, string $path, ?CreatedFileClaim $claim): void {
 		if ($claim === null) {

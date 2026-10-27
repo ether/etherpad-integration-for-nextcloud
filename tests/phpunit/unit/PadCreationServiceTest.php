@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\Binding;
@@ -917,7 +918,6 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('deletePad')->with('nc-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
 			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
@@ -975,7 +975,6 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
@@ -1035,6 +1034,33 @@ class PadCreationServiceTest extends TestCase {
 			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
 	}
 
+	/**
+	 * A template's pad whose file could not be written is the create's
+	 * beyond doubt: it goes without a question to the binding table, which
+	 * may not answer, and no row is written.
+	 */
+	public function testATemplatesPadWhoseFileCannotBeWrittenGoesWithoutAskingTheBindingTable(): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$pad';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects(self::never())->method('isBoundTo');
+		$bindingService->expects(self::never())->method('createBinding');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		$etherpadClient->expects(self::once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		// Written meanwhile: the guarded write refuses it.
+		$changed = $this->createMock(File::class);
+		$changed->method('getContent')->willReturn('written meanwhile');
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($changed);
+
+		$this->expectException(PadFileChangedException::class);
+		$this->buildMaterializeService($bindingService, $etherpadClient, $padId, $resolver)
+			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
+	}
+
 	/** A row naming a different pad belongs to the request that won the file. */
 	public function testMaterializeLeavesARivalRequestsRow(): void {
 		$padId = 'g.ABCDEFGHIJKLMNOP$pad';
@@ -1078,6 +1104,7 @@ class PadCreationServiceTest extends TestCase {
 		BindingService $bindingService,
 		EtherpadClient $etherpadClient,
 		string $padId,
+		?UserNodeResolver $userNodeResolver = null,
 	): PadCreationService {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
@@ -1101,6 +1128,7 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			etherpadClient: $etherpadClient,
 			padTypePolicy: $this->buildPadTypePolicy(true, false),
+			userNodeResolver: $userNodeResolver,
 		);
 	}
 
@@ -1119,7 +1147,6 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
@@ -1239,7 +1266,6 @@ class PadCreationServiceTest extends TestCase {
 		$resolver->expects($this->never())->method('resolveUserFileNodeById');
 
 		$rollbackService = new PadCreateRollbackService(
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$resolver,
 			$this->createMock(\Psr\Log\LoggerInterface::class),
 			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
