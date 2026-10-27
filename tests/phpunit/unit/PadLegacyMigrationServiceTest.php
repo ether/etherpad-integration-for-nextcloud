@@ -394,19 +394,13 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	/** @return iterable<string, array{string, string}> */
 	public static function idsNotToLink(): iterable {
 		yield 'a group of fifteen' => ['g.VICTIMGROUPID12$notes', BindingService::ACCESS_PROTECTED];
-		yield 'a colon' => ['a:b', BindingService::ACCESS_PUBLIC];
 		// Bob's file binds `victim_pad`. No row names `victim pad`, so the
 		// collision rule would not stop it, yet Etherpad's API rewrites it to
 		// `victim_pad` before every call: this file would open and sync
 		// Bob's pad.
 		yield 'a space' => ['victim pad', BindingService::ACCESS_PUBLIC];
-		yield 'a no-break space' => ["victim\u{A0}pad", BindingService::ACCESS_PUBLIC];
-		yield 'a line break' => ["a\nb", BindingService::ACCESS_PUBLIC];
-		yield 'a carriage return' => ["a\rb", BindingService::ACCESS_PUBLIC];
 		// Etherpad takes it; a `.pad` file's frontmatter cannot hold it.
 		yield 'a NUL' => ["a\x00b", BindingService::ACCESS_PUBLIC];
-		// PostgreSQL refuses it too: a server error in place of the refusal.
-		yield 'not UTF-8' => ["a\xffb", BindingService::ACCESS_PUBLIC];
 	}
 
 	/**

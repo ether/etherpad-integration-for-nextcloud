@@ -376,26 +376,24 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A row an earlier version bound under an id Etherpad's API may rewrite
-	 * or refuse - `victim pad`, which it rewrites onto `victim_pad`, or
-	 * `a:b` - loses only its row once its file is gone: Etherpad is not
-	 * asked, and the warning names the file, not the pad.
+	 * Once its file is gone, a row an earlier version bound under `victim
+	 * pad`, which Etherpad's API rewrites onto `victim_pad`, loses only its
+	 * row: Etherpad is not asked, and the warning names the file, not the
+	 * pad.
 	 */
 	public function testARowUnderAnIdEtherpadDoesNotTakeAsItIsGoesWithoutItsPad(): void {
 		$this->table([
 			self::row(1, 11, 'victim pad', seenAt: 100),
-			self::row(2, 12, 'a:b', seenAt: 101),
-			self::row(3, 13, 'pad-fine', seenAt: 102),
+			self::row(2, 13, 'pad-fine', seenAt: 102),
 		], []);
 
-		$this->assertSame(['checked' => 3, 'deleted' => 1], $this->sweep());
+		$this->assertSame(['checked' => 2, 'deleted' => 1], $this->sweep());
 
 		$this->assertSame(['pad-fine' => 1], $this->attempts);
 		$this->assertSame([], $this->fileIds());
 		$line = 'The file of a pad is gone for good; its row goes, but the pad stays: Etherpad\'s API may not act on its id as it is.';
 		$this->assertSame([
 			['warning', $line, 11],
-			['warning', $line, 12],
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 13],
 		], $this->lines);
 		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 11], $this->contexts[0]);

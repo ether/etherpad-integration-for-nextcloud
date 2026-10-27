@@ -336,15 +336,17 @@ class ManagedPadLifecycleTest extends TestCase {
 
 	/**
 	 * A pad that was there before the call is not ours to undo: deleting it
-	 * would destroy live content.
+	 * would destroy live content, and nothing is seeded into it.
 	 */
 	public function testLeavesAPadThatWasAlreadyThere(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('createPad')->willThrowException(new \RuntimeException('padID does already exist'));
+		$client->method('createPad')->willThrowException(new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'));
+		$client->expects($this->never())->method('setHTML');
+		$client->expects($this->never())->method('setText');
 		$client->expects($this->never())->method('deletePad');
 
-		$this->expectException(\RuntimeException::class);
-		$this->provisionPublic($client, 'nc-abcdef0123456789');
+		$this->expectException(EtherpadRefusedException::class);
+		$this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-abcdef0123456789', static fn (): string => 'p-unused', 'text', '<p>text</p>');
 	}
 
 	/**
@@ -607,20 +609,6 @@ class ManagedPadLifecycleTest extends TestCase {
 		} catch (EtherpadClientException $e) {
 			$this->assertSame($refused, $e);
 		}
-	}
-
-	/**
-	 * A pad that was there before the step is not the step's: Etherpad
-	 * refusing to make it again leaves it alone, and nothing is seeded.
-	 */
-	public function testAPadThatWasThereIsNeitherSeededNorTakenDown(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('createPad')->willThrowException(new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'));
-		$client->expects($this->never())->method('setText');
-		$client->expects($this->never())->method('deletePad');
-
-		$this->expectException(EtherpadRefusedException::class);
-		$this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-pad', static fn (): string => 'p-unused', 'text', '');
 	}
 
 	/** Each of the five on its own, so none can drop out of the pattern unnoticed. */
