@@ -165,7 +165,7 @@ class PadControllerErrorMapper {
 			// its code: they initialise the file and retry.
 			return $this->answer($options, $e, ['message' => $this->l10n->t('This .pad file has no pad metadata yet.')], Http::STATUS_BAD_REQUEST);
 		} catch (LegacyPadNotFoundException $e) {
-			// The file is well-formed; the pad it names is not there.
+			// The file is well-formed; the pad it names cannot be linked.
 			return $this->answer($options, $e, ['message' => $this->l10n->t('This legacy Ownpad file names a pad that does not exist in Etherpad.')], Http::STATUS_BAD_REQUEST);
 		} catch (PadFileFormatException $e) {
 			return $this->answer($options, $e, ['message' => $this->l10n->t('The selected .pad file has an invalid format.')], Http::STATUS_BAD_REQUEST);

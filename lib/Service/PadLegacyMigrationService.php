@@ -12,7 +12,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
@@ -38,20 +38,30 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * A group pad this file names has to be a group pad that is there.
-	 * `g.<their-group>$invented` collides with no binding while naming a
-	 * real group, and the session issued on open grants all of it. Fails
+	 * Whether the group a group pad names holds it; true for a pad that
+	 * names no group. `g.<their-group>$invented` collides with no binding
+	 * while naming a real group, and the session issued on open grants all
+	 * of it. A group Etherpad refuses to list holds nothing either, so the
+	 * answer says no more than that whether the group is there. Fails
 	 * closed: a refused migration is retried, a waved-through one is not.
-	 * True for a pad that names no group.
 	 */
 	private function groupHolds(string $sourcePadId): bool {
 		$groupId = PadId::groupIdOf($sourcePadId);
-		return $groupId === null || in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true);
+		if ($groupId === null) {
+			return true;
+		}
+		try {
+			return in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true);
+		} catch (EtherpadRefusedException) {
+			return false;
+		}
 	}
 
-	/** The refusal of a file naming a pad it cannot be bound to, with its line, as the other refusals have. */
-	private function missingPad(string $uid, int $fileId, string $sourceUrl, string $accessMode, string $why): LegacyPadNotFoundException {
-		$this->logger->warning('Refused legacy Ownpad migration - the pad it names does not exist.', $this->refusalContext($uid, $fileId, $sourceUrl, $accessMode));
+	private function unlinkable(string $uid, int $fileId, string $sourceUrl, string $accessMode, string $reason, string $why): LegacyPadNotFoundException {
+		$this->logger->warning('Refused legacy Ownpad migration - the pad it names cannot be linked.', [
+			...$this->refusalContext($uid, $fileId, $sourceUrl, $accessMode),
+			'reason' => $reason,
+		]);
 		return new LegacyPadNotFoundException($why);
 	}
 
@@ -103,6 +113,8 @@ class PadLegacyMigrationService {
 	 *   a file the requesting user has no access to.
 	 * @throws LegacyProtectedImportDisabledException when the file names a
 	 *   group pad and this instance does not import those.
+	 * @throws LegacyPadNotFoundException when the file names a pad it cannot
+	 *   be linked to.
 	 */
 	public function migrate(string $uid, File $file, array $legacyShortcut): void {
 		$fileId = (int)$file->getId();
@@ -132,13 +144,16 @@ class PadLegacyMigrationService {
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
-			if (!PadId::isValid($sourcePadId)) {
-				throw $this->missingPad($uid, $fileId, $sourceUrl, $accessMode, 'The legacy .pad file names a pad id Etherpad accepts for no pad.');
+			// No line break or NUL either, which a `.pad` file's frontmatter
+			// cannot hold: the row is made before the file is written, and
+			// would outlive a write that refuses the id.
+			if (!PadId::isValid($sourcePadId) || preg_match('/[\x00\x0A\x0D]/', $sourcePadId) === 1) {
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');
 			}
 			// After the switched-off refusal: asking first would answer three
 			// ways and make this an existence oracle on a privileged API.
 			if (!$this->groupHolds($sourcePadId)) {
-				throw $this->missingPad($uid, $fileId, $sourceUrl, $accessMode, 'The legacy .pad file names a pad that does not exist in its Etherpad group.');
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'not_in_group', 'The legacy .pad file names a pad its Etherpad group does not hold.');
 			}
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id

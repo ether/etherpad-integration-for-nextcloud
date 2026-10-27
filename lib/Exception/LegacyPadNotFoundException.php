@@ -10,10 +10,11 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Exception;
 
 /**
- * A legacy Ownpad file naming a pad it cannot be bound to: a group pad its
- * Etherpad group does not have, or an id Etherpad's API refuses
- * (PadId::isValid()). The migration refuses it. A format problem to everything that catches those, with a sentence
- * of its own for the reader, since the file itself is well-formed.
+ * A legacy Ownpad file naming a pad it cannot be linked to: an id
+ * Etherpad's API refuses or a `.pad` file cannot hold, or a group pad its
+ * group does not have. A format problem to everything that catches those,
+ * with a sentence of its own for the reader, since the file itself is
+ * well-formed.
  */
 final class LegacyPadNotFoundException extends PadFileFormatException {
 }

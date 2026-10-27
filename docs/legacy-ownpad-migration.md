@@ -28,7 +28,7 @@ This is a pure local re-bind. No remote pad is created, no content is copied; th
 - New YAML frontmatter is written referencing the same `pad_id`.
 - A binding row is inserted.
 
-Before a new binding row, the pad id has to be one Etherpad could hold - its own rule (`isValidPadId`), as Etherpad 3.3 has it: an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 UTF-16 code units without `$` or `:`, and not `.` or `..` - and a group pad has to be in the group it names (`listPads`). Etherpad's API refuses every call naming an id that fails that rule, so the app could neither read, sync nor delete such a pad - even one Etherpad 2 made with a `:`, which the editor still opens; no pad under `.` or `..` was ever reachable, as a browser makes `/p/.` another path. Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad.") and leaves the `.pad` file untouched.
+Before a new binding row, the pad id has to be one Etherpad's API takes - its own rule (`isValidPadId`) as Etherpad has it from 3.3.3: an optional group of `g.` and sixteen letters or digits followed by `$`, then a name of 1 to 50 UTF-16 code units without `$` or `:`, and not `.` or `..` - and one a `.pad` file can hold, without a line break or a NUL. A group pad has to be in the group it names (`listPads`); a group Etherpad refuses to list holds nothing either, so the answer does not tell a group that is there from one that is not. Etherpad's API refuses a call naming an id that fails its rule, so the app could neither read, sync nor delete such a pad - even one an Etherpad before 3.3.3 made with a `:`, which the editor still opens, and which is refused here on every Etherpad; no editor ever opened a pad under `.` or `..`, as a browser makes `/p/.` another path. Either refusal answers HTTP 400 ("This legacy Ownpad file names a pad that does not exist in Etherpad."), leaves the `.pad` file untouched, and writes `Refused legacy Ownpad migration - the pad it names cannot be linked.` with a `reason`.
 
 ### Same origin — claim-collision rule
 
@@ -49,7 +49,7 @@ Refused imports surface as HTTP 403 with `code: "legacy_protected_import_disable
 
 ## Audit log
 
-Every branch emits a single log line at `info` level (or `warning` for a refusal). Fields:
+Every branch emits one log line at `info` level (or `warning` for a refusal); a migration that lost a race for the pad id writes a second, `info`, before the collision's. A pad on another server takes the path of `POST /api/v1/pads/from-url`, whose own refusals - external pads switched off, say - are the error mapper's to log, at `debug`. Fields:
 
 | Field | Meaning |
 |---|---|
@@ -59,6 +59,7 @@ Every branch emits a single log line at `info` level (or `warning` for a refusal
 | `accessMode` | `public` / `protected` / unset for cross-origin |
 | `collision` | `none` / `with_access` / `no_access` / `self` |
 | `uid` | Migrating user |
+| `reason` | Why a pad cannot be linked: `invalid_id` or `not_in_group`; on that refusal only |
 
 Neither the URL nor the pad id is written out. A legacy shortcut can carry
 credentials in its userinfo and a token in its query, and for a public pad the

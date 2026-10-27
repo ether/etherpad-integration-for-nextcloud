@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
@@ -274,6 +276,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$file->expects($this->never())->method('putContent');
 
 		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
@@ -289,11 +292,13 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		// A format problem to everything that catches those, with a sentence
 		// of its own: the file is well-formed, the pad is not there.
 		$this->expectException(LegacyPadNotFoundException::class);
+		$this->expectExceptionMessage('The legacy .pad file names a pad its Etherpad group does not hold.');
 
 		$this->buildService(
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
+			logger: $this->refusalLine('the pad it names cannot be linked.', 506, BindingService::ACCESS_PROTECTED, 'mallory', ['reason' => 'not_in_group']),
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/g.VICTIMGROUPID123$made-up',
 			'pad_id' => 'g.VICTIMGROUPID123$made-up',
@@ -301,18 +306,60 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * An id Etherpad's API refuses is not bound: refused before its group
-	 * is asked about it, with the migration's own line, the file left as
-	 * it is. One such id stands for all; which ids fail is PadIdTest's.
+	 * A group Etherpad refuses to list holds the pad no more than one that
+	 * lacks it, and is refused the same way: the answer does not tell a
+	 * group that is there from one that is not.
 	 */
-	public function testSameOriginRefusesAPadIdEtherpadsApiRefuses(): void {
-		$padId = 'g.VICTIMGROUPID12$notes';
+	public function testSameOriginRefusesAPadWhoseGroupEtherpadDoesNotList(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(511);
+		$file->expects($this->never())->method('putContent');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('listPads')->willThrowException(new EtherpadRefusedException('Etherpad API error (listPads): groupID does not exist'));
+		$binding = $this->createMock(BindingService::class);
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(LegacyPadNotFoundException::class);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			logger: $this->refusalLine('the pad it names cannot be linked.', 511, BindingService::ACCESS_PROTECTED, 'mallory', ['reason' => 'not_in_group']),
+		)->migrate('mallory', $file, [
+			'url' => 'https://pad.our-server.test/p/g.NOSUCHGROUP00000$notes',
+			'pad_id' => 'g.NOSUCHGROUP00000$notes',
+		]);
+	}
+
+	/** @return iterable<string, array{string, string}> */
+	public static function idsNotToLink(): iterable {
+		yield 'a group of fifteen' => ['g.VICTIMGROUPID12$notes', BindingService::ACCESS_PROTECTED];
+		yield 'a colon' => ['a:b', BindingService::ACCESS_PUBLIC];
+		// Etherpad takes these; a `.pad` file's frontmatter cannot hold them.
+		yield 'a line break' => ["a\nb", BindingService::ACCESS_PUBLIC];
+		yield 'a carriage return' => ["a\rb", BindingService::ACCESS_PUBLIC];
+		yield 'a NUL' => ["a\x00b", BindingService::ACCESS_PUBLIC];
+	}
+
+	/**
+	 * An id Etherpad's API refuses, or one a `.pad` file cannot hold, is not
+	 * bound: refused before its group is asked about it, with the
+	 * migration's own line, the file left as it is. Which ids Etherpad
+	 * refuses is PadIdTest's.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('idsNotToLink')]
+	public function testSameOriginRefusesAPadIdItCannotLink(string $padId, string $accessMode): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(507);
 		$file->expects($this->never())->method('putContent');
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn($accessMode);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
@@ -323,24 +370,16 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$binding->method('findByPadId')->willReturn(null);
 		$binding->expects($this->never())->method('createBinding');
 
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
-			->method('warning')
-			->with('Refused legacy Ownpad migration - the pad it names does not exist.', $this->callback(
-				static fn (array $context): bool => ($context['fileId'] ?? null) === 507
-					&& ($context['collision'] ?? null) === 'none'
-					&& !in_array($padId, $context, true)
-			));
-
 		$this->expectException(LegacyPadNotFoundException::class);
+		$this->expectExceptionMessage('The legacy .pad file names a pad id that cannot be linked.');
 
 		$this->buildService(
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
-			logger: $logger,
+			logger: $this->refusalLine('the pad it names cannot be linked.', 507, $accessMode, 'mallory', ['reason' => 'invalid_id']),
 		)->migrate('mallory', $file, [
-			'url' => 'https://pad.our-server.test/p/' . $padId,
+			'url' => 'https://pad.our-server.test/p/' . rawurlencode($padId),
 			'pad_id' => $padId,
 		]);
 	}
@@ -402,7 +441,10 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		]);
 	}
 
-	/** A pad on another server is that server's to judge: it is linked, not refused. */
+	/**
+	 * A pad on another server is that server's to judge: the migration
+	 * hands it to the external route, not refusing it for its id.
+	 */
 	public function testAPadOnAnotherServerIsNotAskedTheRule(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(510);
@@ -430,12 +472,13 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		$etherpadClient->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
+		// As the client throws it: an outage, not a refusal, goes on as it is.
+		$etherpadClient->method('listPads')->willThrowException(new EtherpadClientException('Etherpad API request failed: listPads', 0, new \RuntimeException('Connection timed out')));
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->expects($this->never())->method('createBinding');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(EtherpadClientException::class);
 
 		$this->buildService(
 			binding: $binding,
@@ -540,6 +583,30 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		]);
 	}
 
+	/**
+	 * A logger that takes one refusal, with the fields every refusal where
+	 * no row names the pad yet has - and nothing more: not the URL, nor the
+	 * pad id.
+	 *
+	 * @param array<string,string> $more
+	 */
+	private function refusalLine(string $why, int $fileId, string $accessMode, string $uid, array $more = []): LoggerInterface {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with('Refused legacy Ownpad migration - ' . $why, [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'sourceHost' => 'https://pad.our-server.test',
+				'originBranch' => 'same',
+				'accessMode' => $accessMode,
+				'collision' => 'none',
+				'uid' => $uid,
+				...$more,
+			]);
+		return $logger;
+	}
+
 	private function policyAllowing(bool $protectedImport): LegacyImportPolicy {
 		$policy = $this->createMock(LegacyImportPolicy::class);
 		$policy->method('allowsProtectedImport')->willReturn($protectedImport);
@@ -580,6 +647,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
+			logger: $this->refusalLine('protected import is switched off.', 202, BindingService::ACCESS_PROTECTED, 'mallory'),
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/g.someoneelses0000$notes',
 			'pad_id' => 'g.someoneelses0000$notes',
