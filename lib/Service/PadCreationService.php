@@ -211,7 +211,8 @@ class PadCreationService {
 			$resolvedHtml,
 			['fileId' => $fileId, 'operation' => 'template materialization'],
 		);
-		// Its own attempt, for the pad alone: the file is the caller's.
+		// An attempt of its own, to mark the binding write: the file is the
+		// caller's, and so is its rollback.
 		$attempt = new PadCreateAttempt();
 		try {
 			$padUrl = $this->writeAndBind(

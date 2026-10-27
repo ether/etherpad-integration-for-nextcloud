@@ -23,7 +23,8 @@ namespace OCA\EtherpadNextcloud\Service;
  * `disownFile()` is now a statement rather than a variable that has to be
  * un-set in the right place. The template flow's pad stays out of the
  * create's rollback for a different reason: `materializeTemplateInto()`
- * keeps an attempt of its own for it and takes it down itself.
+ * takes it down itself, with an attempt of its own that marks only the
+ * binding write.
  */
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
