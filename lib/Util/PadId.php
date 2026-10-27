@@ -11,8 +11,8 @@ namespace OCA\EtherpadNextcloud\Util;
 /**
  * What an Etherpad pad id says about itself, two ways. Loosely, which group
  * an id names: the one rule every reader of a binding shares, so all of
- * them see the same groups. Strictly, whether Etherpad's API takes an id
- * that comes from outside (isValid()).
+ * them see the same groups. Strictly, whether Etherpad's API acts on an id
+ * that comes from outside as it is (isValid()).
  *
  * Neither is a permission check: knowing that an id *names* a group says
  * nothing about whose group it is.
@@ -23,18 +23,20 @@ final class PadId {
 
 	/**
 	 * Etherpad's own rule for a pad id as it has it from 3.3.3 (isValidPadId()
-	 * in its PadManager, read in 3.3.11), but for the name's length. A `:` is
-	 * how Etherpad's database keys a pad's records; Etherpad before 3.3.3
-	 * still took it, and is held to the rule all the same, as after an
-	 * upgrade the app could not reach such a pad. No editor ever opened a
-	 * pad under `.` or `..`, as a browser makes `/p/.` another path. The
-	 * dot after `g` is a dot here, where Etherpad's lets it be any
-	 * character but a line break: no group of Etherpad's is named
-	 * otherwise.
+	 * in its PadManager, read in 3.3.11), but for the name's length, and no
+	 * whitespace either. A `:` is how Etherpad's database keys a pad's
+	 * records; an Etherpad before 3.3.3 still took it, and is held to the
+	 * rule all the same, as after an upgrade the app could not reach such a
+	 * pad. Whitespace - as JavaScript's `\s` counts it - passes Etherpad's
+	 * rule, but its sanitizePadId() rewrites it as it rewrites `:`
+	 * (isValid()). No editor ever opened a pad under `.` or `..`, as a
+	 * browser makes `/p/.` another path. The dot after `g` is a dot here,
+	 * where Etherpad's lets it be any character but a line break: no group
+	 * of Etherpad's is named otherwise.
 	 *
 	 * @see https://github.com/ether/etherpad/blob/v3.3.11/src/node/db/PadManager.ts
 	 */
-	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:]+)$/uD';
+	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:\t\n\x{0B}\f\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+)$/uD';
 
 	/** The longest name Etherpad takes, in UTF-16 code units, as JavaScript counts a string. */
 	public const MAX_NAME_UNITS = 50;
@@ -49,10 +51,13 @@ final class PadId {
 	}
 
 	/**
-	 * Whether Etherpad's API takes this id. It refuses a call naming one that
-	 * fails (getPadSafe()), so a pad under it could be neither read, synced
-	 * nor deleted - even one an Etherpad before 3.3.3 made, which its editor
-	 * still opens. Syntax only, not whether the pad exists. For an id that
+	 * Whether Etherpad's API acts on this id as it is. Before every call it
+	 * rewrites an id no pad exists under, runs of whitespace and of `:`
+	 * becoming `_` (sanitizePadId() in its APIHandler), and acts on that
+	 * other pad; an id a pad does exist under, it refuses where the rule
+	 * fails (getPadSafe()) - a pad an Etherpad before 3.3.3 made with a
+	 * `:`, which its editor still opens, could be neither read, synced nor
+	 * deleted. Syntax only, not whether the pad exists. For an id that
 	 * comes from outside, before it is bound.
 	 */
 	public static function isValid(string $padId): bool {

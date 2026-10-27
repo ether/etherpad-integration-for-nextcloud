@@ -73,8 +73,8 @@ class PadLegacyMigrationService {
 
 	/**
 	 * The fields of every same-origin line (docs/legacy-ownpad-migration.md,
-	 * "Audit log"); `collision` only where a row was looked up and decided,
-	 * null otherwise.
+	 * "Audit log"); `collision` only where a row was looked up and decided -
+	 * $collision is null otherwise, and the field left out.
 	 *
 	 * @return array<string,int|string>
 	 */
@@ -149,7 +149,8 @@ class PadLegacyMigrationService {
 
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		// Before anything is asked or written, on every way below: an id
-		// Etherpad's API refuses could be neither synced nor deleted; one
+		// Etherpad's API does not act on as it is would be refused, or
+		// rewritten onto another pad - one a sweep would then delete; one
 		// the file's frontmatter cannot hold - built now, so the format's
 		// own rule says so - would fail every write after a row; and
 		// PostgreSQL refuses invalid UTF-8 and NUL, a server error in place

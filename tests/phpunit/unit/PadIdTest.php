@@ -46,17 +46,25 @@ class PadIdTest extends TestCase {
 		yield 'fifty-two UTF-16 units of characters past the BMP' => [str_repeat('😀', 26), false];
 		yield 'forty-nine characters and one past the BMP' => [str_repeat('a', 49) . '😀', false];
 		yield 'fifty characters and a line break' => [str_repeat('a', 50) . "\n", false];
-		// The line break is part of the name, so this is not the dot name.
-		yield 'a dot and a line break' => [".\n", true];
+		// Etherpad's API rewrites whitespace, as JavaScript's \s counts it,
+		// to `_` where no pad has the id, and acts on that other pad.
+		yield 'a space' => ['victim pad', false];
+		yield 'a tab' => ["a\tb", false];
+		yield 'a vertical tab' => ["a\x0Bb", false];
+		yield 'a no-break space' => ["a\u{A0}b", false];
+		yield 'a hair space' => ["a\u{200A}b", false];
+		yield 'a zero-width space, which is none' => ["a\u{200B}b", true];
+		yield 'a line separator' => ["a\u{2028}b", false];
+		yield 'an ideographic space' => ["a\u{3000}b", false];
+		yield 'a byte order mark' => ["a\u{FEFF}b", false];
 		yield 'not UTF-8' => ["\xff", false];
 	}
 
 	/**
-	 * Etherpad's rule from 3.3.3 (isValidPadId() in its PadManager): the
-	 * name counted in UTF-16 units, as JavaScript counts it, and the
-	 * pattern's end the string's very end - a final line break is part of
-	 * the name, as in Etherpad. The dot after `g` is a dot, stricter than
-	 * Etherpad's pattern.
+	 * Etherpad's rule from 3.3.3 (isValidPadId() in its PadManager), and no
+	 * whitespace, which its API rewrites: the name counted in UTF-16 units,
+	 * as JavaScript counts it, and the pattern's end the string's very end.
+	 * The dot after `g` is a dot, stricter than Etherpad's pattern.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('ids')]
 	public function testAPadIdIsValidAsEtherpadSaysIt(string $padId, bool $valid): void {
