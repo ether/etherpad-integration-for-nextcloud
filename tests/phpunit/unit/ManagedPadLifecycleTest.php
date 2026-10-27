@@ -641,7 +641,8 @@ class ManagedPadLifecycleTest extends TestCase {
 
 	/**
 	 * The lines' own fields win over a caller's: a context naming another
-	 * app, pad or error does not make the line say so.
+	 * app or error, or for the left-over line another pad, does not make
+	 * the line say so.
 	 */
 	public function testALinesOwnFieldsWinOverTheCallers(): void {
 		$client = $this->createMock(EtherpadClient::class);

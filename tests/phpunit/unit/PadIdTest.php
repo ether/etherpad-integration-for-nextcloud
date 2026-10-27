@@ -45,18 +45,17 @@ class PadIdTest extends TestCase {
 		yield 'fifty UTF-16 units of characters past the BMP' => [str_repeat('😀', 25), true];
 		yield 'fifty-two UTF-16 units of characters past the BMP' => [str_repeat('😀', 26), false];
 		yield 'forty-nine characters and one past the BMP' => [str_repeat('a', 49) . '😀', false];
-		yield 'fifty characters and a line break' => [str_repeat('a', 50) . "\n", false];
-		// Etherpad's API rewrites whitespace, as JavaScript's \s counts it,
-		// to `_` where no pad has the id, and acts on that other pad.
-		yield 'a space' => ['victim pad', false];
-		yield 'a tab' => ["a\tb", false];
-		yield 'a vertical tab' => ["a\x0Bb", false];
-		yield 'a no-break space' => ["a\u{A0}b", false];
-		yield 'a hair space' => ["a\u{200A}b", false];
-		yield 'a zero-width space, which is none' => ["a\u{200B}b", true];
-		yield 'a line separator' => ["a\u{2028}b", false];
-		yield 'an ideographic space' => ["a\u{3000}b", false];
-		yield 'a byte order mark' => ["a\u{FEFF}b", false];
+		yield 'a line break at the very end' => ["abc\n", false];
+		// Each character JavaScript's \s takes.
+		foreach ([0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680, ...range(0x2000, 0x200A), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF] as $codePoint) {
+			yield sprintf('U+%04X', $codePoint) => ['a' . mb_chr($codePoint, 'UTF-8') . 'b', false];
+		}
+		yield 'whitespace in a group pad\'s name' => ['g.AbCdEfGh12345678$a b', false];
+		// Ones it does not: PCRE's \s or \v takes the first two.
+		yield 'a next line' => ["a\u{85}b", true];
+		yield 'a Mongolian vowel separator' => ["a\u{180E}b", true];
+		yield 'a zero-width space' => ["a\u{200B}b", true];
+		yield 'a word joiner' => ["a\u{2060}b", true];
 		yield 'not UTF-8' => ["\xff", false];
 	}
 

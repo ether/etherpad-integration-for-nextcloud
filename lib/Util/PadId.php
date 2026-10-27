@@ -23,13 +23,13 @@ final class PadId {
 
 	/**
 	 * Etherpad's own rule for a pad id as it has it from 3.3.3 (isValidPadId()
-	 * in its PadManager, read in 3.3.11), but for the name's length, and no
-	 * whitespace either. A `:` is how Etherpad's database keys a pad's
-	 * records; an Etherpad before 3.3.3 still took it, and is held to the
-	 * rule all the same, as after an upgrade the app could not reach such a
-	 * pad. Whitespace - as JavaScript's `\s` counts it - passes Etherpad's
-	 * rule, but its sanitizePadId() rewrites it as it rewrites `:`
-	 * (isValid()). No editor ever opened a pad under `.` or `..`, as a
+	 * in its PadManager, read in 3.3.11), refusing whitespace besides, as
+	 * JavaScript's `\s` counts it; the name's length is isValid()'s to count.
+	 * A `:` is how Etherpad's database keys a pad's records; an Etherpad
+	 * before 3.3.3 still took it, and is held to the rule all the same, as
+	 * after an upgrade the app could not reach such a pad. Whitespace passes
+	 * Etherpad's rule, but its sanitizePadId() rewrites it as it rewrites
+	 * `:` (isValid()). No editor ever opened a pad under `.` or `..`, as a
 	 * browser makes `/p/.` another path. The dot after `g` is a dot here,
 	 * where Etherpad's lets it be any character but a line break: no group
 	 * of Etherpad's is named otherwise.
@@ -51,15 +51,15 @@ final class PadId {
 	}
 
 	/**
-	 * Whether Etherpad's API acts on this id as it is. Before every call it
-	 * rewrites an id no pad exists under, runs of whitespace and of `:`
-	 * becoming `_` (sanitizePadId() in its APIHandler), and acts on that
-	 * other pad; an id a pad does exist under, it refuses where the rule
-	 * fails (getPadSafe()) - a pad an Etherpad before 3.3.3 made with a
-	 * `:`, which its editor still opens, could be neither read, synced nor
-	 * deleted. Syntax only, not whether the pad exists. For an id that
-	 * comes from outside, before it is bound, and a bound one, before its
-	 * pad is deleted.
+	 * Whether Etherpad's API acts on this id as it is, capitals aside: with
+	 * its lowerCasePadIds on, it lowers an id no pad exists under, too.
+	 * Before every call it rewrites such an id, runs of whitespace and of
+	 * `:` becoming `_` (sanitizePadId() in its APIHandler), and acts on that
+	 * other pad; an id that then fails its rule, it refuses (getPadSafe()) -
+	 * so a pad an Etherpad before 3.3.3 made with a `:`, which its editor
+	 * still opens, could be neither read, synced nor deleted. Syntax only,
+	 * not whether the pad exists. For an id that comes from outside, before
+	 * it is bound, and a bound one, before its pad is deleted.
 	 */
 	public static function isValid(string $padId): bool {
 		if (preg_match(self::VALID_PATTERN, $padId, $matches) !== 1) {

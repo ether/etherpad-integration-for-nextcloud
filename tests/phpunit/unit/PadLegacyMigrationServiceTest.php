@@ -394,22 +394,26 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	public static function idsNotToLink(): iterable {
 		yield 'a group of fifteen' => ['g.VICTIMGROUPID12$notes', BindingService::ACCESS_PROTECTED];
 		yield 'a colon' => ['a:b', BindingService::ACCESS_PUBLIC];
+		// Bob's file binds `victim_pad`. No row names `victim pad`, so the
+		// collision rule would not stop it, yet Etherpad's API rewrites it to
+		// `victim_pad` before every call - and the sweep, deleting this
+		// file's pad, would take down Bob's.
 		yield 'a space' => ['victim pad', BindingService::ACCESS_PUBLIC];
 		yield 'a no-break space' => ["victim\u{A0}pad", BindingService::ACCESS_PUBLIC];
-		// Etherpad takes these; a `.pad` file's frontmatter cannot hold them.
 		yield 'a line break' => ["a\nb", BindingService::ACCESS_PUBLIC];
 		yield 'a carriage return' => ["a\rb", BindingService::ACCESS_PUBLIC];
+		// Etherpad takes it; a `.pad` file's frontmatter cannot hold it.
 		yield 'a NUL' => ["a\x00b", BindingService::ACCESS_PUBLIC];
 		// PostgreSQL refuses it too: a server error in place of the refusal.
 		yield 'not UTF-8' => ["a\xffb", BindingService::ACCESS_PUBLIC];
 	}
 
 	/**
-	 * An id Etherpad's API refuses, or one a `.pad` file cannot hold, is not
-	 * linked: refused before the database or Etherpad is asked anything,
-	 * with the migration's own line, the file left as it is. The format is
-	 * the real one, whose own rule refuses a line break or NUL. Which ids
-	 * Etherpad refuses is PadIdTest's.
+	 * An id Etherpad's API refuses or rewrites onto another pad, or one a
+	 * `.pad` file cannot hold, is not linked: refused before the database
+	 * or Etherpad is asked anything, with the migration's own line, the file
+	 * left as it is. The format is the real one, whose own rule refuses NUL.
+	 * Which ids Etherpad refuses or rewrites is PadIdTest's.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('idsNotToLink')]
 	public function testSameOriginRefusesAPadIdItCannotLink(string $padId, string $accessMode): void {
@@ -437,38 +441,6 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/' . rawurlencode($padId),
 			'pad_id' => $padId,
-		]);
-	}
-
-	/**
-	 * Bob's file binds the public pad `victim_pad`, which Mallory cannot
-	 * open as a file. Her Ownpad file names `victim pad`: no row names that
-	 * id, so the collision rule would not stop it, yet Etherpad's API
-	 * rewrites it to `victim_pad` before every call - and the sweep,
-	 * deleting her file's pad, would take down Bob's. Refused before any
-	 * row is looked up or made.
-	 */
-	public function testAPublicIdEtherpadWouldRewriteOntoAnotherPadIsNotBound(): void {
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn(513);
-		$file->expects($this->never())->method('putContent');
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
-		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		$binding = $this->createMock(BindingService::class);
-		$binding->expects($this->never())->method('findByPadId');
-		$binding->expects($this->never())->method('createBinding');
-
-		$this->expectException(LegacyPadNotFoundException::class);
-
-		$this->buildService(
-			binding: $binding,
-			padFileService: new PadFileService(new FixedClock()),
-			etherpadClient: $etherpadClient,
-			logger: $this->refusalLine('the pad it names cannot be linked.', 513, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'invalid_id'], collision: null),
-		)->migrate('mallory', $file, [
-			'url' => 'https://pad.our-server.test/p/victim%20pad',
-			'pad_id' => 'victim pad',
 		]);
 	}
 
