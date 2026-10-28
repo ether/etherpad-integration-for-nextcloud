@@ -6,7 +6,7 @@ The detection lives in `PadFileService::parseLegacyOwnpadShortcut`; the migratio
 
 ## What happens on first open
 
-The migration service compares the shortcut URL's origin (scheme + host + port, normalized) against the configured `etherpad_host` and branches accordingly:
+The migration service compares the shortcut URL's origin (scheme + host + port, normalized) against the configured `etherpad_host` and branches accordingly. On every branch the document goes in last, after the row lookups, a group's listing or the remote export, and only into the file as the open read it: the migration finds the file again by its id and leaves one written since, with `The .pad file changed before its document was written.` A row the migration made stays for the next open to finish.
 
 ### Different origin — external public pad
 
