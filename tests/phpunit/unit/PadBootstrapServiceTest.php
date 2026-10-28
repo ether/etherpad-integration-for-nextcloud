@@ -532,6 +532,27 @@ class PadBootstrapServiceTest extends TestCase {
 	}
 
 	/**
+	 * The guard compares with what the caller read: by the write, the
+	 * claimed id may find another writer's content, which a read made then
+	 * would take for the baseline and write over.
+	 */
+	public function testRefusesToWriteWhenTheFileChangedWhileThePadWasProvisioned(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')->willReturn('doc-content');
+
+		$claimed = $this->writableFile();
+		$claimed->method('getId')->willReturn(4242);
+		$claimed->expects($this->never())->method('putContent');
+		$stranger = $this->writableFile('somebody else\'s notes');
+		$stranger->expects($this->never())->method('putContent');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
+		$this->bootstrap($bindingService, $padFileService, file: $stranger)->initializeMissingFrontmatter('alice', $claimed, '');
+	}
+
+	/**
 	 * A file holding something else entirely — a renamed text file, say —
 	 * cannot be initialised, and saying so with `MissingFrontmatterException`
 	 * would answer this refusal with the very code that asks a client to

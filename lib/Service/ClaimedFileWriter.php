@@ -49,8 +49,8 @@ class ClaimedFileWriter {
 	/**
 	 * Write $content while the file is as the claim left it
 	 * (CreatedFileClaim::holds()). The content check and write are not
-	 * atomic. A read that gives no string fails the write, as a read that
-	 * failed: holds() takes the read uncast.
+	 * atomic. A read that gives no string fails the write; cast to a
+	 * string, it would pass for an empty file.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/Node/File.php
 	 * @throws \OCP\Files\NotFoundException
