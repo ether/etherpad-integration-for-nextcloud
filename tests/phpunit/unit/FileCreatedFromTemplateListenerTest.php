@@ -91,10 +91,12 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target = $this->file('New.pad');
 		$target->expects($this->never())->method('putContent');
 
+		$claim = new CreatedFileClaim('alice', 4242);
 		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->with($this->identicalTo($target), 'alice')->willReturn($claim);
 		$creation->expects($this->once())
 			->method('materializeTemplateInto')
-			->with($template, $this->isInstanceOf(IUser::class));
+			->with($this->identicalTo($template), $this->isInstanceOf(IUser::class), $this->identicalTo($claim));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');

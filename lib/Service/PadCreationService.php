@@ -96,12 +96,10 @@ class PadCreationService {
 	}
 
 	/**
-	 * Materializes a new pad from an existing `.pad` source file. Reuses the
-	 * same provisioning + binding pipeline as create(), but seeds the new
-	 * pad with the template's body (placeholders resolved). The source can
-	 * be any `.pad` in the requester's userspace — caller picks the file
-	 * by id, so a custom frontend can decide what counts as a template
-	 * (current folder, ancestor scan, a fixed picker, …).
+	 * A new pad from a managed `.pad` file the user can read, with its
+	 * body's placeholders resolved. The source is picked by id, so the
+	 * caller decides what counts as a template; an external pad or an
+	 * empty file is refused.
 	 *
 	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
@@ -228,9 +226,9 @@ class PadCreationService {
 	}
 
 	/**
-	 * The step the blank create and a template take once they have a pad:
-	 * the document naming the pad written into the file, then the row; the
-	 * attempt records the binding write as it begins.
+	 * The step the blank create and a template take once they have a pad.
+	 * The document is written before the row, so a failed write leaves no
+	 * row to take back.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
