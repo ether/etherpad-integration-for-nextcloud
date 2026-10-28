@@ -28,8 +28,8 @@ use Psr\Log\LoggerInterface;
  *
  * The document goes in through the claim on the shortcut as it was read
  * (ClaimedFileWriter): the row lookups, a group's listing and a remote
- * export all come before the write, and a file written meanwhile is not
- * written over.
+ * export all come before the write, which refuses a file that no longer
+ * holds the shortcut.
  */
 class PadLegacyMigrationService {
 	public function __construct(

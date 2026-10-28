@@ -266,7 +266,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	}
 
 	/**
-	 * Whether the file now reads as empty. `$fileId` is read by the caller
+	 * Whether the file was emptied. `$fileId` is read by the caller
 	 * before anything can fail rather than here: `Node::getId()` re-reads
 	 * through the node's path — it can throw, and on a replaced path it
 	 * answers for the wrong file.
