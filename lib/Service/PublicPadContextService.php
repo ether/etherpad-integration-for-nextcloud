@@ -68,10 +68,10 @@ class PublicPadContextService {
 
 		return new PublicPadContext(
 			$resolved->name,
-			$openTarget->url,
+			$openTarget->url(),
 			$isExternal,
 			$openTarget->isReadOnlyView,
-			$openTarget->originalPadUrl,
+			$openTarget->originalPadUrl(),
 			// Same rule as the signed-in open: only where one of our own
 			// surfaces draws the pad. By id, so a rename inside the share
 			// between the two requests does not lose the file.

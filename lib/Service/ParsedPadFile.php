@@ -11,19 +11,17 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 
 /**
- * Result of `PadFileService::readPad()`. Wraps the 3-step
- * `parsePadFile + extractPadMetadata + isExternalFrontmatter` read that
- * used to be open-coded at every caller. Most call sites only need the
- * derived flat fields (`padId`, `accessMode`, `padUrl`, `isExternal`);
- * frontmatter(), body() and savedText() are there for the few sites that
- * touch other frontmatter keys or the document.
+ * Result of `PadFileService::readPad()`: a `.pad` file's metadata and
+ * document.
  *
- * Those three are private fields behind methods, not public ones: this
- * object is an argument of most frames a pad travels through, and
+ * The document and the pad's address are private fields behind methods:
+ * this object is an argument of most frames a pad travels through, and
  * Nextcloud writes the public fields of every object argument into the
- * trace of an exception it serializes (get_object_vars()). A private
- * field leaves the class name there and nothing of the document, in
- * whatever method takes the object next.
+ * trace of an exception it serializes (ExceptionSerializer::encodeArg()).
+ * A private field leaves the class name there and nothing of what it
+ * holds, in whatever method takes the object next.
+ *
+ * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Log/ExceptionSerializer.php
  */
 class ParsedPadFile {
 	public function __construct(
@@ -32,7 +30,8 @@ class ParsedPadFile {
 		private readonly string $body,
 		public readonly string $padId,
 		public readonly string $accessMode,
-		public readonly string $padUrl,
+		/** The pad's address, private as in PadOpenTarget. */
+		private readonly string $padUrl,
 		public readonly bool $isExternal,
 		public readonly int $snapshotRev,
 		/**
@@ -56,6 +55,10 @@ class ParsedPadFile {
 
 	public function savedText(): string {
 		return $this->savedText;
+	}
+
+	public function padUrl(): string {
+		return $this->padUrl;
 	}
 
 	/**

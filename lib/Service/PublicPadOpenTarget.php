@@ -11,9 +11,9 @@ namespace OCA\EtherpadNextcloud\Service;
 
 class PublicPadOpenTarget {
 	public function __construct(
-		public readonly string $url,
-		public readonly string $originalPadUrl,
-		/** A live session, private as in PadOpenTarget. */
+		/** The pad's addresses and a live session, private as in PadOpenTarget. */
+		private readonly string $url,
+		private readonly string $originalPadUrl,
 		private readonly string $cookieHeader,
 		public readonly bool $isReadOnlyView,
 	) {
@@ -21,5 +21,13 @@ class PublicPadOpenTarget {
 
 	public function cookieHeader(): string {
 		return $this->cookieHeader;
+	}
+
+	public function url(): string {
+		return $this->url;
+	}
+
+	public function originalPadUrl(): string {
+		return $this->originalPadUrl;
 	}
 }

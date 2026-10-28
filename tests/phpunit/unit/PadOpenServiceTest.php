@@ -67,13 +67,13 @@ class PadOpenServiceTest extends TestCase {
 		);
 
 		$this->assertTrue($target->isReadOnlyView);
-		$this->assertSame('', $target->url, 'a viewer must not be given a pad to open');
+		$this->assertSame('', $target->url(), 'a viewer must not be given a pad to open');
 		$this->assertSame('', $target->cookieHeader(), 'and no session to open it with');
 		// The response ships this as `pad_url`. Withholding one address and
 		// handing back the same one under another key would undo the whole
 		// thing, and no client reads it today — which is why it would go
 		// unnoticed.
-		$this->assertSame('', $target->padUrl, 'nor the address under a second name');
+		$this->assertSame('', $target->padUrl(), 'nor the address under a second name');
 	}
 
 	/** With write permission, the same pad opens as it always did. */
@@ -96,7 +96,7 @@ class PadOpenServiceTest extends TestCase {
 		);
 
 		$this->assertFalse($target->isReadOnlyView);
-		$this->assertSame('https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1', $target->url);
+		$this->assertSame('https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1', $target->url());
 	}
 
 	/** A user without a display name is shown in Etherpad by their uid. */
@@ -130,7 +130,7 @@ class PadOpenServiceTest extends TestCase {
 			padId: 'pad-1',
 		);
 
-		$this->assertSame('https://pad.example.test/p/r.readonlyid', $target->url);
+		$this->assertSame('https://pad.example.test/p/r.readonlyid', $target->url());
 	}
 
 	/**
@@ -153,8 +153,8 @@ class PadOpenServiceTest extends TestCase {
 		);
 
 		$this->assertTrue($target->isReadOnlyView);
-		$this->assertSame('', $target->url, 'no pad to open');
-		$this->assertSame('', $target->padUrl, 'and not under the other name either');
+		$this->assertSame('', $target->url(), 'no pad to open');
+		$this->assertSame('', $target->padUrl(), 'and not under the other name either');
 		$this->assertSame('', $target->cookieHeader(), 'and no session');
 	}
 

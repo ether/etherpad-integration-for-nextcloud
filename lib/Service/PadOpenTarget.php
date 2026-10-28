@@ -21,10 +21,14 @@ class PadOpenTarget {
 		public readonly int $fileId,
 		public readonly string $padId,
 		public readonly string $accessMode,
-		public readonly string $padUrl,
+		/**
+		 * The pad's addresses: one of a pad on another server opens it to
+		 * whoever has it. Private behind their methods, as the cookie below.
+		 */
+		private readonly string $padUrl,
 		public readonly bool $isExternal,
-		public readonly string $originalPadUrl,
-		public readonly string $url,
+		private readonly string $originalPadUrl,
+		private readonly string $url,
 		/**
 		 * The Set-Cookie line that opens a protected pad: a live session.
 		 * Private behind its method, for the reason given at ParsedPadFile -
@@ -47,5 +51,17 @@ class PadOpenTarget {
 
 	public function cookieHeader(): string {
 		return $this->cookieHeader;
+	}
+
+	public function padUrl(): string {
+		return $this->padUrl;
+	}
+
+	public function originalPadUrl(): string {
+		return $this->originalPadUrl;
+	}
+
+	public function url(): string {
+		return $this->url;
 	}
 }

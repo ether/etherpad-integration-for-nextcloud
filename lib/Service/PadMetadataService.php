@@ -193,7 +193,7 @@ class PadMetadataService {
 			$pad = $this->padFileService->readPad((string)$content);
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
-			$padUrl = $pad->padUrl;
+			$padUrl = $pad->padUrl();
 			$isExternal = $pad->isExternal;
 
 			if ($accessMode === BindingService::ACCESS_PUBLIC) {

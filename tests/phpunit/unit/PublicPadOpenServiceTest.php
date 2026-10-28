@@ -25,7 +25,7 @@ class PublicPadOpenServiceTest extends TestCase {
 
 		$result = $this->buildService(etherpadClient: $etherpad)->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), true, 'token');
 
-		$this->assertSame('', $result->url);
+		$this->assertSame('', $result->url());
 		$this->assertTrue($result->isReadOnlyView);
 		$this->assertSame('', $result->cookieHeader());
 	}
@@ -51,7 +51,7 @@ class PublicPadOpenServiceTest extends TestCase {
 
 		$result = $this->buildService(padSessionService: $sessions, visitors: $visitors)->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), false, 'token');
 
-		$this->assertSame('https://pad.example/p/g.group$pad', $result->url);
+		$this->assertSame('https://pad.example/p/g.group$pad', $result->url());
 		$this->assertSame('sessionID=abc; Path=/', $result->cookieHeader());
 		$this->assertFalse($result->isReadOnlyView);
 	}
@@ -94,8 +94,8 @@ class PublicPadOpenServiceTest extends TestCase {
 
 		$result = $this->buildService(externalPadExportFetcher: $fetcher)->open($this->pad('ext.abc', BindingService::ACCESS_PUBLIC, true, 'https://remote.example/p/Test'), true, 'token');
 
-		$this->assertSame('https://remote.example/p/Test', $result->url);
-		$this->assertSame('https://remote.example/p/Test', $result->originalPadUrl);
+		$this->assertSame('https://remote.example/p/Test', $result->url());
+		$this->assertSame('https://remote.example/p/Test', $result->originalPadUrl());
 	}
 
 	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the open holds it. */
@@ -115,7 +115,7 @@ class PublicPadOpenServiceTest extends TestCase {
 
 		$result = $this->buildService(etherpadClient: $etherpad)->open($this->pad('public-pad', BindingService::ACCESS_PUBLIC, false, ''), true, 'token');
 
-		$this->assertSame('https://pad.example/p/r.public-pad', $result->url);
+		$this->assertSame('https://pad.example/p/r.public-pad', $result->url());
 		$this->assertSame('', $result->cookieHeader());
 	}
 
@@ -131,7 +131,7 @@ class PublicPadOpenServiceTest extends TestCase {
 
 		$result = $this->buildService(etherpadClient: $etherpad, padSessionService: $sessions)->open($this->pad('public-pad', BindingService::ACCESS_PUBLIC, false, ''), false, 'token');
 
-		$this->assertSame('https://pad.example/p/public-pad', $result->url);
+		$this->assertSame('https://pad.example/p/public-pad', $result->url());
 		$this->assertSame('', $result->cookieHeader());
 	}
 

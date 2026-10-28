@@ -232,6 +232,7 @@ class PublicViewerControllerTest extends TestCase {
 		)->openPadData('share-token');
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame('External.pad', $response->getData()['title']);
 		$this->assertSame('https://pad.portal.example/p/Test', $response->getData()['url']);
 		$this->assertSame('https://pad.portal.example/p/Test', $response->getData()['original_pad_url']);
 		$this->assertTrue($response->getData()['is_external']);

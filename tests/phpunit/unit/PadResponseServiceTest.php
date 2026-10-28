@@ -7,6 +7,9 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
+use OCA\EtherpadNextcloud\Service\PadMeta;
+use OCA\EtherpadNextcloud\Service\PadOpenTarget;
+use OCA\EtherpadNextcloud\Service\PadResolution;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Tests\Support\RecordingCookieHeaders;
 use OCP\AppFramework\Http;
@@ -37,6 +40,94 @@ class PadResponseServiceTest extends TestCase {
 
 		$this->assertSame('/apps/files/files/42?dir=%2FProjects&editing=false&openfile=true', $result['viewer_url']);
 		$this->assertSame('/apps/etherpad/embed/by-id/42', $result['embed_url']);
+	}
+
+	/**
+	 * Each address under its own key: the private fields reach the client
+	 * through their methods, not swapped and not dropped.
+	 */
+	public function testOpenResponseAnswersWithTheTargetsFileAndItsAddresses(): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturn('/route');
+		$target = new PadOpenTarget(
+			file: '/Shared/Remote.pad',
+			fileId: 42,
+			padId: 'ext.Remote',
+			accessMode: 'public',
+			padUrl: 'https://pad.remote.test/p/Remote',
+			isExternal: true,
+			originalPadUrl: 'https://pad.remote.test/p/Remote?lang=de',
+			url: 'https://pad.remote.test/p/Remote#open',
+			cookieHeader: '',
+			isReadOnlyView: false,
+			mayWrite: true,
+		);
+
+		$data = (new PadResponseService($urlGenerator, $this->createMock(AppConfigService::class), $this->l10nEcho()))
+			->openResponse($target, new RecordingCookieHeaders())->getData();
+
+		$this->assertSame([
+			'file' => '/Shared/Remote.pad',
+			'file_id' => 42,
+			'pad_id' => 'ext.Remote',
+			'access_mode' => 'public',
+			'pad_url' => 'https://pad.remote.test/p/Remote',
+			'is_external' => true,
+			'is_readonly_view' => false,
+			'original_pad_url' => 'https://pad.remote.test/p/Remote?lang=de',
+			'url' => 'https://pad.remote.test/p/Remote#open',
+		], array_slice($data, 0, 9));
+	}
+
+	public function testMetaResponseAnswersAPadWithItsAddressesAndAFileWithItsPlace(): void {
+		$service = new PadResponseService($this->viewerRoutes(), $this->createMock(AppConfigService::class), $this->l10nEcho());
+
+		$this->assertSame([
+			'is_pad' => true,
+			'is_pad_mime' => true,
+			'file_id' => 42,
+			'name' => 'Remote.pad',
+			'path' => '/Shared/Remote.pad',
+			'access_mode' => 'public',
+			'is_external' => true,
+			'pad_id' => 'ext.Remote',
+			'pad_url' => 'https://pad.remote.test/p/Remote',
+			'public_open_url' => 'https://pad.remote.test/p/Remote?open',
+			'viewer_url' => '/apps/files/files/42?dir=%2FShared&editing=false&openfile=true',
+			'embed_url' => '/apps/etherpad/embed/by-id/42',
+		], $service->metaResponse(new PadMeta(
+			true, 42, 'Remote.pad', '/Shared/Remote.pad', true, 'public', true, 'ext.Remote',
+			'https://pad.remote.test/p/Remote', 'https://pad.remote.test/p/Remote?open',
+		)));
+		$this->assertSame(
+			['is_pad' => false, 'file_id' => 42, 'name' => 'Notes.txt', 'path' => '/Shared/Notes.txt'],
+			$service->metaResponse(new PadMeta(false, 42, 'Notes.txt', '/Shared/Notes.txt')),
+		);
+	}
+
+	public function testResolveResponseAnswersAPadWithItsAddressAndAFileWithWhatWasAsked(): void {
+		$service = new PadResponseService($this->viewerRoutes(), $this->createMock(AppConfigService::class), $this->l10nEcho());
+
+		$this->assertSame([
+			'is_pad' => true,
+			'is_pad_mime' => true,
+			'file_id' => 42,
+			'path' => '/Shared/Remote.pad',
+			'access_mode' => 'public',
+			'is_external' => true,
+			'public_open_url' => 'https://pad.remote.test/p/Remote?open',
+			'viewer_url' => '/apps/files/files/42?dir=%2FShared&editing=false&openfile=true',
+		], $service->resolveResponse(new PadResolution(true, 42, '/Shared/Remote.pad', true, 'public', true, 'https://pad.remote.test/p/Remote?open')));
+		$this->assertSame(['is_pad' => false, 'file_id' => 42], $service->resolveResponse(new PadResolution(false, 42)));
+	}
+
+	private function viewerRoutes(): IURLGenerator {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturnMap([
+			['files.view.index', [], '/apps/files'],
+			['etherpad_nextcloud.embed.showById', ['fileId' => 42], '/apps/etherpad/embed/by-id/42'],
+		]);
+		return $urlGenerator;
 	}
 
 	/**

@@ -24,8 +24,17 @@ class PadMeta {
 		public readonly string $accessMode = '',
 		public readonly bool $isExternal = false,
 		public readonly string $padId = '',
-		public readonly string $padUrl = '',
-		public readonly string $publicOpenUrl = '',
+		/** The pad's addresses, private as in PadOpenTarget. */
+		private readonly string $padUrl = '',
+		private readonly string $publicOpenUrl = '',
 	) {
+	}
+
+	public function padUrl(): string {
+		return $this->padUrl;
+	}
+
+	public function publicOpenUrl(): string {
+		return $this->publicOpenUrl;
 	}
 }
