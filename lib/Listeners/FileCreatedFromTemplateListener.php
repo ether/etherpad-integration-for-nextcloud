@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -61,11 +62,22 @@ class FileCreatedFromTemplateListener implements IEventListener {
 
 		$user = $this->userSession->getUser();
 		if ($user === null) {
+			// Without a user the file cannot be found again by its id, so it
+			// is emptied as handed over. A node whose id cannot be read no
+			// longer names a file Nextcloud knows: written by its path, it
+			// would make one or empty another, so it stays.
+			$fileId = $this->idOrNull($target);
+			if ($fileId === null) {
+				$this->logger->warning('Template event fired without an active user; left the target as it is, as its id cannot be read.', [
+					'app' => 'etherpad_nextcloud',
+				]);
+				return;
+			}
 			$this->logger->warning('Template event fired without an active user — resetting target to empty.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$target->getId(),
+				'fileId' => $fileId,
 			]);
-			$this->resetTargetToEmpty($target);
+			$this->resetTargetToEmpty($target, $fileId);
 			return;
 		}
 		// Nextcloud has created the file already. It stays as it was given:
@@ -77,7 +89,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 
 		$template = $event->getTemplate();
 		if (!$template instanceof File) {
-			$this->initializeBlankPad($user->getUID(), $target);
+			$this->initializeBlankPad($user->getUID(), $target, $this->idOrNull($target));
 			return;
 		}
 
@@ -92,7 +104,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// instead of copying an empty marker over the new file.
 		$templateAccessMode = $this->templateStorage->accessModeForTemplateFile($template);
 		if ($templateAccessMode !== null) {
-			$this->initializeBlankPad($user->getUID(), $target, $templateAccessMode);
+			$this->initializeBlankPad($user->getUID(), $target, $this->idOrNull($target), $templateAccessMode);
 			return;
 		}
 
@@ -142,37 +154,46 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			]);
 			// Other failures do not imply unchanged content: check before resetting.
 			$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
-			if ($unchanged === null) {
+			if ($unchanged === null || !$this->resetTargetToEmpty($unchanged, $claim->fileId)) {
 				return;
 			}
-			$this->resetTargetToEmpty($unchanged, $claim->fileId);
 			// Re-initialise after the wipe so the user still gets a clean,
 			// openable pad even though the template path failed. A disabled
-			// pad type travels on from here as well.
-			$this->initializeBlankPad($user->getUID(), $unchanged);
+			// pad type travels on from here as well. Only after a wipe that
+			// landed: the init expects an empty file, and on the template's
+			// copy it would make a pad and a row, then be refused the write.
+			$this->initializeBlankPad($user->getUID(), $unchanged, $claim->fileId);
 		}
 	}
 
-	private function initializeBlankPad(string $uid, File $target, ?string $preferredAccessMode = null): void {
+	/**
+	 * $fileId is read before anything here can fail, as resetTargetToEmpty()
+	 * says; null where it could not be read.
+	 */
+	private function initializeBlankPad(string $uid, File $target, ?int $fileId, ?string $preferredAccessMode = null): void {
 		try {
 			$this->padBootstrapService->initializeMissingFrontmatter($uid, $target, '', $preferredAccessMode);
 		} catch (PadTypeDisabledException $e) {
 			// Same as above, for Nextcloud's blank entry — and an instance
 			// offering only external pads reaches this on every one of them,
 			// so leaving the file behind would hand out empty .pad files.
+			// Removed while it still reads as empty: one written since stays,
+			// and so does one whose id could not be read.
 			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$target->getId(),
+				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
-			$this->deleteTarget($target);
+			if ($fileId !== null) {
+				$this->claimedFileWriter->deleteIfUnchanged(new CreatedFileClaim($uid, $fileId));
+			}
 			throw $e;
 		} catch (\Throwable $e) {
 			// The viewer's first open finds no frontmatter and initialises the
 			// file by its id instead.
 			$this->logger->warning('Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$target->getId(),
+				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
 		}
@@ -236,18 +257,6 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		return is_string($field) ? trim($field) : '';
 	}
 
-	private function deleteTarget(File $target): void {
-		try {
-			$target->delete();
-		} catch (\Throwable $e) {
-			$this->logger->warning('Could not remove the .pad file of a failed create.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $this->idOrNull($target),
-				...SafeError::context($e),
-			]);
-		}
-	}
-
 	private function idOrNull(File $file): ?int {
 		try {
 			return (int)$file->getId();
@@ -257,19 +266,22 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	}
 
 	/**
-	 * `$fileId` is passed in by a caller handling an error rather than read
-	 * here: `Node::getId()` re-reads through the node's path — it can throw,
-	 * and on a replaced path it answers for the wrong file.
+	 * Whether the file now reads as empty. `$fileId` is read by the caller
+	 * before anything can fail rather than here: `Node::getId()` re-reads
+	 * through the node's path — it can throw, and on a replaced path it
+	 * answers for the wrong file.
 	 */
-	private function resetTargetToEmpty(File $target, ?int $fileId = null): void {
+	private function resetTargetToEmpty(File $target, int $fileId): bool {
 		try {
 			$target->putContent('');
+			return true;
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not reset target file content after rejected template.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId ?? $this->idOrNull($target),
+				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
+			return false;
 		}
 	}
 }
