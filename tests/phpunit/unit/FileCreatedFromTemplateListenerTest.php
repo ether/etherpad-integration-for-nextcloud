@@ -13,7 +13,12 @@ use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
+use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
+use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\ReadsAsATrace;
+use OCP\IConfig;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\NotPermittedException;
@@ -32,6 +37,7 @@ use Psr\Log\LoggerInterface;
  *  - any other template → PadCreationService::materializeTemplateInto
  */
 class FileCreatedFromTemplateListenerTest extends TestCase {
+	use ReadsAsATrace;
 	use BuildsAppAccess;
 
 	private const AN_ADDRESS = ['pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad']];
@@ -41,6 +47,55 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 	protected function setUp(): void {
 		$this->writer = $this->createMock(ClaimedFileWriter::class);
+	}
+
+	/**
+	 * A tile create that fails goes to Nextcloud, which logs the exception
+	 * with every frame's arguments where PHP keeps them. The address of a
+	 * pad on another server opens it to whoever reads that log, so no frame
+	 * may show it - the pad's name and the token in its query included.
+	 */
+	public function testAFailedExternalTileLeavesThePadsAddressOutOfTheTrace(): void {
+		$ignoreArgs = ini_set('zend.exception_ignore_args', '0');
+		try {
+			$config = $this->createMock(IConfig::class);
+			$config->method('getAppValue')->willReturnCallback(
+				static fn (string $app, string $key, string $default = ''): string => $key === 'allow_external_pads' ? 'yes' : $default,
+			);
+			$fetcher = new class($config, new FixedClock()) extends ExternalPadExportFetcher {
+				protected function lookUp(string $host): array {
+					return [['type' => 'A', 'ip' => '1.1.1.1']];
+				}
+
+				protected function perform(string $url, array $options): array {
+					return ['completed' => false, 'status' => 0, 'error' => 'Connection refused', 'errno' => 7];
+				}
+			};
+			$target = $this->untouchedTarget('Team pad.pad');
+			$creation = $this->createMock(PadCreationService::class);
+			$this->expectClaimFor($creation, $target);
+
+			try {
+				$this->createFromTheExternalTile(
+					$creation,
+					new ExternalPadSeeder($this->createMock(PadFileService::class), $fetcher),
+					$target,
+					// Padded, as a picker may hand it over: the trimmed address is
+					// then another value than the field it came from.
+					['pad_url' => ['content' => ' https://pad.remote.test/p/SecretPad?token=s3cret ']],
+				);
+				$this->fail('the failed fetch goes on');
+			} catch (\OCA\EtherpadNextcloud\Exception\ExternalPadException $e) {
+				$logged = (string)json_encode(self::asNextcloudLogs($e), JSON_THROW_ON_ERROR);
+			}
+		} finally {
+			ini_set('zend.exception_ignore_args', (string)$ignoreArgs);
+		}
+
+		// The frames are there, arguments and all: the event the listener took.
+		$this->assertStringContainsString('FileCreatedFromTemplateEvent', $logged);
+		$this->assertStringNotContainsString('SecretPad', $logged);
+		$this->assertStringNotContainsString('s3cret', $logged);
 	}
 
 	public function testIgnoresUnrelatedEvent(): void {

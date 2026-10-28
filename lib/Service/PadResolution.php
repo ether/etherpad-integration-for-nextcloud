@@ -23,7 +23,12 @@ class PadResolution {
 		public readonly bool $isPadMime = false,
 		public readonly string $accessMode = '',
 		public readonly bool $isExternal = false,
-		public readonly string $publicOpenUrl = '',
+		/** The pad's address, private as in PadOpenTarget. */
+		private readonly string $publicOpenUrl = '',
 	) {
+	}
+
+	public function publicOpenUrl(): string {
+		return $this->publicOpenUrl;
 	}
 }

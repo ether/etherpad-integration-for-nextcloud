@@ -104,10 +104,10 @@ class PublicViewerController extends PublicShareController {
 			function (PublicPadContext $context): DataResponse {
 				$response = new DataResponse([
 					'title' => $context->title,
-					'url' => $context->url,
+					'url' => $context->url(),
 					'is_external' => $context->isExternal,
 					'is_readonly_view' => $context->isReadOnlyView,
-					'original_pad_url' => $context->originalPadUrl,
+					'original_pad_url' => $context->originalPadUrl(),
 					'content_url' => $context->contentUrl(),
 				]);
 				// Once the answer stands, and beside Nextcloud's own cookies,

@@ -14,16 +14,16 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadException;
  * Result of `PadFileService::readPad()`. Wraps the 3-step
  * `parsePadFile + extractPadMetadata + isExternalFrontmatter` read that
  * used to be open-coded at every caller. Most call sites only need the
- * derived flat fields (`padId`, `accessMode`, `padUrl`, `isExternal`);
+ * derived flat fields (`padId`, `accessMode`, `isExternal`) and padUrl();
  * frontmatter(), body() and savedText() are there for the few sites that
  * touch other frontmatter keys or the document.
  *
- * Those three are private fields behind methods, not public ones: this
+ * Those four are private fields behind methods, not public ones: this
  * object is an argument of most frames a pad travels through, and
  * Nextcloud writes the public fields of every object argument into the
  * trace of an exception it serializes (get_object_vars()). A private
- * field leaves the class name there and nothing of the document, in
- * whatever method takes the object next.
+ * field leaves the class name there and nothing of the document or the
+ * pad's address, in whatever method takes the object next.
  */
 class ParsedPadFile {
 	public function __construct(
@@ -32,7 +32,8 @@ class ParsedPadFile {
 		private readonly string $body,
 		public readonly string $padId,
 		public readonly string $accessMode,
-		public readonly string $padUrl,
+		/** The pad's address, private as in PadOpenTarget. */
+		private readonly string $padUrl,
 		public readonly bool $isExternal,
 		public readonly int $snapshotRev,
 		/**
@@ -56,6 +57,10 @@ class ParsedPadFile {
 
 	public function savedText(): string {
 		return $this->savedText;
+	}
+
+	public function padUrl(): string {
+		return $this->padUrl;
 	}
 
 	/**

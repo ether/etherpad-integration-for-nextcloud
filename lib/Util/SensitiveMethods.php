@@ -20,7 +20,11 @@ namespace OCA\EtherpadNextcloud\Util;
  * discipline cannot cover. Hence a list.
  *
  * What earns an entry is a method that takes a credential or a document
- * as a string, or a credential as a list. Not the route it is on:
+ * as a string, or a credential as a list. A pad's address counts as a
+ * credential: one of a pad on another server opens it to whoever has
+ * it. A pad's id does not - the app logs its own pads' ids, and an
+ * external pad's `ext.` id names the remote pad but not its server. Not
+ * the route it is on:
  * whether an exception can leave the app from there is a property of
  * today's callers - a listener that rethrows, a mapper that catches - and
  * the next caller need not share it. Nor whether the method can throw,
@@ -39,7 +43,8 @@ namespace OCA\EtherpadNextcloud\Util;
  * document travels in - ParsedPadFile, PadSnapshot, LivePadHtml,
  * CreatedFileClaim - and those that carry a credential - ApiKey and the
  * two settings objects, PadOpenTarget, PublicPadOpenTarget,
- * PublicPadContext - keep it in private fields, which the serializer
+ * PublicPadContext, and for a pad's address ParsedPadFile, PadMeta and
+ * PadResolution - keep it in private fields, which the serializer
  * does not read: a method that takes one of those needs none, and
  * DocumentStaysOutOfTracesTest and CredentialStaysOutOfTracesTest hold
  * them to it.
@@ -73,12 +78,14 @@ final class SensitiveMethods {
 		// and the listing of them as Etherpad answers it; whole pads on
 		// their way to Etherpad, and on their way back inside the answer
 		// requireStringField() reads. The author mapper of a public share
-		// is made of its token (PadSessionService below). The api key needs
-		// no entry: it travels as ApiKey and leaves as a stream, so no
-		// frame here holds it - measured, not assumed.
+		// is made of its token (PadSessionService below). A pad's address,
+		// as a URL to take the origin of, fetch, or send a request to. The
+		// api key needs no entry: it travels as ApiKey and leaves as a
+		// stream, so no frame here holds it - measured, not assumed.
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
 			'deleteSession', 'getSessionInfo', 'sessionsIn', 'setText', 'setHTML', 'requireStringField',
 			'createAuthorIfNotExistsFor', 'apiCall', 'sendRequest', 'formBody',
+			'normalizeOrigin', 'sendPublicGetRequest', 'doRequest',
 		],
 		// The document as a string, wherever a method takes it so: handed
 		// to Etherpad or compared with what it holds, read from the file
@@ -88,6 +95,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
 			'parsePadFile', 'readPad', 'serialize', 'parseLegacyOwnpadShortcut',
 			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',
+			'buildInitialDocument',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write', 'holdsAlready'],
@@ -114,7 +122,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\ValidatedAdminSettings::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\StoredAdminSettings::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Util\ApiKey::class => ['__construct'],
-		\OCA\EtherpadNextcloud\Util\DiagnosticText::class => ['withoutSecret'],
+		\OCA\EtherpadNextcloud\Util\DiagnosticText::class => ['withoutSecret', 'hostOf'],
 		\OCA\EtherpadNextcloud\Util\SafeError::class => ['context', 'readable', 'originOf'],
 		// Etherpad sessions, each a live credential: the ids a browser
 		// carries and the ones Etherpad lists, the cookie made of them, the
@@ -157,5 +165,27 @@ final class SensitiveMethods {
 			'normalizePublicShareFilePath', 'normalizeViewerFilePath', 'normalizeDavUrlToPath', 'normalizeSegments',
 		],
 		\OCA\EtherpadNextcloud\Service\ApiErrorLog::class => ['scalar'],
+		// A pad's address, which opens a pad on another server to whoever
+		// has it: as the API or the picker hands it over, in the picker's
+		// template fields as it was typed, as an Ownpad file links it and in
+		// the shortcut it is read from, the export URL made of it, and the
+		// objects that answer with it. One by hand, under a name no rule
+		// knows: the parts fetchPublicExport() takes as $resolved.
+		\OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener::class => ['seedExternalPad', 'padUrlField'],
+		\OCA\EtherpadNextcloud\Controller\PadCreateController::class => ['createFromUrl'],
+		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['createFromUrl'],
+		\OCA\EtherpadNextcloud\Service\ExternalPadSeeder::class => ['prepare', 'seed'],
+		\OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher::class => [
+			'normalizeAndFetchExternalPublicPadText', 'normalizeAndFetchExternalPublicPadTextOrEmpty',
+			'fetchExternalPublicPadHtml', 'normalizeAndValidateExternalPublicPadUrl', 'buildPublicExportUrl',
+			'fetchPublicExport', 'resolveAndValidateExternalPublicPadUrl', 'sendPinnedPublicGetRequest',
+			'perform', 'parsePublicPadUrl',
+		],
+		\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class => [
+			'migrate', 'unlinkable', 'sameOriginContext', 'refuseProtectedImportIfSwitchedOff',
+		],
+		\OCA\EtherpadNextcloud\Service\PadMetadataService::class => ['resolvePublicOpenUrl', 'resolveReadOnlyOpenUrl'],
+		\OCA\EtherpadNextcloud\Service\PadMeta::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\PadResolution::class => ['__construct'],
 	];
 }

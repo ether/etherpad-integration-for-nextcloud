@@ -10,7 +10,10 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\PadMeta;
 use OCA\EtherpadNextcloud\Service\PadOpenTarget;
+use OCA\EtherpadNextcloud\Service\PadResolution;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PublicLinkOpener;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenTarget;
@@ -24,8 +27,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * The objects a credential travels in - the API key and the settings
  * that hold it, the cookie that carries a pad's sessions, the address that
- * carries a share token - show a serialized trace their class and nothing
- * that opens anything.
+ * carries a share token, a pad's own address - show a serialized trace
+ * their class and nothing that opens anything.
  */
 class CredentialStaysOutOfTracesTest extends TestCase {
 	use ReadsAsATrace;
@@ -67,19 +70,33 @@ class CredentialStaysOutOfTracesTest extends TestCase {
 			fileId: 7,
 			padId: 'g.ABCDEFGHIJKLMNOP$pad-1',
 			accessMode: BindingService::ACCESS_PROTECTED,
-			padUrl: 'https://pad.example.test/p/pad-1',
-			isExternal: false,
-			originalPadUrl: '',
-			url: 'https://pad.example.test/p/pad-1',
+			padUrl: self::CREDENTIAL,
+			isExternal: true,
+			originalPadUrl: self::CREDENTIAL,
+			url: self::CREDENTIAL,
 			cookieHeader: self::CREDENTIAL,
 			isReadOnlyView: false,
 			mayWrite: true,
 		);
-		yield 'an open, with its session cookie' => [$target, static fn (): array => [$target->cookieHeader()]];
-		$public = new PublicPadOpenTarget('https://pad.example.test/p/pad-1', '', self::CREDENTIAL, false);
-		yield 'an open through a share, with its session cookie' => [$public, static fn (): array => [$public->cookieHeader()]];
-		$context = new PublicPadContext('Notes', 'https://pad.example.test/p/pad-1', false, true, '', self::CREDENTIAL, self::CREDENTIAL);
-		yield 'a share\'s page, with the address that carries its token' => [$context, static fn (): array => [$context->contentUrl(), $context->cookieHeader()]];
+		yield 'an open, with its session cookie and the pad\'s addresses' => [$target, static fn (): array => [$target->cookieHeader(), $target->padUrl(), $target->originalPadUrl(), $target->url()]];
+		$public = new PublicPadOpenTarget(self::CREDENTIAL, self::CREDENTIAL, self::CREDENTIAL, false);
+		yield 'an open through a share, with its session cookie and the pad\'s addresses' => [$public, static fn (): array => [$public->cookieHeader(), $public->url(), $public->originalPadUrl()]];
+		$context = new PublicPadContext('Notes', self::CREDENTIAL, true, true, self::CREDENTIAL, self::CREDENTIAL, self::CREDENTIAL);
+		yield 'a share\'s page, with the address that carries its token and the pad\'s' => [$context, static fn (): array => [$context->contentUrl(), $context->cookieHeader(), $context->url(), $context->originalPadUrl()]];
+		$parsed = new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: 'ext.pad-1',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: self::CREDENTIAL,
+			isExternal: true,
+			snapshotRev: 0,
+		);
+		yield 'a file read, with the pad\'s address' => [$parsed, static fn (): array => [$parsed->padUrl()]];
+		$meta = new PadMeta(true, 7, 'Notes.pad', '/Notes.pad', isExternal: true, padId: 'ext.pad-1', padUrl: self::CREDENTIAL, publicOpenUrl: self::CREDENTIAL);
+		yield 'a file\'s metadata, with the pad\'s addresses' => [$meta, static fn (): array => [$meta->padUrl(), $meta->publicOpenUrl()]];
+		$resolution = new PadResolution(true, 7, '/Notes.pad', isExternal: true, publicOpenUrl: self::CREDENTIAL);
+		yield 'a file resolved, with the pad\'s address' => [$resolution, static fn (): array => [$resolution->publicOpenUrl()]];
 		$opener = new PublicLinkOpener(self::CREDENTIAL, '', 'a.visitor');
 		yield 'who a link opens as, with the uid that carries its token' => [$opener, static fn (): array => [$opener->uid()]];
 	}

@@ -23,8 +23,10 @@ final class NamesOfSecrets {
 	/**
 	 * What opens something: the API key, a secret to take out of a
 	 * message, a share token or the address that carries one, a session
-	 * id, a cookie. In whatever case - Etherpad spells it `sessionID` and
-	 * `apikey`.
+	 * id, a cookie, a pad's address and what carries one - the picker's
+	 * template fields, an Ownpad shortcut - but not `etherpadUrl`, the
+	 * server's own, which opens no pad. In whatever case - Etherpad spells
+	 * it `sessionID` and `apikey`.
 	 */
-	public const CREDENTIAL = '/apikey|secret|password|token|session|cookie|^contentUrl$/i';
+	public const CREDENTIAL = '/apikey|secret|password|token|session|cookie|^contentUrl$|(?<!ether)padUrl|^url$|^publicOpenUrl$|^sourceUrl$|^templateFields$|^legacyShortcut$/i';
 }

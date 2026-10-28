@@ -73,8 +73,8 @@ class PadResponseService {
 			'access_mode' => $meta->accessMode,
 			'is_external' => $meta->isExternal,
 			'pad_id' => $meta->padId,
-			'pad_url' => $meta->padUrl,
-			'public_open_url' => $meta->publicOpenUrl,
+			'pad_url' => $meta->padUrl(),
+			'public_open_url' => $meta->publicOpenUrl(),
 		]);
 	}
 
@@ -99,7 +99,7 @@ class PadResponseService {
 				?? throw new \LogicException('PadResolution::path must be set when isPad is true.'),
 			'access_mode' => $resolution->accessMode,
 			'is_external' => $resolution->isExternal,
-			'public_open_url' => $resolution->publicOpenUrl,
+			'public_open_url' => $resolution->publicOpenUrl(),
 		]);
 	}
 
@@ -181,11 +181,11 @@ class PadResponseService {
 			'file_id' => $target->fileId,
 			'pad_id' => $target->padId,
 			'access_mode' => $target->accessMode,
-			'pad_url' => $target->padUrl,
+			'pad_url' => $target->padUrl(),
 			'is_external' => $target->isExternal,
 			'is_readonly_view' => $target->isReadOnlyView,
-			'original_pad_url' => $target->originalPadUrl,
-			'url' => $target->url,
+			'original_pad_url' => $target->originalPadUrl(),
+			'url' => $target->url(),
 			// Only where a surface of ours draws the pad itself: the
 			// read-only view always, and an external pad because its iframe
 			// may be refused and fall back to the same view. An editable

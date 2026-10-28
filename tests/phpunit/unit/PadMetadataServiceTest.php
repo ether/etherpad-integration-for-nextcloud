@@ -63,8 +63,8 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 		$this->assertTrue($result->isExternal);
 		$this->assertSame('ext.remote', $result->padId);
-		$this->assertSame('https://pad.example.test/p/External', $result->padUrl);
-		$this->assertSame('https://pad.example.test/p/External', $result->publicOpenUrl);
+		$this->assertSame('https://pad.example.test/p/External', $result->padUrl());
+		$this->assertSame('https://pad.example.test/p/External', $result->publicOpenUrl());
 	}
 
 	public function testResolveReturnsFalseWhenFileIdIsMissing(): void {
@@ -119,7 +119,7 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame('/Public.pad', $result->path);
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 		$this->assertFalse($result->isExternal);
-		$this->assertSame('https://pad.example.test/p/g.ABC$pad', $result->publicOpenUrl);
+		$this->assertSame('https://pad.example.test/p/g.ABC$pad', $result->publicOpenUrl());
 	}
 
 	/**
@@ -160,7 +160,7 @@ class PadMetadataServiceTest extends TestCase {
 		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
 			->resolve('alice', 138);
 
-		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl);
+		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl());
 	}
 
 	/**
@@ -203,8 +203,8 @@ class PadMetadataServiceTest extends TestCase {
 		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
 			->metaById('alice', 138);
 
-		$this->assertSame('', $result->publicOpenUrl, 'no read-only address to give');
-		$this->assertSame('', $result->padUrl, 'and the editable one must not survive as the answer');
+		$this->assertSame('', $result->publicOpenUrl(), 'no read-only address to give');
+		$this->assertSame('', $result->padUrl(), 'and the editable one must not survive as the answer');
 	}
 
 	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {

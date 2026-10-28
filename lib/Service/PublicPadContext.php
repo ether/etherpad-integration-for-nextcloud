@@ -12,10 +12,11 @@ namespace OCA\EtherpadNextcloud\Service;
 class PublicPadContext {
 	public function __construct(
 		public string $title,
-		public string $url,
+		/** The pad's addresses, private as in PadOpenTarget. */
+		private string $url,
 		public bool $isExternal,
 		public bool $isReadOnlyView,
-		public string $originalPadUrl,
+		private string $originalPadUrl,
 		/**
 		 * The address the viewer loads the pad from, which carries the
 		 * share token, and the session cookie: both open the pad. Private
@@ -33,5 +34,13 @@ class PublicPadContext {
 
 	public function cookieHeader(): string {
 		return $this->cookieHeader;
+	}
+
+	public function url(): string {
+		return $this->url;
+	}
+
+	public function originalPadUrl(): string {
+		return $this->originalPadUrl;
 	}
 }
