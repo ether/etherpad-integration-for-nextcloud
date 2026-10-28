@@ -527,11 +527,9 @@ class PadCreationServiceTest extends TestCase {
 		$bootstrap->method('newGroupPadName')->willReturn('p-new');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		// A protected pad, in a group made for it, under the name a new pad gets.
 		$etherpadClient->method('createGroup')->willReturn('g.grp');
 		$etherpadClient->expects(self::once())->method('createGroupPad')->with('g.grp', 'p-new')->willReturn('g.grp$pad');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
-		// The template's formatting is what reaches the pad, not its text.
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
 		$etherpadClient->expects($this->never())->method('setText');
 		// Seeded, but Etherpad does not say how many revisions: the file
@@ -548,7 +546,6 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
-			padTypePolicy: $this->buildPadTypePolicy(true, false),
 		)->materializeTemplateInto($template, $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);

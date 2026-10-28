@@ -385,7 +385,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$seeder->expects($this->never())->method('prepare');
 		$failure = new \RuntimeException('Could not resolve new file ID.');
 		$creation = $this->createMock(PadCreationService::class);
-		$creation->method('claimTemplateTarget')->willThrowException($failure);
+		$creation->method('claimTemplateTarget')->with($this->identicalTo($target), 'alice')->willThrowException($failure);
 		$this->writer->expects($this->never())->method('write');
 		$this->writer->expects($this->never())->method('resolveUnchanged');
 
