@@ -7,15 +7,14 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
-use OCA\EtherpadNextcloud\Service\PadCreateAttempt;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- * The rule these hold is fail-closed: without an answer about the binding,
- * the pad stays. A pad a row may still name is reachable; one taken away
- * on a guess is not, and nothing retries a rollback.
+ * Fail-closed where a row may name the pad: without an answer about the
+ * binding, the pad stays. A pad a row may still name is reachable; one
+ * taken away on a guess is not, and nothing retries a rollback.
  */
 class ProvisionedPadRollbackTest extends TestCase {
 	public function testKeepsThePadWhenTheBindingCannotBeRead(): void {
@@ -74,18 +73,6 @@ class ProvisionedPadRollbackTest extends TestCase {
 			->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'create');
 	}
 
-	/** Once the write began, a table that does not answer keeps the pad. */
-	public function testACreatesPadIsAskedAboutOnlyOnceItsBindingWriteBegan(): void {
-		$binding = $this->createMock(BindingService::class);
-		$binding->method('isBoundTo')->willThrowException(new \RuntimeException('database gone'));
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
-
-		$rollback = $this->buildRollback($binding, $etherpad);
-		$rollback->discardCreated($this->attempt('nc-abc', null), 4711, 'create');
-		$rollback->discardCreated($this->attempt('nc-abc', 4711), 4711, 'create');
-	}
-
 	/** A row naming another pad belongs to whoever won the file. */
 	public function testACreatesRowGoesWithItsPadButAnotherPadsRowStays(): void {
 		foreach ([true, false] as $namesThePad) {
@@ -95,35 +82,26 @@ class ProvisionedPadRollbackTest extends TestCase {
 			$etherpad = $this->createMock(EtherpadClient::class);
 			$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
 
-			$this->buildRollback($binding, $etherpad)->discardCreated($this->attempt('nc-abc', 4711), 4711, 'create');
+			$this->buildRollback($binding, $etherpad)->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'create');
 		}
 	}
 
-	public function testACreatesPadLeftOverIsNamedWithItsFileAndWay(): void {
+	/** Once its row is gone, a pad whose removal is not confirmed is named with its file and way. */
+	public function testAPadLeftOverIsNamedWithItsFileAndWay(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('etherpad down'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with('Could not cleanup failed Etherpad create', $this->callback(static fn (array $context): bool => array_diff_key($context, ['error_origin' => true]) === [
+		$logger->expects($this->once())->method('warning')->with('Could not confirm removal of a new Etherpad pad.', $this->callback(static fn (array $context): bool => array_diff_key($context, ['error_origin' => true]) === [
 			'app' => 'etherpad_nextcloud',
-			'fileId' => 4711,
 			'padId' => 'nc-abc',
-			'operation' => 'template materialization',
 			'error' => \RuntimeException::class,
 			'error_message' => 'etherpad down',
+			'fileId' => 4711,
+			'operation' => 'template materialization',
 		]));
+		$rollback = new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpad, $logger), $logger);
 
-		(new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)), $logger))
-			->discardCreated($this->attempt('nc-abc', null), 4711, 'template materialization');
-	}
-
-	/** A create's attempt with its pad, and the file its binding write began for, if it did. */
-	private function attempt(string $padId, ?int $bindingAttemptFileId): PadCreateAttempt {
-		$attempt = new PadCreateAttempt();
-		$attempt->recordPad($padId);
-		if ($bindingAttemptFileId !== null) {
-			$attempt->recordBindingAttempt($bindingAttemptFileId);
-		}
-		return $attempt;
+		$rollback->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'template materialization');
 	}
 
 	private function buildRollback(BindingService $binding, EtherpadClient $etherpad): ProvisionedPadRollback {

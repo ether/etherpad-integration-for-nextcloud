@@ -90,7 +90,7 @@ final class SensitiveMethods {
 			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
-		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write'],
+		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write', 'holdsAlready'],
 		\OCA\EtherpadNextcloud\Service\PadBootstrapService::class => ['initializeMissingFrontmatter'],
 		\OCA\EtherpadNextcloud\Service\PadPlaceholderResolver::class => ['applyForContent', 'applyInternal'],
 		\OCA\EtherpadNextcloud\Service\PadTemplateAdminService::class => ['add'],
@@ -98,11 +98,12 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer::class => ['sanitize'],
 		\OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher::class => ['toPayload'],
 		// And where it is a string for the last time: the constructors of
-		// the objects that carry it from there.
+		// the objects that carry it from there, and what a claim compares
+		// with the file's content.
 		\OCA\EtherpadNextcloud\Service\ParsedPadFile::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PadSnapshot::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\LivePadHtml::class => ['__construct'],
-		\OCA\EtherpadNextcloud\Service\CreatedFileClaim::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\CreatedFileClaim::class => ['__construct', 'holds'],
 		// The API key as a string: in the settings form as it was sent,
 		// which the validator takes whole and no parameter's name gives
 		// away; on its way into the objects that keep it; and as the secret

@@ -10,14 +10,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * What one create has made so far, and therefore what its rollback owns:
- * the file it claimed, until it disowns one that turns out to be somebody
- * else's; the pad it provisioned; the file a binding write began for.
+ * The file one create claimed, and so what its rollback owns, until the
+ * create disowns a file that turns out to be somebody else's; and where
+ * that file ended up.
  */
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
-	private string $padId = '';
-	private ?int $bindingAttemptFileId = null;
 	private string $path = '';
 
 	/** The file this attempt created, from now until it is disowned. */
@@ -32,34 +30,8 @@ class PadCreateAttempt {
 		$this->claim = null;
 	}
 
-	public function recordPad(string $padId): void {
-		$this->padId = $padId;
-	}
-
 	public function claim(): ?CreatedFileClaim {
 		return $this->claim;
-	}
-
-	/**
-	 * The file a binding write began for, recorded immediately before
-	 * createBinding (see ProvisionedPadRollback::discardCreated()).
-	 *
-	 * The id rather than a flag: the rollback needs it to ask about the row,
-	 * and reading it off the claim instead would tie that question to the
-	 * claim still being owned - a coupling nothing states and a later
-	 * disownFile() would quietly break.
-	 */
-	public function recordBindingAttempt(int $fileId): void {
-		$this->bindingAttemptFileId = $fileId;
-	}
-
-	/** The file a binding write began for, or null if none did. */
-	public function bindingAttemptFileId(): ?int {
-		return $this->bindingAttemptFileId;
-	}
-
-	public function padId(): string {
-		return $this->padId;
 	}
 
 	/** Where the file ended up, for the create's answer and the rollback's log lines. */

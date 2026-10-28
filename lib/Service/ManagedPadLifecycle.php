@@ -187,8 +187,8 @@ class ManagedPadLifecycle {
 	 * way to seed one. A seed that fails has the pad taken down, as no row
 	 * names it yet, and its failure goes on. Only what this call made goes -
 	 * a group pad with its own new group - never a pad that was there
-	 * before; one that cannot be taken down is named in the log, the only
-	 * handle left on it.
+	 * before; one that cannot be taken down is named in the log
+	 * (discardProvisioned()).
 	 *
 	 * @param callable():string $padId as for provisionFor()
 	 * @param callable():string $groupPadName as for provisionFor()
@@ -201,15 +201,7 @@ class ManagedPadLifecycle {
 		try {
 			return [$madeId, $this->seed($madeId, $text, $html, $context)];
 		} catch (\Throwable $e) {
-			try {
-				$this->discardProvisioned($madeId);
-			} catch (\Throwable $cleanupError) {
-				$this->logger->warning('Could not remove a new Etherpad pad after seeding it failed.', [
-					'app' => 'etherpad_nextcloud',
-					'padId' => $madeId,
-					...SafeError::context($cleanupError),
-				] + $context);
-			}
+			$this->discardProvisioned($madeId, $context);
 			throw $e;
 		}
 	}
@@ -240,15 +232,30 @@ class ManagedPadLifecycle {
 	 * migration, and any import built on it - the group is Ownpad's and holds
 	 * other people's pads, so calling this on one destroys them. Nothing here
 	 * can tell the two apart; the caller has to know which it has.
+	 *
+	 * Best effort: those rollbacks go on whatever this does, and none has a
+	 * row naming the pad by then. So a pad whose removal Etherpad does not
+	 * confirm is named in the log by its id, against the rule elsewhere:
+	 * should it still be there, the line is the only handle left on it.
+	 *
+	 * @param array<string,mixed> $context the caller's keys for that line;
+	 *   `app`, `padId` and SafeError's keys are set here and win a collision
 	 */
-	public function discardProvisioned(string $padId): void {
+	public function discardProvisioned(string $padId, array $context = []): void {
 		$groupId = PadId::groupIdOf($padId);
-		if ($groupId === null) {
-			$this->etherpadClient->deletePad($padId);
-			return;
+		try {
+			if ($groupId === null) {
+				$this->etherpadClient->deletePad($padId);
+			} else {
+				$this->etherpadClient->deleteGroup($groupId);
+			}
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not confirm removal of a new Etherpad pad.', [
+				'app' => 'etherpad_nextcloud',
+				'padId' => $padId,
+				...SafeError::context($e),
+			] + $context);
 		}
-
-		$this->etherpadClient->deleteGroup($groupId);
 	}
 
 	/**

@@ -402,8 +402,10 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('deleteGroup');
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
 
-		$this->lifecycle($client)->discardProvisioned('nc-abcdef0123456789');
+		(new ManagedPadLifecycle($client, $logger))->discardProvisioned('nc-abcdef0123456789');
 	}
 
 	public function testProvisionsAPublicPadUnderTheIdItWasGiven(): void {
@@ -596,7 +598,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('warning')
-			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
+			->with('Could not confirm removal of a new Etherpad pad.', $this->callback(
 				static fn (array $context): bool => ($context['app'] ?? null) === 'etherpad_nextcloud'
 					&& ($context['padId'] ?? null) === 'nc-pad'
 					&& ($context['fileId'] ?? null) === 7
@@ -659,6 +661,6 @@ class ManagedPadLifecycleTest extends TestCase {
 
 		$fallback = $lines['Could not import the HTML snapshot; falling back to plain text.'] ?? [];
 		$this->assertSame(['etherpad_nextcloud', \RuntimeException::class], [$fallback[0] ?? null, $fallback[2] ?? null]);
-		$this->assertSame(['etherpad_nextcloud', 'nc-pad', \TypeError::class], $lines['Could not remove a new Etherpad pad after seeding it failed.'] ?? null);
+		$this->assertSame(['etherpad_nextcloud', 'nc-pad', \TypeError::class], $lines['Could not confirm removal of a new Etherpad pad.'] ?? null);
 	}
 }
