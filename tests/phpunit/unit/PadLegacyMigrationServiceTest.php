@@ -532,39 +532,41 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		]);
 	}
 
-	/**
-	 * The lookups, the group's listing and a remote export all come before
-	 * the write: a file written since the open read its shortcut is not
-	 * written over, on either way - and the same-origin way keeps the row
-	 * it made, for the next open to finish.
-	 */
-	public function testDoesNotWriteOverAFileWrittenSinceItsShortcutWasRead(): void {
-		foreach (['https://legacy.example.test', 'https://pad.our-server.test'] as $origin) {
-			$file = $this->createMock(File::class);
-			$file->method('getId')->willReturn(612);
-			$file->method('getContent')->willReturn('notes written meanwhile');
-			$file->expects($this->never())->method('putContent');
-			$this->claimedFile = $file;
-			$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
-			$externalPadSeeder->method('prepare')->willReturn(['content' => 'external-frontmatter', 'result' => []]);
-			$padFileService = $this->createMock(PadFileService::class);
-			$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
-			$padFileService->method('buildInitialDocument')->willReturn('written-frontmatter');
-			$etherpadClient = $this->createMock(EtherpadClient::class);
-			$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
-			$etherpadClient->method('normalizeOrigin')->willReturn($origin);
-			$binding = $this->createMock(BindingService::class);
-			$binding->method('findByPadId')->willReturn(null);
-			$binding->expects($this->never())->method('deleteActiveBinding');
+	/** @return iterable<string, array{string, bool}> the shortcut's origin, and whether it is this server's */
+	public static function originsOfAShortcutWrittenSince(): iterable {
+		yield 'another server' => ['https://legacy.example.test', false];
+		yield 'this server' => ['https://pad.our-server.test', true];
+	}
 
-			try {
-				$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient, externalPadSeeder: $externalPadSeeder)
-					->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => $origin . '/p/team-pad', 'pad_id' => 'team-pad']);
-				$this->fail('the write went through for ' . $origin);
-			} catch (\OCA\EtherpadNextcloud\Exception\PadFileChangedException) {
-				$this->addToAssertionCount(1);
-			}
-		}
+	/**
+	 * Each way does its work - the remote export, or the row - and then
+	 * finds the file no longer holds the shortcut as it was read: the file
+	 * is not written, and the row the same-origin way made stays.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('originsOfAShortcutWrittenSince')]
+	public function testDoesNotWriteOverAFileWrittenSinceItsShortcutWasRead(string $origin, bool $sameOrigin): void {
+		$file = $this->createMock(File::class);
+		$file->method('getContent')->willReturn('notes written meanwhile');
+		$file->expects($this->never())->method('putContent');
+		$this->claimedFile = $file;
+		$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
+		$externalPadSeeder->expects($sameOrigin ? $this->never() : $this->once())->method('prepare')
+			->with(612, $origin . '/p/team-pad')
+			->willReturn(['content' => 'external-frontmatter', 'result' => []]);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+		$padFileService->method('buildInitialDocument')->willReturn('written-frontmatter');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn($origin);
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->expects($sameOrigin ? $this->once() : $this->never())->method('createBinding')->with(612, 'team-pad', BindingService::ACCESS_PUBLIC);
+		$binding->expects($this->never())->method('deleteActiveBinding');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
+		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient, externalPadSeeder: $externalPadSeeder)
+			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => $origin . '/p/team-pad', 'pad_id' => 'team-pad']);
 	}
 
 	/**

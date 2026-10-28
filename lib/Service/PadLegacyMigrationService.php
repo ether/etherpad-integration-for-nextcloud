@@ -26,10 +26,8 @@ use Psr\Log\LoggerInterface;
  * binding-and-`.pad` model, called from `PadBootstrapService`. The branches
  * and what each leaves behind are in docs/legacy-ownpad-migration.md.
  *
- * The document goes in through the claim on the shortcut as it was read
- * (ClaimedFileWriter): the row lookups, a group's listing and a remote
- * export all come before the write, which refuses a file that no longer
- * holds the shortcut.
+ * The document goes in through ClaimedFileWriter, which checks the file
+ * against the shortcut as the caller read it before writing.
  */
 class PadLegacyMigrationService {
 	public function __construct(

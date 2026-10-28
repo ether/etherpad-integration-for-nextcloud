@@ -325,7 +325,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		}
 	}
 
-	/** The file Nextcloud made goes through the writer, by its id and while it still reads as empty. */
+	/** The removal is handed to the writer, with a claim on the file's id that expects it empty. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatGoStraightToInitialisation')]
 	public function testRemovesTheFileWhenNoPadTypeIsEnabled(?string $templateName, ?string $mode): void {
 		$target = $this->file('Notes.pad');
@@ -381,8 +381,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * A template's file the fallback emptied, then found no pad type for,
-	 * goes by the claim's id while it still reads as empty.
+	 * After a reset that returned, a fallback that finds no pad type hands
+	 * the removal to the writer, with a claim on the file's id that expects
+	 * it empty.
 	 */
 	public function testRemovesATemplatesEmptiedFileWhenNoPadTypeIsEnabledAnyMore(): void {
 		$target = $this->untouchedTarget('New.pad');
@@ -401,11 +402,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
 	}
 
-	/**
-	 * Without a user the file is emptied as handed over, but not a node
-	 * whose id cannot be read: written by its path, it would make a file
-	 * or empty another.
-	 */
+	/** Without a user and without a readable id, the node handed over is left as it is. */
 	public function testEmptiesNothingWithoutAUserWhenTheIdCannotBeRead(): void {
 		$target = $this->createMock(File::class);
 		$target->method('getName')->willReturn('New.pad');

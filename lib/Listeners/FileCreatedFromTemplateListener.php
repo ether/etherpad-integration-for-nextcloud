@@ -63,9 +63,9 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		$user = $this->userSession->getUser();
 		if ($user === null) {
 			// Without a user the file cannot be found again by its id, so it
-			// is emptied as handed over. A node whose id cannot be read no
-			// longer names a file Nextcloud knows: written by its path, it
-			// would make one or empty another, so it stays.
+			// is emptied as handed over. A node whose id cannot be read is of
+			// uncertain identity: written by its remembered path, it could
+			// make a file or empty another, so it stays.
 			$fileId = $this->idOrNull($target);
 			if ($fileId === null) {
 				$this->logger->warning('Template event fired without an active user; left the target as it is, as its id cannot be read.', [
@@ -157,11 +157,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			if ($unchanged === null || !$this->resetTargetToEmpty($unchanged, $claim->fileId)) {
 				return;
 			}
-			// Re-initialise after the wipe so the user still gets a clean,
-			// openable pad even though the template path failed. A disabled
-			// pad type travels on from here as well. Only after a wipe that
-			// landed: the init expects an empty file, and on the template's
-			// copy it would make a pad and a row, then be refused the write.
+			// Re-initialise as a blank pad; a disabled pad type travels on
+			// from here as well. Only once the reset returned: otherwise the
+			// init could make a pad and a row before the guard refused its
+			// write on the template's copy.
 			$this->initializeBlankPad($user->getUID(), $unchanged, $claim->fileId);
 		}
 	}
@@ -266,7 +265,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	}
 
 	/**
-	 * Whether the file was emptied. `$fileId` is read by the caller
+	 * Whether putContent('') returned without throwing; false does not say
+	 * whether the write landed. `$fileId` is read by the caller
 	 * before anything can fail rather than here: `Node::getId()` re-reads
 	 * through the node's path — it can throw, and on a replaced path it
 	 * answers for the wrong file.
