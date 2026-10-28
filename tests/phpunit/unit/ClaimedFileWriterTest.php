@@ -13,15 +13,12 @@ use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
+use OCP\Lock\LockedException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class ClaimedFileWriterTest extends TestCase {
-	/**
-	 * The document names the pad, carries the snapshot and the pad's URL,
-	 * and goes into the file the claim's id resolves to, as the claim left
-	 * it; the write is recorded on the claim.
-	 */
 	public function testWritesThePadsDocumentIntoTheClaimedFile(): void {
 		$claim = new CreatedFileClaim('alice', 4242, 'as handed over');
 		$snapshot = new PadSnapshot('text', '<p>text</p>', 3);
@@ -41,10 +38,19 @@ class ClaimedFileWriterTest extends TestCase {
 		$this->assertSame(hash('sha256', 'the document'), $claim->writtenHash);
 	}
 
+	/** @return iterable<string,array{?string}> what the claimed id finds where the claim expects nothing */
+	public static function filesTheWriteRefuses(): iterable {
+		yield 'written meanwhile' => ['written meanwhile'];
+		// A read that gives no string counts as a change.
+		yield 'a read that gives no string' => [null];
+	}
+
 	/** Content written meanwhile is not written over, and no write is recorded. */
-	public function testRefusesAFileWrittenMeanwhile(): void {
+	#[DataProvider('filesTheWriteRefuses')]
+	public function testRefusesAFileThatIsNotAsTheClaimExpects(?string $content): void {
 		$claim = new CreatedFileClaim('alice', 4242);
-		$node = $this->fileHolding('written meanwhile');
+		$node = $this->createMock(File::class);
+		$node->method('getContent')->willReturn($content);
 		$node->expects($this->never())->method('putContent');
 
 		try {
@@ -56,157 +62,78 @@ class ClaimedFileWriterTest extends TestCase {
 		$this->assertNull($claim->writtenHash);
 	}
 
-	/** A read that gives no string counts as a change: the file is not written over. */
-	public function testRefusesAFileThatReadsAsNothing(): void {
-		$node = $this->createMock(File::class);
-		$node->method('getContent')->willReturn(null);
-		$node->expects($this->never())->method('putContent');
-
-		$this->expectException(PadFileChangedException::class);
-		$this->writer($node)->write(new CreatedFileClaim('alice', 4242), 'the document');
+	/**
+	 * What the claimed id finds, what this create wrote (null: nothing), and
+	 * whether the file goes. A file that stays is named, with whether this
+	 * create wrote it.
+	 *
+	 * @return iterable<string,array{string,?string,bool}>
+	 */
+	public static function filesTheRollbackFinds(): iterable {
+		yield 'as handed over' => ['', null, true];
+		yield 'what it wrote' => ['our document', 'our document', true];
+		yield 'content it never wrote' => ['notes somebody else put here', null, false];
+		yield 'emptied after its write' => ['', 'our document', false];
 	}
 
-	/** As handed over, or holding what this create wrote: still the claim's. */
-	public function testRecognisesTheFileAsTheClaimLeftIt(): void {
-		$written = new CreatedFileClaim('alice', 4242);
-		$written->writtenHash = hash('sha256', 'our document');
-		$ours = $this->fileHolding('our document');
-		$untouched = $this->fileHolding('');
-
-		$this->assertSame($ours, $this->writer($ours)->resolveUnchanged($written));
-		$this->assertSame($untouched, $this->writer($untouched)->resolveUnchanged(new CreatedFileClaim('alice', 4242)));
-	}
-
-	/** Another's content, a read that gives no string, or a file that cannot be read: not the claim's. */
-	public function testDoesNotRecogniseAStrangersContent(): void {
+	#[DataProvider('filesTheRollbackFinds')]
+	public function testRemovesTheClaimedFileOnlyWhileItIsAsTheClaimLeftIt(string $content, ?string $wrote, bool $goes): void {
 		$claim = new CreatedFileClaim('alice', 4242);
-		$claim->writtenHash = hash('sha256', 'our document');
-		$unreadable = $this->createMock(File::class);
-		$unreadable->method('getContent')->willThrowException(new \RuntimeException('storage gone'));
-		$nothing = $this->createMock(File::class);
-		$nothing->method('getContent')->willReturn(null);
-
-		$this->assertNull($this->writer($this->fileHolding('somebody else\'s notes'))->resolveUnchanged($claim));
-		$this->assertNull($this->writer($unreadable)->resolveUnchanged($claim));
-		$this->assertNull($this->writer($nothing)->resolveUnchanged(new CreatedFileClaim('alice', 4242)));
-	}
-
-	public function testDeletesTheEmptyFileResolvedFromTheCapturedId(): void {
-		$stillOurs = $this->fileHolding('');
-		$stillOurs->expects($this->once())->method('delete');
-
-		$this->writer($stillOurs)->deleteIfUnchanged(new CreatedFileClaim('alice', 4242));
-	}
-
-	public function testDeletesNothingWhenTheCreatedFileIsNoLongerThere(): void {
-		$resolver = $this->createMock(UserNodeResolver::class);
-		$resolver->method('resolveUserFileNodeById')->willThrowException(new NotFoundException('gone'));
-
+		$claim->writtenHash = $wrote === null ? null : hash('sha256', $wrote);
+		$found = $this->fileHolding($content);
+		$found->expects($goes ? $this->once() : $this->never())->method('delete');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->never())->method('warning');
-		$logger->expects($this->once())->method('info')
-			->with('Left a claimed .pad file alone: its id did not resolve.', ['app' => 'etherpad_nextcloud', 'uid' => 'alice', 'fileId' => 4242, 'file' => '/Created.pad']);
+		$logger->expects($goes ? $this->never() : $this->once())->method('warning')->with(
+			'Left a .pad file in place: it is not as this create left it.',
+			['app' => 'etherpad_nextcloud', 'uid' => 'alice', 'fileId' => 4242, 'file' => '/Created.pad', 'written' => $wrote !== null],
+		);
 
-		$this->writerWith($resolver, $logger)->deleteIfUnchanged(new CreatedFileClaim('alice', 4242), ['file' => '/Created.pad']);
+		$this->writer($found, $logger)->deleteIfUnchanged($claim, ['file' => '/Created.pad']);
 	}
 
 	/**
-	 * A create that never wrote has no hash to compare, so content in the
-	 * file is somebody else's by definition. Deleting it would take work
-	 * this create never did.
+	 * How the lookup by the claimed id fails (null: it finds the file), how
+	 * reading that file fails (null: it gives no string), and the line that
+	 * names the file left in place.
+	 *
+	 * @return iterable<string,array{?\Throwable,?\Throwable,string,string,?class-string}>
 	 */
-	public function testLeavesContentInAFileThisCreateNeverWroteTo(): void {
-		$foreign = $this->fileHolding('notes somebody else put here');
-		$foreign->expects($this->never())->method('delete');
-
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')
-			->with('Left a .pad file in place: it is not as this create left it.', ['app' => 'etherpad_nextcloud', 'uid' => 'alice', 'fileId' => 4242, 'file' => '/Created.pad', 'written' => false]);
-
-		$this->writer($foreign, $logger)->deleteIfUnchanged(new CreatedFileClaim('alice', 4242), ['file' => '/Created.pad']);
+	public static function lookupsThatFail(): iterable {
+		yield 'the id does not resolve' => [new NotFoundException('gone'), null, 'info', 'Left a claimed .pad file alone: its id did not resolve.', null];
+		yield 'the lookup fails' => [new \RuntimeException('storage down'), null, 'warning', 'Left a .pad file in place: it could not be looked up or read.', \RuntimeException::class];
+		yield 'the read fails' => [null, new LockedException('/Created.pad'), 'warning', 'Left a .pad file in place: it could not be looked up or read.', LockedException::class];
+		// Not taken for an empty file, which a claim that wrote nothing would remove.
+		yield 'the read gives no string' => [null, null, 'warning', 'Left a .pad file in place: it could not be looked up or read.', \TypeError::class];
 	}
 
-	/** Matching file_id values do not prove that this attempt wrote the document. */
-	public function testLeavesADocumentAnotherCreateWroteIntoTheSameFile(): void {
-		$rivals = $this->fileHolding("---\nfile_id: 4242\npad_id: nc-rival\n---\n");
-		$rivals->expects($this->never())->method('delete');
-
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')
-			->with('Left a .pad file in place: it is not as this create left it.', ['app' => 'etherpad_nextcloud', 'uid' => 'alice', 'fileId' => 4242, 'written' => true]);
-
-		$this->writer($rivals, $logger)->deleteIfUnchanged($this->claimThatWrote("---\nfile_id: 4242\npad_id: nc-own\n---\n"));
-	}
-
-	public function testDeletesAFileHoldingWhatThisCreateWrote(): void {
-		$ours = $this->fileHolding('our document');
-		$ours->expects($this->once())->method('delete');
-
-		$this->writer($ours)->deleteIfUnchanged($this->claimThatWrote('our document'));
-	}
-
-	/** A read failure must not delete the file or mask the original create error. */
-	public function testLeavesTheFileAloneWhenItsContentCannotBeRead(): void {
-		$locked = $this->createMock(File::class);
-		$locked->method('getContent')->willThrowException(new \OCP\Lock\LockedException('/Created.pad'));
-		$locked->expects($this->never())->method('delete');
-
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')
-			->with($this->stringContains('could not be looked up or read'), $this->anything());
-
-		$this->writer($locked, $logger)->deleteIfUnchanged($this->claimThatWrote('our document'));
-	}
-
-	/** Empty, though this create wrote it: not what it wrote, so left, and said so. */
-	public function testLeavesAFileEmptiedAfterThisCreateWroteIt(): void {
-		$emptied = $this->fileHolding('');
-		$emptied->expects($this->never())->method('delete');
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')
-			->with($this->stringContains('not as this create left it'), $this->anything());
-
-		$this->writer($emptied, $logger)->deleteIfUnchanged($this->claimThatWrote('our document'));
-	}
-
-	/** A read that gives no string is a read that failed, not an empty file. */
-	public function testLeavesAFileThatReadsAsNothing(): void {
-		$unread = $this->createMock(File::class);
-		$unread->method('getContent')->willReturn(null);
-		$unread->expects($this->never())->method('delete');
-
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')
-			->with($this->stringContains('could not be looked up or read'), $this->anything());
-
-		$this->writer($unread, $logger)->deleteIfUnchanged(new CreatedFileClaim('alice', 4242));
-	}
-
-	public function testSwallowsAFailedLookup(): void {
+	/** @param ?class-string $error */
+	#[DataProvider('lookupsThatFail')]
+	public function testLeavesAFileItCannotLookUpOrRead(?\Throwable $lookup, ?\Throwable $read, string $level, string $message, ?string $error): void {
+		$found = $this->createMock(File::class);
+		if ($read === null) {
+			$found->method('getContent')->willReturn(null);
+		} else {
+			$found->method('getContent')->willThrowException($read);
+		}
+		$found->expects($this->never())->method('delete');
 		$resolver = $this->createMock(UserNodeResolver::class);
-		$resolver->method('resolveUserFileNodeById')->willThrowException(new \RuntimeException('storage down'));
-
+		if ($lookup === null) {
+			$resolver->method('resolveUserFileNodeById')->with('alice', 4242)->willReturn($found);
+		} else {
+			$resolver->method('resolveUserFileNodeById')->willThrowException($lookup);
+		}
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with(
-			'Left a .pad file in place: it could not be looked up or read.',
-			$this->callback(static fn (array $context): bool => array_diff_key($context, ['error_origin' => true]) === [
-				'app' => 'etherpad_nextcloud',
-				'uid' => 'alice',
-				'fileId' => 4242,
-				'file' => '/Created.pad',
-				'error' => \RuntimeException::class,
-				'error_message' => 'storage down',
-			]),
+		$logger->expects($this->never())->method($level === 'info' ? 'warning' : 'info');
+		$logger->expects($this->once())->method($level)->with(
+			$message,
+			$this->callback(static fn (array $context): bool => array_diff_key($context, ['error_message' => true, 'error_origin' => true])
+				=== ['app' => 'etherpad_nextcloud', 'uid' => 'alice', 'fileId' => 4242, 'file' => '/Created.pad'] + ($error === null ? [] : ['error' => $error])),
 		);
 
 		$this->writerWith($resolver, $logger)->deleteIfUnchanged(new CreatedFileClaim('alice', 4242), ['file' => '/Created.pad']);
 	}
 
-	/**
-	 * A cleanup failure must not replace the error that caused the
-	 * rollback. It is named with the claimed file's id, not with whatever
-	 * the node found by its id answers by then.
-	 */
+	/** Named with the claimed file's id, not with whatever the node found by that id answers by then. */
 	public function testReportsButSwallowsADeleteFailure(): void {
 		$resolved = $this->fileHolding('');
 		$resolved->method('getId')->willReturn(42);
@@ -226,13 +153,6 @@ class ClaimedFileWriterTest extends TestCase {
 		);
 
 		$this->writer($resolved, $logger)->deleteIfUnchanged(new CreatedFileClaim('alice', 4242), ['file' => '/Created.pad']);
-	}
-
-	private function claimThatWrote(string $content): CreatedFileClaim {
-		$claim = new CreatedFileClaim('alice', 4242);
-		$claim->writtenHash = hash('sha256', $content);
-
-		return $claim;
 	}
 
 	private function writer(File $node, ?LoggerInterface $logger = null): ClaimedFileWriter {

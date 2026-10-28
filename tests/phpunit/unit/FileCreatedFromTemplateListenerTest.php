@@ -34,7 +34,9 @@ use Psr\Log\LoggerInterface;
 class FileCreatedFromTemplateListenerTest extends TestCase {
 	use BuildsAppAccess;
 
-	/** Where the listener asks whether its target is still as the claim left it. */
+	private const AN_ADDRESS = ['pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad']];
+
+	/** Writes, finds and removes the claimed target for the listener. */
 	private ClaimedFileWriter $writer;
 
 	protected function setUp(): void {
@@ -63,12 +65,19 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		));
 	}
 
-	public function testBlankTemplateInitialisesFrontmatterImmediately(): void {
-		// + → New pad with the "Blank" option: NC creates an empty .pad
-		// and dispatches the event without a source template. Without this
-		// branch the viewer's first /open hits a 400 (no YAML frontmatter)
-		// before the retry path runs /initialize. Initialising in the
-		// listener removes that first 400.
+	/**
+	 * Neither carries content: the file is initialised straight away, to the
+	 * pad type a tile offers, so its first open finds frontmatter.
+	 *
+	 * @return iterable<string,array{?string,?string}> the template the picker hands over, and the pad type it offers
+	 */
+	public static function createsThatGoStraightToInitialisation(): iterable {
+		yield 'the blank entry' => [null, null];
+		yield 'the tile of a pad type' => [PadTemplateStorage::PUBLIC_TILE_NAME, 'public'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatGoStraightToInitialisation')]
+	public function testInitialisesStraightToThePadType(?string $templateName, ?string $mode): void {
 		$target = $this->file('New.pad');
 
 		$creation = $this->createMock(PadCreationService::class);
@@ -77,10 +86,10 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
 			->method('initializeMissingFrontmatter')
-			->with('alice', $target, '');
+			->with('alice', $target, '', $mode);
 
-		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent(
-			null,
+		$this->buildListener($creation, $bootstrap, true, $this->tilesOffering($mode))->handle(new FileCreatedFromTemplateEvent(
+			$templateName === null ? null : $this->file($templateName),
 			$target,
 			[],
 		));
@@ -88,8 +97,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 	public function testSourceTemplateDelegatesToCreationService(): void {
 		$template = $this->file('Tpl.pad');
-		$target = $this->file('New.pad');
-		$target->expects($this->never())->method('putContent');
+		$target = $this->untouchedTarget('New.pad');
 
 		$claim = new CreatedFileClaim('alice', 4242);
 		$creation = $this->createMock(PadCreationService::class);
@@ -105,9 +113,6 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	public function testFailedSourceTemplateFallsBackToBlankInit(): void {
-		// If materializeTemplateInto throws, the byte-copy is wiped and then
-		// re-initialised, so the user still gets an openable blank pad rather
-		// than one whose first open fails.
 		$template = $this->file('Tpl.pad');
 		$target = $this->untouchedTarget('New.pad');
 		$byId = $this->file('New.pad');
@@ -148,64 +153,24 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * Our own tiles carry no content: they exist so the picker can offer a
-	 * pad type. Copying the empty marker over the new pad would leave it
-	 * unopenable, so the listener initialises straight to that type.
-	 */
-	public function testInitialisesToThePadTypeOfOurOwnTemplate(): void {
-		$target = $this->file('note.pad');
-		$marker = $this->file('Public pad.pad');
-
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('accessModeForTemplateFile')->with($marker)->willReturn('public');
-
-		$creation = $this->createMock(PadCreationService::class);
-		$creation->expects($this->never())->method('materializeTemplateInto');
-
-		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->expects($this->once())
-			->method('initializeMissingFrontmatter')
-			->with('alice', $target, '', 'public');
-
-		$this->buildListener($creation, $bootstrap, true, $storage)
-			->handle(new FileCreatedFromTemplateEvent($marker, $target, []));
-	}
-
-	/**
 	 * The picker collects the pad's address as a template field, so the file is
 	 * linked as it is created — no half-finished file is ever stored.
 	 */
 	public function testSeedsAFileFromTheExternalTileWithTheAddressThePickerAsked(): void {
-		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
-		$target = $this->file('Team pad.pad');
-
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('isExternalMarkerFile')->willReturn(true);
-
 		$seeder = $this->createMock(ExternalPadSeeder::class);
 		$seeder->expects($this->once())
 			->method('prepare')
 			->with(4242, 'https://pad.remote.test/p/RemotePad')
-			->willReturn(['content' => 'the document', 'result' => [
-				'file_id' => 42,
-				'pad_id' => 'ext.RemotePad',
-				'access_mode' => 'public',
-				'pad_url' => 'https://pad.remote.test/p/RemotePad',
-			]]);
+			->willReturn($this->prepared());
 
+		$target = $this->untouchedTarget('Team pad.pad');
 		$creation = $this->createMock(PadCreationService::class);
 		$claim = $this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
 		$this->writer->expects($this->once())->method('write')->with($claim, 'the document');
-		$creation->expects($this->never())->method('materializeTemplateInto');
-		$bootstrap = $this->createMock(PadBootstrapService::class);
-		// Provisioning a local pad here would quietly make it an internal one.
-		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$this->buildListener($creation, $bootstrap, true, $storage, $seeder)->handle(
-			new FileCreatedFromTemplateEvent($marker, $target, [
-				'pad_url' => ['content' => ' https://pad.remote.test/p/RemotePad '],
-			])
-		);
+		$this->createFromTheExternalTile($creation, $seeder, $target, [
+			'pad_url' => ['content' => ' https://pad.remote.test/p/RemotePad '],
+		]);
 	}
 
 	/**
@@ -214,20 +179,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	 * the file, nothing that hands the pad to whoever reads the log.
 	 */
 	public function testKeepsThePadOutOfTheLogWhenTheRemoteExportIsUnavailable(): void {
-		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
-		$target = $this->file('Team pad.pad');
-
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('isExternalMarkerFile')->willReturn(true);
-
 		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$seeder->method('prepare')->willReturn(['content' => 'the document', 'result' => [
-			'file_id' => 42,
-			'pad_id' => 'ext.RemotePad',
-			'access_mode' => 'public',
-			'pad_url' => 'https://pad.remote.test/p/RemotePad',
-			'snapshot_warning_code' => 'remote_export_unavailable',
-		]]);
+		$seeder->method('prepare')->willReturn($this->prepared(['snapshot_warning_code' => 'remote_export_unavailable']));
+		$target = $this->file('Team pad.pad');
 		$creation = $this->createMock(PadCreationService::class);
 		$this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
 
@@ -239,19 +193,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			}
 		);
 
-		$listener = new FileCreatedFromTemplateListener(
-			$creation,
-			$this->createMock(PadBootstrapService::class),
-			$storage,
-			$seeder,
-			$this->userSession(true),
-			$logger,
-			$this->appAccess(true),
-			$this->writer,
-		);
-		$listener->handle(new FileCreatedFromTemplateEvent($marker, $target, [
+		$this->createFromTheExternalTile($creation, $seeder, $target, [
 			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad?token=s3cret#top'],
-		]));
+		], $logger);
 
 		$this->assertCount(1, $logged);
 		$this->assertSame('etherpad_nextcloud', $logged[0]['app'] ?? null);
@@ -261,44 +205,29 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->assertStringNotContainsString('s3cret', json_encode($logged[0]));
 	}
 
-	/** @return iterable<string,array{0:array<string,mixed>}> */
-	public static function unusableAddressProvider(): iterable {
-		yield 'field missing' => [[]];
-		yield 'field empty' => [['pad_url' => ['content' => '   ']]];
+	/**
+	 * @return iterable<string,array{array<string,mixed>,?string}> the template fields, and how seeding their address fails (null: it is not tried)
+	 */
+	public static function externalCreatesThatCannotBeLinked(): iterable {
+		yield 'field missing' => [[], null];
+		yield 'field empty' => [['pad_url' => ['content' => '   ']], null];
+		yield 'address cannot be seeded' => [self::AN_ADDRESS, 'pad not reachable'];
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider('unusableAddressProvider')]
-	public function testRemovesTheFileWhenNoUsableAddressWasGiven(array $fields): void {
-		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
-		$target = $this->untouchedTarget('Team pad.pad');
-
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('isExternalMarkerFile')->willReturn(true);
-
+	/** @param array<string,mixed> $fields */
+	#[\PHPUnit\Framework\Attributes\DataProvider('externalCreatesThatCannotBeLinked')]
+	public function testRemovesTheFileThatCannotBeLinked(array $fields, ?string $seedFailure): void {
+		$failure = new \RuntimeException($seedFailure ?? 'No pad address was given for the external pad template.');
 		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$seeder->expects($this->never())->method('prepare');
+		if ($seedFailure === null) {
+			$seeder->expects($this->never())->method('prepare');
+		} else {
+			$seeder->expects($this->once())->method('prepare')->willThrowException($failure);
+		}
+		$target = $this->untouchedTarget('Team pad.pad');
 		$creation = $this->createMock(PadCreationService::class);
 		$claim = $this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
-		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->identicalTo($claim));
-
-		$this->expectException(\RuntimeException::class);
-		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
-			->handle(new FileCreatedFromTemplateEvent($marker, $target, $fields));
-	}
-
-	/** A rejected URL must not leave a file behind either. */
-	public function testRemovesTheFileWhenTheAddressCannotBeSeeded(): void {
-		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
-		$target = $this->untouchedTarget('Team pad.pad');
-
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('isExternalMarkerFile')->willReturn(true);
-
-		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$failure = new \RuntimeException('pad not reachable');
-		$seeder->method('prepare')->willThrowException($failure);
-		$creation = $this->createMock(PadCreationService::class);
-		$claim = $this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
+		$this->writer->expects($this->never())->method('write');
 		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->identicalTo($claim));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
@@ -307,22 +236,23 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		);
 
 		try {
-			$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder, logger: $logger)
-				->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
+			$this->createFromTheExternalTile($creation, $seeder, $target, $fields, $logger);
 			$this->fail('the failure goes on');
 		} catch (\RuntimeException $e) {
-			$this->assertSame($failure, $e);
+			// The seed's failure goes on as it is; a missing address is the listener's own refusal.
+			if ($seedFailure === null) {
+				$this->assertEquals($failure, $e);
+			} else {
+				$this->assertSame($failure, $e);
+			}
 		}
 	}
 
 	/** The file's id cannot be read, so the remote pad is not asked either. */
 	public function testLeavesTheFileWhenItCannotBeClaimed(): void {
-		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
 		$target->expects($this->never())->method('delete');
 
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('isExternalMarkerFile')->willReturn(true);
 		$seeder = $this->createMock(ExternalPadSeeder::class);
 		$seeder->expects($this->never())->method('prepare');
 		$failure = new \RuntimeException('Could not resolve new file ID.');
@@ -332,15 +262,15 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->writer->expects($this->never())->method('deleteIfUnchanged');
 
 		try {
-			$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
-				->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
+			$this->createFromTheExternalTile($creation, $seeder, $target);
 			$this->fail('the failure goes on');
 		} catch (\RuntimeException $e) {
 			$this->assertSame($failure, $e);
 		}
 	}
 
-	public function testRemovesTheBlankFileWhenNoPadTypeIsEnabled(): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatGoStraightToInitialisation')]
+	public function testRemovesTheFileWhenNoPadTypeIsEnabled(?string $templateName, ?string $mode): void {
 		$target = $this->file('Notes.pad');
 		$target->expects($this->once())->method('delete');
 
@@ -348,26 +278,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
 
 		$this->expectException(PadTypeDisabledException::class);
-		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap)
-			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
-	}
-
-	/** A type tile provisions a pad as the blank entry does, so its file goes too. */
-	public function testRemovesTheFileOfTheTypeTileWhenNoPadTypeIsEnabled(): void {
-		$marker = $this->file(PadTemplateStorage::PUBLIC_TILE_NAME);
-		$target = $this->file('Notes.pad');
-		$target->expects($this->once())->method('delete');
-
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('isExternalMarkerFile')->willReturn(false);
-		$storage->method('accessModeForTemplateFile')->willReturn('public');
-
-		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException('public'));
-
-		$this->expectException(PadTypeDisabledException::class);
-		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $storage)
-			->handle(new FileCreatedFromTemplateEvent($marker, $target, []));
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $this->tilesOffering($mode))
+			->handle(new FileCreatedFromTemplateEvent($templateName === null ? null : $this->file($templateName), $target, []));
 	}
 
 	/** A removal that fails is named in the log, and the refusal goes on. */
@@ -400,27 +312,15 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	public function testLeavesABlankFileItCannotInitialiseToTheViewer(): void {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())->method('initializeMissingFrontmatter')->willThrowException(new \RuntimeException('Etherpad down'));
-		$target = $this->file('New pad.pad');
-		$target->expects($this->never())->method('delete');
-		$target->expects($this->never())->method('putContent');
+		$target = $this->untouchedTarget('New pad.pad');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
 			'Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.',
 			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 42),
 		);
-		$session = $this->userSession(true);
-		$listener = new FileCreatedFromTemplateListener(
-			$this->createMock(PadCreationService::class),
-			$bootstrap,
-			$this->noTypeTemplates(),
-			$this->createMock(ExternalPadSeeder::class),
-			$session,
-			$logger,
-			$this->appAccess(true, $session),
-			$this->writer,
-		);
 
-		$listener->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, logger: $logger)
+			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
 	}
 
 	/**
@@ -448,9 +348,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('isExternalMarkerFile')->willReturn($kind === 'external');
 		$storage->method('accessModeForTemplateFile')->willReturn($kind === 'type tile' ? 'public' : null);
-		$target = $this->file('New pad.pad');
-		$target->expects($this->never())->method('delete');
-		$target->expects($this->never())->method('putContent');
+		$target = $this->untouchedTarget('New pad.pad');
 		$template = $kind === 'blank' ? null : $this->file('Template.pad');
 
 		$this->expectException(NotPermittedException::class);
@@ -460,19 +358,15 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			]));
 	}
 
-	/** A storage that recognises no template as one of ours. */
-	private function noTypeTemplates(): PadTemplateStorage {
+	/** A storage that finds $mode for every template (null: none is one of ours) and no external tile. */
+	private function tilesOffering(?string $mode): PadTemplateStorage {
 		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('accessModeForTemplateFile')->willReturn(null);
+		$storage->method('accessModeForTemplateFile')->willReturn($mode);
 		$storage->method('isExternalMarkerFile')->willReturn(false);
 		return $storage;
 	}
 
-	/**
-	 * The setting can change while the picker is open. Materialising then fails
-	 * correctly — and the blank fallback would fail for the same reason,
-	 * leaving an empty .pad nobody can open.
-	 */
+	/** The setting changed while the picker was open: the claimed file goes to the writer to remove, and the refusal goes on. */
 	public function testRemovesTheFileWhenNoPadTypeIsEnabledAnyMore(): void {
 		$template = $this->file('Meeting notes.pad');
 		$target = $this->untouchedTarget('Notes.pad');
@@ -496,9 +390,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 	/** A remote error must not bypass the content check before blank recovery. */
 	public function testDoesNotBlankAFileThatIsNoLongerTheClaimedOne(): void {
-		$target = $this->file('Notes.pad');
-		$target->expects($this->never())->method('putContent');
-		$target->expects($this->never())->method('delete');
+		$target = $this->untouchedTarget('Notes.pad');
 
 		$creation = $this->createMock(PadCreationService::class);
 		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
@@ -512,6 +404,38 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$this->buildListener($creation, $bootstrap)
 			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
+	}
+
+	/**
+	 * A create from the external tile. It provisions no local pad, which
+	 * would quietly make it an internal one, and materializes no template.
+	 *
+	 * @param array<string,mixed> $fields
+	 */
+	private function createFromTheExternalTile(PadCreationService&\PHPUnit\Framework\MockObject\MockObject $creation, ExternalPadSeeder $seeder, File $target, array $fields = self::AN_ADDRESS, ?LoggerInterface $logger = null): void {
+		$creation->expects($this->never())->method('materializeTemplateInto');
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method($this->anything());
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->method('isExternalMarkerFile')->willReturn(true);
+
+		$this->buildListener($creation, $bootstrap, true, $storage, $seeder, logger: $logger)
+			->handle(new FileCreatedFromTemplateEvent($this->file(PadTemplateStorage::EXTERNAL_TILE_NAME), $target, $fields));
+	}
+
+	/**
+	 * What ExternalPadSeeder::prepare() gives for the remote pad.
+	 *
+	 * @param array<string,string> $warning
+	 * @return array{content:string,result:array<string,mixed>}
+	 */
+	private function prepared(array $warning = []): array {
+		return ['content' => 'the document', 'result' => [
+			'file_id' => 4242,
+			'pad_id' => 'ext.RemotePad',
+			'access_mode' => 'public',
+			'pad_url' => 'https://pad.remote.test/p/RemotePad',
+		] + $warning];
 	}
 
 	/**
@@ -529,9 +453,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 	/** The node the event hands over, which nothing may write or remove once the file is claimed. */
 	private function untouchedTarget(string $name): File {
-		$target = $this->createMock(File::class);
-		$target->method('getName')->willReturn($name);
-		$target->method('getId')->willReturn(42);
+		$target = $this->file($name);
 		$target->expects($this->never())->method('putContent');
 		$target->expects($this->never())->method('delete');
 		return $target;
@@ -550,7 +472,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		return new FileCreatedFromTemplateListener(
 			$creation,
 			$bootstrap,
-			$templateStorage ?? $this->noTypeTemplates(),
+			$templateStorage ?? $this->tilesOffering(null),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$session,
 			$logger ?? $this->createMock(LoggerInterface::class),
@@ -572,6 +494,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		return $userSession;
 	}
 
+	/** @return File&\PHPUnit\Framework\MockObject\MockObject */
 	private function file(string $name): File {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn($name);
@@ -580,12 +503,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	public function testAChangedTargetIsLeftAloneInsteadOfBlanked(): void {
-		$target = $this->file('Notes.pad');
-		$target->expects($this->never())->method('putContent');
-		$target->expects($this->never())->method('delete');
-		// The handler must not ask the stale node anything, id included: it
-		// answers for whatever holds the path by then, and it can throw
-		// while an error is already being handled.
+		$target = $this->untouchedTarget('Notes.pad');
+		// Not even for its id, which the claim holds.
 		$target->expects($this->never())->method('getId');
 
 		$creation = $this->createMock(PadCreationService::class);

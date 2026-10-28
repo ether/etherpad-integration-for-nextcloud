@@ -15,36 +15,22 @@ class PadCreateAttemptTest extends TestCase {
 		$this->assertSame('', $attempt->path());
 	}
 
-	/** Claimed a moment before it turned out to be somebody else's pad. */
-	public function testADisownedFileIsNotHandedToTheRollback(): void {
-		$attempt = new PadCreateAttempt();
-		$attempt->claimFile('alice', 4242);
-
-		$attempt->disownFile();
-
-		$this->assertNull($attempt->claim());
-	}
-
-	/** The same instance, not a copy: what the write records on it, the rollback reads. */
-	public function testTheWrittenProofReachesTheRollback(): void {
-		$attempt = new PadCreateAttempt();
-		$claim = $attempt->claimFile('alice', 4242);
-
-		$claim->writtenHash = hash('sha256', 'our document');
-
-		$this->assertSame($claim, $attempt->claim());
-		$this->assertSame(hash('sha256', 'our document'), $attempt->claim()?->writtenHash);
-	}
-
 	public function testCarriesWhatTheFlowRecords(): void {
 		$attempt = new PadCreateAttempt();
 
-		$attempt->claimFile('alice', 4242);
+		$claim = $attempt->claimFile('alice', 4242);
 		$attempt->recordPath('/Notes/Meeting.pad');
+		// The same instance, not a copy: what the write records on it, the rollback reads.
+		$claim->writtenHash = hash('sha256', 'our document');
 
-		$this->assertSame('alice', $attempt->claim()?->uid);
-		$this->assertSame(4242, $attempt->claim()?->fileId);
-		$this->assertSame('', $attempt->claim()?->expectedBefore());
-		$this->assertSame('/Notes/Meeting.pad', $attempt->path());
+		$this->assertSame($claim, $attempt->claim());
+		$this->assertSame(
+			['alice', 4242, '', hash('sha256', 'our document'), '/Notes/Meeting.pad'],
+			[$claim->uid, $claim->fileId, $claim->expectedBefore(), $attempt->claim()?->writtenHash, $attempt->path()],
+		);
+
+		// Found to be somebody else's pad: nothing left for the rollback.
+		$attempt->disownFile();
+		$this->assertNull($attempt->claim());
 	}
 }
