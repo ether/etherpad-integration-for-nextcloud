@@ -220,12 +220,7 @@ class PadLegacyMigrationService {
 				// Fall through to the collision-with-access handling below.
 			}
 			if ($existingBinding === null) {
-				try {
-					$this->claimedFileWriter->write($claim, $document);
-				} catch (PadFileChangedException $e) {
-					$this->takeBackRowUnlessTheFileNamesItsPad($claim, $sourcePadId);
-					throw $e;
-				}
+				$this->writeOrTakeBackTheRow($claim, $document, $sourcePadId);
 				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 				return;
 			}
@@ -235,9 +230,9 @@ class PadLegacyMigrationService {
 		if ($boundFileId === $fileId) {
 			// Self-collision: an earlier migration attempt for this file
 			// succeeded in creating the binding but failed before the file
-			// write. Just finish the file-side work; the binding already
-			// covers us.
-			$this->claimedFileWriter->write($claim, $document);
+			// write - or this one's insert landed and still threw. Just finish
+			// the file-side work; the binding already covers us.
+			$this->writeOrTakeBackTheRow($claim, $document, $sourcePadId);
 			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'self'));
 			return;
 		}
@@ -265,15 +260,25 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * The row this migration made, after its write was refused: the file
-	 * no longer holds the shortcut, and a row naming the old pad would keep
-	 * the next open from binding the pad the file names now. Unless the
-	 * file names this very pad - another open's migration of the same file
-	 * wrote it meanwhile - or cannot be read, as then the row may be all it
-	 * has. Only the row: the pad was there before, and is never the
-	 * migration's to take down.
+	 * The document written over the shortcut the row was made for - by
+	 * this migration, or by an earlier one of the same file. A refused
+	 * write takes the row back: the file no longer holds the shortcut, and
+	 * a row naming the old pad would keep the next open from binding the
+	 * pad the file names now. Unless the file names this very pad -
+	 * another open's migration of the same file wrote it meanwhile - or
+	 * cannot be read, as then the row may be all it has. Only the row: the
+	 * pad was there before, and is never the migration's to take down.
 	 */
-	private function takeBackRowUnlessTheFileNamesItsPad(CreatedFileClaim $claim, string $padId): void {
+	private function writeOrTakeBackTheRow(CreatedFileClaim $claim, string $document, string $padId): void {
+		try {
+			$this->claimedFileWriter->write($claim, $document);
+		} catch (PadFileChangedException $e) {
+			$this->takeBackTheRowUnlessTheFileNamesItsPad($claim, $padId);
+			throw $e;
+		}
+	}
+
+	private function takeBackTheRowUnlessTheFileNamesItsPad(CreatedFileClaim $claim, string $padId): void {
 		try {
 			$named = $this->padFileService->readPad($this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId)->getContent())->padId;
 		} catch (PadFileFormatException) {

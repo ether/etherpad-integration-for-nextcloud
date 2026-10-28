@@ -619,6 +619,60 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
 	}
 
+	/**
+	 * The row's insert lands and still throws, so the migration finds its
+	 * own row and finishes as for an earlier attempt - and the file holds a
+	 * shortcut to another pad of this server by then. The refused write
+	 * takes the row back, and the next open binds the pad the file names.
+	 * One row per file, as the table's unique index on `file_id` keeps it.
+	 */
+	public function testARefusedFinishLeavesTheFileFreeForThePadItNamesNext(): void {
+		$rows = [];
+		$landedAndThrew = true;
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturnCallback(static function (string $padId) use (&$rows): ?Binding {
+			$fileId = array_search($padId, $rows, true);
+			return $fileId === false ? null : new Binding(fileId: (int)$fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE);
+		});
+		$binding->method('createBinding')->willReturnCallback(static function (int $fileId, string $padId) use (&$rows, &$landedAndThrew): void {
+			if (isset($rows[$fileId])) {
+				throw new \OCA\EtherpadNextcloud\Exception\BindingNotCreatedException('Could not create unique pad binding.');
+			}
+			$rows[$fileId] = $padId;
+			if ($landedAndThrew) {
+				$landedAndThrew = false;
+				throw new \OCA\EtherpadNextcloud\Exception\BindingNotCreatedException('Could not create unique pad binding.');
+			}
+		});
+		$binding->method('deleteActiveBinding')->willReturnCallback(static function (int $fileId, string $padId) use (&$rows): bool {
+			if (($rows[$fileId] ?? null) !== $padId) {
+				return false;
+			}
+			unset($rows[$fileId]);
+			return true;
+		});
+		$shortcutToB = "[InternetShortcut]\nURL=https://pad.our-server.test/p/pad-b\n";
+		$file = $this->createMock(File::class);
+		$file->method('getContent')->willReturn($shortcutToB);
+		$file->expects($this->once())->method('putContent')->with($this->stringContains('pad_id: "pad-b"'));
+		$this->claimedFile = $file;
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->with('alice', 612)->willReturn($file);
+		$etherpadClient = $this->sameOriginClient();
+		$etherpadClient->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => 'https://pad.our-server.test/p/' . $padId);
+		$service = $this->buildService(binding: $binding, padFileService: new PadFileService(new FixedClock()), etherpadClient: $etherpadClient, resolver: $resolver);
+
+		try {
+			$service->migrate(new CreatedFileClaim('alice', 612, "[InternetShortcut]\nURL=https://pad.our-server.test/p/pad-a\n"), ['url' => 'https://pad.our-server.test/p/pad-a', 'pad_id' => 'pad-a']);
+			$this->fail('the write over a shortcut to another pad went through');
+		} catch (\OCA\EtherpadNextcloud\Exception\PadFileChangedException) {
+			$this->assertSame([], $rows, 'the row for pad-a goes again');
+		}
+		$service->migrate(new CreatedFileClaim('alice', 612, $shortcutToB), ['url' => 'https://pad.our-server.test/p/pad-b', 'pad_id' => 'pad-b']);
+
+		$this->assertSame([612 => 'pad-b'], $rows);
+	}
+
 	/** A row that cannot be taken back is named in the log, and the refusal goes on. */
 	public function testNamesTheFileWhoseRowCouldNotBeTakenBack(): void {
 		$file = $this->createMock(File::class);
