@@ -13,7 +13,9 @@ use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -218,7 +220,12 @@ class PadLegacyMigrationService {
 				// Fall through to the collision-with-access handling below.
 			}
 			if ($existingBinding === null) {
-				$this->claimedFileWriter->write($claim, $document);
+				try {
+					$this->claimedFileWriter->write($claim, $document);
+				} catch (PadFileChangedException $e) {
+					$this->takeBackRowUnlessTheFileNamesItsPad($claim, $sourcePadId);
+					throw $e;
+				}
 				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 				return;
 			}
@@ -255,6 +262,37 @@ class PadLegacyMigrationService {
 			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'with_access'),
 			'boundFileId' => $boundFileId,
 		]);
+	}
+
+	/**
+	 * The row this migration made, after its write was refused: the file
+	 * no longer holds the shortcut, and a row naming the old pad would keep
+	 * the next open from binding the pad the file names now. Unless the
+	 * file names this very pad - another open's migration of the same file
+	 * wrote it meanwhile - or cannot be read, as then the row may be all it
+	 * has. Only the row: the pad was there before, and is never the
+	 * migration's to take down.
+	 */
+	private function takeBackRowUnlessTheFileNamesItsPad(CreatedFileClaim $claim, string $padId): void {
+		try {
+			$named = $this->padFileService->readPad($this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId)->getContent())->padId;
+		} catch (PadFileFormatException) {
+			$named = null;
+		} catch (\Throwable) {
+			return;
+		}
+		if ($named === $padId) {
+			return;
+		}
+		try {
+			$this->bindingService->deleteActiveBinding($claim->fileId, $padId);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not take back the row of a legacy Ownpad migration whose write was refused.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $claim->fileId,
+				...SafeError::context($e),
+			]);
+		}
 	}
 
 	/** The managed `.pad` document naming the pad, or null where the format cannot hold its id. */

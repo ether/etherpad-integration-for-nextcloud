@@ -19,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadLegacyMigrationService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
@@ -541,7 +542,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	/**
 	 * Each way does its work - the remote export, or the row - and then
 	 * finds the file no longer holds the shortcut as it was read: the file
-	 * is not written, and the row the same-origin way made stays.
+	 * is not written, and the row the same-origin way made goes again, so
+	 * the next open can bind the pad the file names then.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('originsOfAShortcutWrittenSince')]
 	public function testDoesNotWriteOverAFileWrittenSinceItsShortcutWasRead(string $origin, bool $sameOrigin): void {
@@ -556,17 +558,109 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
 		$padFileService->method('buildInitialDocument')->willReturn('written-frontmatter');
+		$padFileService->method('readPad')->willThrowException(new \OCA\EtherpadNextcloud\Exception\MissingFrontmatterException('Missing YAML frontmatter in .pad file.'));
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn($origin);
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
 		$binding->expects($sameOrigin ? $this->once() : $this->never())->method('createBinding')->with(612, 'team-pad', BindingService::ACCESS_PUBLIC);
-		$binding->expects($this->never())->method('deleteActiveBinding');
+		$binding->expects($sameOrigin ? $this->once() : $this->never())->method('deleteActiveBinding')->with(612, 'team-pad')->willReturn(true);
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->with('alice', 612)->willReturn($file);
 
 		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
-		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient, externalPadSeeder: $externalPadSeeder)
+		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient, externalPadSeeder: $externalPadSeeder, resolver: $resolver)
 			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => $origin . '/p/team-pad', 'pad_id' => 'team-pad']);
+	}
+
+	/**
+	 * What the file holds once the re-bind's write was refused, and whether
+	 * the row the migration made goes again.
+	 *
+	 * @return iterable<string, array{?ParsedPadFile, bool, bool}> the file read as a pad (null: not a pad document), whether it cannot be read at all, and whether the row goes
+	 */
+	public static function filesAfterARefusedWrite(): iterable {
+		yield 'a shortcut to another pad' => [null, false, true];
+		yield 'a document naming another pad' => [self::padDocument('other-pad'), false, true];
+		// Another open of the same file migrated it meanwhile: the row is its.
+		yield 'the document another open wrote' => [self::padDocument('team-pad'), false, false];
+		// The row may be all the file has.
+		yield 'a file that cannot be read' => [null, true, false];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('filesAfterARefusedWrite')]
+	public function testTakesBackTheRowOfARefusedRebindUnlessTheFileNamesItsPad(?ParsedPadFile $read, bool $unreadable, bool $goes): void {
+		$file = $this->createMock(File::class);
+		$file->method('getContent')->willReturn('what the file holds now');
+		$file->expects($this->never())->method('putContent');
+		$this->claimedFile = $file;
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+		$padFileService->method('buildInitialDocument')->willReturn('written-frontmatter');
+		if ($read === null) {
+			$padFileService->method('readPad')->willThrowException(new \OCA\EtherpadNextcloud\Exception\MissingFrontmatterException('Missing YAML frontmatter in .pad file.'));
+		} else {
+			$padFileService->method('readPad')->with('what the file holds now')->willReturn($read);
+		}
+		$resolver = $this->createMock(UserNodeResolver::class);
+		if ($unreadable) {
+			$resolver->method('resolveUserFileNodeById')->willThrowException(new \OCP\Lock\LockedException('/Team.pad'));
+		} else {
+			$resolver->method('resolveUserFileNodeById')->with('alice', 612)->willReturn($file);
+		}
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->expects($this->once())->method('createBinding');
+		$binding->expects($goes ? $this->once() : $this->never())->method('deleteActiveBinding')->with(612, 'team-pad')->willReturn(true);
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
+		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $this->sameOriginClient(), resolver: $resolver)
+			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
+	}
+
+	/** A row that cannot be taken back is named in the log, and the refusal goes on. */
+	public function testNamesTheFileWhoseRowCouldNotBeTakenBack(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getContent')->willReturn('what the file holds now');
+		$this->claimedFile = $file;
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+		$padFileService->method('buildInitialDocument')->willReturn('written-frontmatter');
+		$padFileService->method('readPad')->willThrowException(new \OCA\EtherpadNextcloud\Exception\MissingFrontmatterException('Missing YAML frontmatter in .pad file.'));
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($file);
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->method('deleteActiveBinding')->willThrowException(new \RuntimeException('database gone'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not take back the row of a legacy Ownpad migration whose write was refused.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 612, \RuntimeException::class]),
+		);
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
+		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $this->sameOriginClient(), resolver: $resolver, logger: $logger)
+			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
+	}
+
+	private function sameOriginClient(): EtherpadClient {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		return $etherpadClient;
+	}
+
+	private static function padDocument(string $padId): ParsedPadFile {
+		return new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: $padId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: 0,
+		);
 	}
 
 	/**
