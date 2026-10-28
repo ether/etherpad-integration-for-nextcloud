@@ -13,11 +13,10 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCP\Files\File;
 
 /**
- * Writes into a `.pad` file a create holds a claim on, and tells whether
- * that file is still as the claim left it. The file is found again by its
- * id and written only while it holds what the claim expects, so content
- * written meanwhile is not written over; the claim records the write for
- * the create's cleanup.
+ * Writes into the `.pad` file a claim names, and tells whether that file
+ * is still as the claim left it. The file is found again by its id and
+ * written only if it holds what the claim expects when read, so content
+ * written before that read is not written over.
  */
 class ClaimedFileWriter {
 	public function __construct(

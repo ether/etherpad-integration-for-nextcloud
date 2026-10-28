@@ -235,7 +235,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	}
 
 	private function leftAlone(CreatedFileClaim $claim): void {
-		$this->logger->warning('Left the template target alone: it is no longer the file this create was given.', [
+		$this->logger->warning('Left the template target alone: it changed since this create was given it, or could not be found or read.', [
 			'app' => 'etherpad_nextcloud',
 			'targetFileId' => $claim->fileId,
 		]);

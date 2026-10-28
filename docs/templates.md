@@ -47,7 +47,7 @@ When the user clicks **+ → New pad** in the Files app, Nextcloud's template pi
 - the template body copied across (placeholders resolved — see below),
 - a new binding row so the pad and the `.pad` file stay linked.
 
-If the user picks "Blank" instead of a template, the new file is empty and behaves like any normal "+ New pad" creation — frontmatter is initialised as the file is created; should that fail, on its first open. The pad type is then the default one, protected, unless the admin switched protected pads off; in that case a blank pad is created as a public pad, readable by anyone with the link.
+If the user picks "Blank" instead of a template, Nextcloud makes an empty file and the app writes its frontmatter right away; should that fail, the file's first open does. The pad type is then the default one, protected, unless the admin switched protected pads off; in that case a blank pad is created as a public pad, readable by anyone with the link.
 
 Where an admin has limited the app to groups, only their members see **+ → New pad**. Nextcloud asks the app's template hooks for every user, and its template endpoint can be called without the entry, so the hooks check that the app is enabled for the user (`AppAccess`). For anyone else, a tile or an admin template is refused before Nextcloud creates the file. A create from the blank entry or from the user's own template provisions no pad. The file Nextcloud already created stays as it was given, empty or a copy of the template: removing it again could not be told apart from a file written meanwhile, which a delete that skips the trash would take for good.
 

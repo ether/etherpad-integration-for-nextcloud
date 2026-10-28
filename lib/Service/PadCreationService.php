@@ -113,7 +113,6 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $templateNode, $user): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				// API creates start empty; do not replace this baseline with a later read.
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
 				return ['file' => $path] + $this->materializeTemplateInto($templateNode, $user, $claim);
@@ -124,9 +123,9 @@ class PadCreationService {
 
 	/**
 	 * Shared core of the template materialization pipeline: validate the
-	 * template, resolve placeholders, provision a pad, seed it, then
-	 * writeAndBind(), as the blank create does, on the file the caller
-	 * claimed, which must already exist.
+	 * template, resolve placeholders, provision a pad, seed it, then take
+	 * the blank create's step (writeAndBind()) on the file the caller
+	 * claimed.
 	 *
 	 * When it fails, this method takes down the pad it provisioned, and a
 	 * row naming it, as far as it can; the caller's rollback takes only the
@@ -180,8 +179,8 @@ class PadCreationService {
 				$claim,
 				$padId,
 				$accessMode,
-				// Without an answer from Etherpad the file starts at 0, as it
-				// always did: a snapshot's revision is never negative.
+				// Without an answer from Etherpad the file starts at 0: a
+				// snapshot's revision is never negative.
 				new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
 			);
 		} catch (\Throwable $e) {
@@ -198,7 +197,7 @@ class PadCreationService {
 	 */
 	public function claimTemplateTarget(File $target, string $uid): CreatedFileClaim {
 		if ($uid === '') {
-			throw new \RuntimeException('Cannot materialize a template without a user to resolve the file by.');
+			throw new \RuntimeException('Cannot claim a template target without a user to resolve the file by.');
 		}
 
 		return new CreatedFileClaim($uid, $this->requireFileId($target), (string)$target->getContent());

@@ -103,10 +103,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	public function testFailedSourceTemplateFallsBackToBlankInit(): void {
-		// If materializeTemplateInto throws, the byte-copy is wiped *and*
-		// then re-initialised so the user still ends up with an openable
-		// blank pad (not the 4xx-on-first-open state that existed before
-		// the fall-through init).
+		// If materializeTemplateInto throws, the byte-copy is wiped and then
+		// re-initialised, so the user still gets an openable blank pad rather
+		// than one whose first open fails.
 		$template = $this->file('Tpl.pad');
 		$target = $this->untouchedTarget('New.pad');
 		$byId = $this->file('New.pad');
@@ -306,7 +305,6 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
 	}
 
-	/** A file written meanwhile is neither written over nor removed. */
 	public function testLeavesAFileWrittenWhileTheExternalPadWasFetched(): void {
 		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
@@ -336,7 +334,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		}
 		$this->assertSame([
 			'Could not link a new .pad file to an external pad.' => 42,
-			'Left the template target alone: it is no longer the file this create was given.' => 42,
+			'Left the template target alone: it changed since this create was given it, or could not be found or read.' => 42,
 		], $logged);
 	}
 
@@ -373,10 +371,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->assertSame(4242, $logged['Could not remove the .pad file of a failed template create.'] ?? null);
 	}
 
-	/**
-	 * Its id cannot be read: nothing tells the file from one written
-	 * meanwhile, so it stays, and the remote pad is not asked.
-	 */
+	/** The file's id cannot be read, so the remote pad is not asked either. */
 	public function testLeavesTheFileWhenItCannotBeClaimed(): void {
 		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
@@ -413,7 +408,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
 	}
 
-	/** The same for the type tile, which provisions a pad just as directly. */
+	/** A type tile provisions a pad as the blank entry does, so its file goes too. */
 	public function testRemovesTheFileOfTheTypeTileWhenNoPadTypeIsEnabled(): void {
 		$marker = $this->file(PadTemplateStorage::PUBLIC_TILE_NAME);
 		$target = $this->file('Notes.pad');
@@ -546,7 +541,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
-			'Left the template target alone: it is no longer the file this create was given.',
+			'Left the template target alone: it changed since this create was given it, or could not be found or read.',
 			['app' => 'etherpad_nextcloud', 'targetFileId' => 4242],
 		);
 

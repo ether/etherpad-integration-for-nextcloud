@@ -1095,7 +1095,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->assertSame(['alice', 4321, 'template bytes'], [$claim->uid, $claim->fileId, $claim->expectedBefore()]);
 		$this->assertSame('', $service->claimTemplateTarget($unread, 'alice')->expectedBefore());
-		$this->expectExceptionObject(new \RuntimeException('Cannot materialize a template without a user to resolve the file by.'));
+		$this->expectExceptionObject(new \RuntimeException('Cannot claim a template target without a user to resolve the file by.'));
 		$service->claimTemplateTarget($copied, '');
 	}
 
