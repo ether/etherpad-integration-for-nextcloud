@@ -120,6 +120,19 @@ class ClaimedFileWriterTest extends TestCase {
 		yield 'emptied after its write' => ['', 'our document', false];
 	}
 
+	/**
+	 * The template listener resets the node it is handed back, so that is
+	 * the node the claimed id finds, and none for a file not as the claim
+	 * left it.
+	 */
+	public function testHandsBackTheFileFoundByItsIdOnlyWhileItIsAsTheClaimLeftIt(): void {
+		$found = $this->fileHolding('');
+		$changed = $this->fileHolding('notes somebody else put here');
+
+		$this->assertSame($found, $this->writer($found)->resolveUnchanged(new CreatedFileClaim('alice', 4242)));
+		$this->assertNull($this->writer($changed)->resolveUnchanged(new CreatedFileClaim('alice', 4242)));
+	}
+
 	#[DataProvider('filesTheRollbackFinds')]
 	public function testRemovesTheClaimedFileOnlyWhileItIsAsTheClaimLeftIt(string $content, ?string $wrote, bool $goes): void {
 		$claim = new CreatedFileClaim('alice', 4242);
