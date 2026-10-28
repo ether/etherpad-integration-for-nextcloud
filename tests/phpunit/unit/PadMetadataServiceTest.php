@@ -67,6 +67,26 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/External', $result->publicOpenUrl());
 	}
 
+	/** A file the format refuses still answers as a pad, with nothing of a pad it cannot name. */
+	public function testResolveAnswersAFileItCannotReadWithoutItsPad(): void {
+		$file = $this->createConfiguredMock(File::class, [
+			'getId' => 138,
+			'getName' => 'Broken.pad',
+			'getMimeType' => 'application/x-etherpad-nextcloud',
+			'getContent' => 'not a pad',
+		]);
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Broken.pad');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willThrowException(new \OCA\EtherpadNextcloud\Exception\PadFileFormatException('Invalid state in frontmatter.'));
+
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver)->resolve('alice', 138);
+
+		$this->assertTrue($result->isPad);
+		$this->assertSame(['', false, ''], [$result->accessMode, $result->isExternal, $result->publicOpenUrl()]);
+	}
+
 	public function testResolveReturnsFalseWhenFileIdIsMissing(): void {
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->method('resolveUserFileNodeById')
