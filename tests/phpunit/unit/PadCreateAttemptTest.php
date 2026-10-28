@@ -52,13 +52,13 @@ class PadCreateAttemptTest extends TestCase {
 	public function testCarriesWhatTheFlowRecords(): void {
 		$attempt = new PadCreateAttempt();
 
-		$attempt->claimFile('alice', 4242, 'template bytes');
+		$attempt->claimFile('alice', 4242);
 		$attempt->recordPad('g.ABC$pad');
 		$attempt->recordPath('/Notes/Meeting.pad');
 
 		$this->assertSame('alice', $attempt->claim()?->uid);
 		$this->assertSame(4242, $attempt->claim()?->fileId);
-		$this->assertSame('template bytes', $attempt->claim()?->expectedBefore());
+		$this->assertSame('', $attempt->claim()?->expectedBefore());
 		$this->assertSame('g.ABC$pad', $attempt->padId());
 		$this->assertSame('/Notes/Meeting.pad', $attempt->path());
 	}

@@ -25,7 +25,6 @@ use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
 use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
-use OCP\IUser;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
@@ -86,7 +85,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// The external tile's address arrives with the event, so the file is
 		// complete before anyone opens it.
 		if ($this->templateStorage->isExternalMarkerFile($template)) {
-			$this->seedExternalPad($target, $user, $event->getTemplateFields());
+			$this->seedExternalPad($target, $user->getUID(), $event->getTemplateFields());
 			return;
 		}
 
@@ -103,7 +102,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// again while an error is handled, an id can throw, or name whatever
 		// holds the path by then.
 		try {
-			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+			$claim = $this->padCreationService->claimTemplateTarget($target, $user->getUID());
 			$templateFileId = (int)$template->getId();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Pad template create skipped: the target could not be identified.', [
@@ -114,7 +113,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		}
 
 		try {
-			$this->padCreationService->materializeTemplateInto($target, $template, $user, $claim);
+			$this->padCreationService->materializeTemplateInto($template, $user, $claim);
 		} catch (PadTypeDisabledException $e) {
 			// Not a hiccup to retry around: the instance creates no pads at all
 			// right now, which happens when the setting changes while the
@@ -193,8 +192,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/Template/TemplateManager.php
 	 * @param array<string,mixed> $templateFields
 	 */
-	private function seedExternalPad(File $target, IUser $user, array $templateFields): void {
-		$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+	private function seedExternalPad(File $target, string $uid, array $templateFields): void {
+		$claim = $this->padCreationService->claimTemplateTarget($target, $uid);
 		try {
 			$padUrl = $this->padUrlField($templateFields);
 			if ($padUrl === '') {

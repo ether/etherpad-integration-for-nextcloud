@@ -94,7 +94,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$creation = $this->createMock(PadCreationService::class);
 		$creation->expects($this->once())
 			->method('materializeTemplateInto')
-			->with($target, $template, $this->isInstanceOf(IUser::class));
+			->with($template, $this->isInstanceOf(IUser::class));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -597,7 +597,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	 */
 	private function expectClaimFor(PadCreationService $creation, File $byId): CreatedFileClaim {
 		$claim = new CreatedFileClaim('alice', 4242);
-		$creation->method('claimTemplateTarget')->willReturn($claim);
+		$creation->method('claimTemplateTarget')->with($this->anything(), 'alice')->willReturn($claim);
 		$this->writer->method('resolveUnchanged')->with($claim)->willReturn($byId);
 
 		return $claim;

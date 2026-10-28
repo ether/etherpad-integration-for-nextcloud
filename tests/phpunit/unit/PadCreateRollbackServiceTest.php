@@ -215,7 +215,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$attempt = new PadCreateAttempt();
 		$attempt->recordPath($path);
 		if ($claim !== null) {
-			$attempt->claimFile($claim->uid, $claim->fileId, $claim->expectedBefore())->writtenHash = $claim->writtenHash;
+			$attempt->claimFile($claim->uid, $claim->fileId)->writtenHash = $claim->writtenHash;
 		}
 		$attempt->recordPad($padId);
 		if ($bindingAttemptFileId !== null) {

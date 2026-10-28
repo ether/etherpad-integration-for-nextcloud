@@ -25,8 +25,8 @@ class PadCreateAttempt {
 	private string $path = '';
 
 	/** The file this attempt created, from now until it is disowned. */
-	public function claimFile(string $uid, int $fileId, string $expectedBefore = ''): CreatedFileClaim {
-		$this->claim = new CreatedFileClaim($uid, $fileId, $expectedBefore);
+	public function claimFile(string $uid, int $fileId): CreatedFileClaim {
+		$this->claim = new CreatedFileClaim($uid, $fileId);
 
 		return $this->claim;
 	}

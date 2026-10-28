@@ -33,7 +33,7 @@ class PadCreationService {
 		private ExternalPadSeeder $externalPadSeeder,
 		private PadTypePolicy $padTypePolicy,
 		private LoggerInterface $logger,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -46,7 +46,6 @@ class PadCreationService {
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $accessMode): array {
-				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
@@ -69,16 +68,9 @@ class PadCreationService {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
 				$created = $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode);
 
-				// Rebuilt rather than appended: the response's key order is
-				// part of what callers compare against.
-				return [
-					'file' => $created['file'],
-					'file_id' => $created['file_id'],
-					'parent_folder_id' => $parentFolderId,
-					'pad_id' => $created['pad_id'],
-					'access_mode' => $created['access_mode'],
-					'pad_url' => $created['pad_url'],
-				];
+				// The folder's id right after the file's: the response's key
+				// order is part of what callers compare against.
+				return ['file' => $created['file'], 'file_id' => $created['file_id'], 'parent_folder_id' => $parentFolderId] + $created;
 			},
 			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
@@ -92,17 +84,12 @@ class PadCreationService {
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $padUrl) {
-				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
-				$fileId = $claim->fileId;
-
-				$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
+				$prepared = $this->externalPadSeeder->prepare($claim->fileId, $padUrl);
 				$this->claimedFileWriter->write($claim, $prepared['content']);
-				$seeded = $prepared['result'];
-				// `file` first, where the response has always had it.
-				$result = ['file' => $path] + $seeded;
-				return $result;
+
+				return ['file' => $path] + $prepared['result'];
 			},
 			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
@@ -119,27 +106,17 @@ class PadCreationService {
 	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
 	public function createFromTemplate(string $uid, string $targetFile, int $templateFileId, ?IUser $user): array {
-		$resolvedTargetFile = $this->placeholderResolver->applyForPath($targetFile, $user);
-		$path = $this->padPaths->normalizeCreatePath($resolvedTargetFile);
+		$path = $this->padPaths->normalizeCreatePath($this->placeholderResolver->applyForPath($targetFile, $user));
 
 		$templateNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $templateFileId);
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $templateNode, $user): array {
-				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				// API creates start empty; do not replace this baseline with a later read.
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
-				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user, $claim);
-
-				return [
-					'file' => $path,
-					'file_id' => $result['file_id'],
-					'pad_id' => $result['pad_id'],
-					'access_mode' => $result['access_mode'],
-					'pad_url' => $result['pad_url'],
-				];
+				return ['file' => $path] + $this->materializeTemplateInto($templateNode, $user, $claim);
 			},
 			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
@@ -157,14 +134,7 @@ class PadCreationService {
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	public function materializeTemplateInto(
-		File $target,
-		File $template,
-		?IUser $user,
-		?CreatedFileClaim $claim = null
-	): array {
-		// Keep the caller's baseline; only claim the current content if none was supplied.
-		$claim ??= $this->claimTemplateTarget($target, $user);
+	public function materializeTemplateInto(File $template, ?IUser $user, CreatedFileClaim $claim): array {
 		if (!PadFileType::isPad($template->getName())) {
 			throw new NotAPadFileException('Template is not a .pad file.');
 		}
@@ -232,14 +202,13 @@ class PadCreationService {
 	}
 
 	/**
-	 * The claim on a file Nextcloud made from a template or a tile: its
-	 * identity and the content copied into it, before anything is written.
-	 * The listener shares it with the materialization or the external
-	 * tile's write, and with their recovery.
+	 * The claim on a file Nextcloud made from a template or the external
+	 * tile: its identity and the content copied into it, before anything is
+	 * written. The listener shares it with the materialization or the
+	 * external tile's write, and with their recovery.
 	 */
-	public function claimTemplateTarget(File $target, ?IUser $user): CreatedFileClaim {
-		$uid = $user?->getUID();
-		if ($uid === null || $uid === '') {
+	public function claimTemplateTarget(File $target, string $uid): CreatedFileClaim {
+		if ($uid === '') {
 			throw new \RuntimeException('Cannot materialize a template without a user to resolve the file by.');
 		}
 
@@ -304,7 +273,7 @@ class PadCreationService {
 	 * An empty `$path` means create-by-parent, which cannot know it before
 	 * the file exists; deriving it can throw, hence after the claim.
 	 */
-	private function claimCreatedFile(PadCreateAttempt $attempt, string $uid, File $fileNode, string $path = ''): CreatedFileClaim {
+	private function claimCreatedFile(PadCreateAttempt $attempt, string $uid, File $fileNode, string $path): CreatedFileClaim {
 		$fileId = $this->requireFileId($fileNode);
 		$claim = $attempt->claimFile($uid, $fileId);
 
@@ -413,5 +382,4 @@ class PadCreationService {
 			throw $e;
 		}
 	}
-
 }

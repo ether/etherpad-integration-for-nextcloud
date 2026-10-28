@@ -91,7 +91,6 @@ final class SensitiveMethods {
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write'],
-		\OCA\EtherpadNextcloud\Service\PadCreateAttempt::class => ['claimFile'],
 		\OCA\EtherpadNextcloud\Service\PadBootstrapService::class => ['initializeMissingFrontmatter'],
 		\OCA\EtherpadNextcloud\Service\PadPlaceholderResolver::class => ['applyForContent', 'applyInternal'],
 		\OCA\EtherpadNextcloud\Service\PadTemplateAdminService::class => ['add'],

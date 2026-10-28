@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -364,10 +365,6 @@ class PadCreationServiceTest extends TestCase {
 		$template->method('getName')->willReturn('Template.pad');
 		$template->method('getContent')->willReturn('tpl');
 
-		$target = $this->createMock(\OCP\Files\File::class);
-		$target->method('getContent')->willReturn('');
-		$target->method('getId')->willReturn(4321);
-
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
 			frontmatter: ['pad_id' => 'nc-source'],
@@ -410,7 +407,7 @@ class PadCreationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
 			padTypePolicy: $this->buildPadTypePolicy(true, false),
-		)->materializeTemplateInto($target, $template, $this->materializeUser());
+		)->materializeTemplateInto($template, $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
@@ -424,8 +421,6 @@ class PadCreationServiceTest extends TestCase {
 		$template->method('getName')->willReturn('Template.pad');
 		$template->method('getContent')->willReturn('tpl');
 
-		$target = $this->createMock(\OCP\Files\File::class);
-		$target->method('getId')->willReturn(4321);
 		$written = $this->createMock(\OCP\Files\File::class);
 		$written->expects($this->never())->method('putContent');
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -463,7 +458,7 @@ class PadCreationServiceTest extends TestCase {
 				bindingService: $bindingService,
 				etherpadClient: $etherpadClient,
 				bootstrap: $bootstrap,
-			)->materializeTemplateInto($target, $template, $this->materializeUser());
+			)->materializeTemplateInto($template, $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 			$this->fail('the seed\'s failure goes on');
 		} catch (EtherpadClientException $e) {
 			$this->assertSame($refused, $e);
@@ -474,8 +469,6 @@ class PadCreationServiceTest extends TestCase {
 		$template = $this->createMock(\OCP\Files\File::class);
 		$template->method('getName')->willReturn('Template.pad');
 		$template->method('getContent')->willReturn('tpl');
-		$target = $this->createMock(\OCP\Files\File::class);
-		$target->method('getId')->willReturn(4321);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
@@ -510,7 +503,7 @@ class PadCreationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
 			padLifecycleLogger: $padLifecycleLogger,
-		)->materializeTemplateInto($target, $template, $this->materializeUser());
+		)->materializeTemplateInto($template, $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 	}
 
 	public function testATemplatesPadWhoseRevisionsEtherpadDoesNotSayStartsAtZero(): void {
@@ -519,10 +512,6 @@ class PadCreationServiceTest extends TestCase {
 		$template = $this->createMock(\OCP\Files\File::class);
 		$template->method('getName')->willReturn('Template.pad');
 		$template->method('getContent')->willReturn('tpl');
-
-		$target = $this->createMock(\OCP\Files\File::class);
-		$target->method('getContent')->willReturn('');
-		$target->method('getId')->willReturn(4321);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
@@ -566,7 +555,7 @@ class PadCreationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
 			padTypePolicy: $this->buildPadTypePolicy(true, false),
-		)->materializeTemplateInto($target, $template, $this->materializeUser());
+		)->materializeTemplateInto($template, $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
@@ -1033,14 +1022,10 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$this->buildMaterializeService($bindingService, $etherpadClient, $padId)
-			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
+			->materializeTemplateInto($this->buildMaterializeTemplate(), $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 	}
 
-	/**
-	 * A template's pad whose file could not be written is the create's
-	 * beyond doubt: it goes without a question to the binding table, which
-	 * may not answer, and no row is written.
-	 */
+	/** Written meanwhile: no row was written, so none is asked about. */
 	public function testATemplatesPadWhoseFileCannotBeWrittenGoesWithoutAskingTheBindingTable(): void {
 		$padId = 'g.ABCDEFGHIJKLMNOP$pad';
 
@@ -1060,10 +1045,9 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(PadFileChangedException::class);
 		$this->buildMaterializeService($bindingService, $etherpadClient, $padId, $resolver)
-			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
+			->materializeTemplateInto($this->buildMaterializeTemplate(), $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 	}
 
-	/** A template's pad left over is named with its file and way: nothing else leads to it. */
 	public function testATemplatesPadLeftOverBeforeItsRowIsNamedWithItsFile(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('deleteGroup')->willThrowException(new \RuntimeException('etherpad down'));
@@ -1079,7 +1063,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(PadFileChangedException::class);
 		$this->buildMaterializeService($this->createMock(BindingService::class), $etherpadClient, 'g.ABCDEFGHIJKLMNOP$pad', $resolver, $logger)
-			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
+			->materializeTemplateInto($this->buildMaterializeTemplate(), $this->materializeUser(), new CreatedFileClaim('alice', 4321));
 	}
 
 	/** A row naming a different pad belongs to the request that won the file. */
@@ -1097,7 +1081,28 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$this->buildMaterializeService($bindingService, $etherpadClient, $padId)
-			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
+			->materializeTemplateInto($this->buildMaterializeTemplate(), $this->materializeUser(), new CreatedFileClaim('alice', 4321));
+	}
+
+	/**
+	 * What Nextcloud copied into the file is the claim's baseline; a read
+	 * that gives no string counts as empty.
+	 */
+	public function testClaimsATemplateTargetWithTheContentCopiedIntoIt(): void {
+		$copied = $this->createMock(File::class);
+		$copied->method('getId')->willReturn(4321);
+		$copied->method('getContent')->willReturn('template bytes');
+		$unread = $this->createMock(File::class);
+		$unread->method('getId')->willReturn(4321);
+		$unread->method('getContent')->willReturn(null);
+		$service = $this->buildService();
+
+		$claim = $service->claimTemplateTarget($copied, 'alice');
+
+		$this->assertSame(['alice', 4321, 'template bytes'], [$claim->uid, $claim->fileId, $claim->expectedBefore()]);
+		$this->assertSame('', $service->claimTemplateTarget($unread, 'alice')->expectedBefore());
+		$this->expectExceptionObject(new \RuntimeException('Cannot materialize a template without a user to resolve the file by.'));
+		$service->claimTemplateTarget($copied, '');
 	}
 
 	private function buildMaterializeTemplate(): \OCP\Files\File {
@@ -1113,12 +1118,6 @@ class PadCreationServiceTest extends TestCase {
 		$user->method('getDisplayName')->willReturn('Alice');
 
 		return $user;
-	}
-
-	private function buildMaterializeTarget(): \OCP\Files\File {
-		$target = $this->createMock(\OCP\Files\File::class);
-		$target->method('getId')->willReturn(4321);
-		return $target;
 	}
 
 	private function buildMaterializeService(

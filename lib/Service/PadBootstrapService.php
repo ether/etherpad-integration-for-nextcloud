@@ -24,7 +24,7 @@ class PadBootstrapService {
 		private PadLegacyMigrationService $legacyMigrationService,
 		private PadTypePolicy $padTypePolicy,
 		private UserNodeResolver $userNodeResolver,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -61,10 +61,8 @@ class PadBootstrapService {
 	 */
 	public function initializeMissingFrontmatter(string $uid, File $file, string $existingContent, ?string $preferredAccessMode = null): bool {
 		$fileId = (int)$file->getId();
-		$existingContentTrimmed = trim($existingContent);
-		$isEmptyFile = $existingContentTrimmed === '';
 		$legacyShortcut = $this->padFileService->parseLegacyOwnpadShortcut($existingContent);
-		if (!$isEmptyFile && $legacyShortcut === null) {
+		if (trim($existingContent) !== '' && $legacyShortcut === null) {
 			// Not the same thing as "has no frontmatter yet": this file has
 			// content that is neither. Saying so with the other type would
 			// answer this refusal with the code that asks a client to call
@@ -115,15 +113,10 @@ class PadBootstrapService {
 			$this->claimedFileWriter->writePadDocument(new CreatedFileClaim($uid, $fileId, $existingContent), $padId, $accessMode);
 		} catch (\Throwable $e) {
 			if ($createdNewPad) {
-				$this->rollbackProvisionedPad($fileId, $padId);
+				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
 			}
 			throw $e;
 		}
 		return false;
 	}
-
-	private function rollbackProvisionedPad(int $fileId, string $padId): void {
-		$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
-	}
-
 }
