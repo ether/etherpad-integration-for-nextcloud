@@ -96,7 +96,13 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
 			'parsePadFile', 'readPad', 'serialize', 'parseLegacyOwnpadShortcut',
 			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',
-			'buildInitialDocument',
+			'buildInitialDocument', 'parseFrontmatterBlock',
+			// The frontmatter, which holds an external pad's address: as the
+			// array, and by hand as a line, a raw scalar or a value, under
+			// names no rule knows.
+			'extractPadMetadata', 'isExternalFrontmatter', 'getSnapshotRevisionFromFrontmatter',
+			'validateFrontmatter', 'requireStringScalar', 'requireOptionalStringScalar',
+			'assertLineIsRoundTrippable', 'parseScalar', 'stringScalar', 'nullableScalar', 'assertScalarIsRoundTrippable',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write', 'holdsAlready'],
