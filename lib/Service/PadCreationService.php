@@ -124,13 +124,13 @@ class PadCreationService {
 
 	/**
 	 * Shared core of the template materialization pipeline: validate the
-	 * template, resolve placeholders, provision a pad, seed it, then the
-	 * step every create takes (writeAndBind()). The target file must
-	 * already exist.
+	 * template, resolve placeholders, provision a pad, seed it, then
+	 * writeAndBind(), as the blank create does, on the file the caller
+	 * claimed, which must already exist.
 	 *
-	 * This method owns the Etherpad-side lifecycle of the pad it provisions.
-	 * A caller wrapping it in an outer rollback must not also delete that
-	 * pad - the outer wrapper's job is the Nextcloud file it created.
+	 * When it fails, this method takes down the pad it provisioned, and a
+	 * row naming it, as far as it can; the caller's rollback takes only the
+	 * file.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
@@ -174,8 +174,7 @@ class PadCreationService {
 			$resolvedHtml,
 			['fileId' => $fileId, 'operation' => 'template materialization'],
 		);
-		// An attempt of its own, for its pad and the binding write: the file
-		// is the caller's, and so is its rollback.
+		// Its own attempt: the file is the caller's.
 		$attempt = new PadCreateAttempt();
 		$attempt->recordPad($padId);
 		try {
@@ -247,11 +246,9 @@ class PadCreationService {
 	}
 
 	/**
-	 * The step every create takes once it has a pad for the file it made:
-	 * the document naming the pad written into the file, then the row. The
-	 * attempt records the binding write as it begins, as createBinding can
-	 * commit and still throw; a rollback asks the binding table only from
-	 * then on (ProvisionedPadRollback::discardCreated()).
+	 * The step the blank create and a template take once they have a pad:
+	 * the document naming the pad written into the file, then the row; the
+	 * attempt records the binding write as it begins.
 	 *
 	 * @return string the pad's URL
 	 */
@@ -268,7 +265,7 @@ class PadCreationService {
 	 *
 	 * One method because the order is the point: the id before anything
 	 * that can throw, the ownership check before any write, the disown
-	 * before the throw. Written out four times it was already drifting.
+	 * before the throw.
 	 *
 	 * An empty `$path` means create-by-parent, which cannot know it before
 	 * the file exists; deriving it can throw, hence after the claim.

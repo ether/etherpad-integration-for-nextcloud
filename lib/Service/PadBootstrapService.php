@@ -81,10 +81,8 @@ class PadBootstrapService {
 
 		$padId = '';
 
-		// The provisioning is inside the try, not before it. The cleanup used
-		// to start only after the binding had been written, so a binding that
-		// failed left the pad behind with nothing pointing at it — the one
-		// failure in this method that produced an orphan rather than an error.
+		// createBinding sits inside the try, so a failed row reaches the
+		// cleanup as a failed document does.
 		try {
 			if ($binding !== null) {
 				$padId = $binding->padId;
@@ -109,7 +107,6 @@ class PadBootstrapService {
 				$this->bindingService->createBinding($fileId, $padId, $accessMode);
 			}
 
-			// Re-resolved after provisioning: the original File still writes to its remembered path.
 			$this->claimedFileWriter->writePadDocument(new CreatedFileClaim($uid, $fileId, $existingContent), $padId, $accessMode);
 		} catch (\Throwable $e) {
 			if ($createdNewPad) {

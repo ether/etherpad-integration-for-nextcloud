@@ -100,7 +100,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', $this->attempt('', $this->claimThatWrote('our document')));
 	}
 
-	/** Empty, though this create wrote it: somebody else's doing, and said so. */
+	/** Reads as empty despite a recorded write: kept with a warning. */
 	public function testLeavesAFileEmptiedAfterThisCreateWroteIt(): void {
 		$emptied = $this->untouchedFile();
 		$emptied->expects($this->never())->method('delete');

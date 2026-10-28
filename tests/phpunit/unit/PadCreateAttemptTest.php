@@ -7,10 +7,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\PadCreateAttempt;
 use PHPUnit\Framework\TestCase;
 
-/**
- * The two defects that motivated this object, written as statements about
- * it rather than as orderings of assignments in a closure.
- */
 class PadCreateAttemptTest extends TestCase {
 	public function testAFreshAttemptOwnsNothing(): void {
 		$attempt = new PadCreateAttempt();
@@ -20,11 +16,7 @@ class PadCreateAttemptTest extends TestCase {
 		$this->assertSame('', $attempt->path());
 	}
 
-	/**
-	 * The file turned out to be somebody else's pad. It was recorded a
-	 * moment earlier, and the old code depended on un-setting that variable
-	 * before the throw a few lines below.
-	 */
+	/** Claimed a moment before it turned out to be somebody else's pad. */
 	public function testADisownedFileIsNotHandedToTheRollback(): void {
 		$attempt = new PadCreateAttempt();
 		$attempt->claimFile('alice', 4242);
@@ -34,11 +26,7 @@ class PadCreateAttemptTest extends TestCase {
 		$this->assertNull($attempt->claim());
 	}
 
-	/**
-	 * The claim handed to the write is the one the rollback reads, so proof
-	 * of a successful write survives a later failure. Returning it by value
-	 * was how that proof used to get lost.
-	 */
+	/** The same instance, not a copy: what the write records on it, the rollback reads. */
 	public function testTheWrittenProofReachesTheRollback(): void {
 		$attempt = new PadCreateAttempt();
 		$claim = $attempt->claimFile('alice', 4242);

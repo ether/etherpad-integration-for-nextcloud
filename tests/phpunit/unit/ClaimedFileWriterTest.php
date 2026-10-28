@@ -49,7 +49,7 @@ class ClaimedFileWriterTest extends TestCase {
 			$this->writer($node)->write($claim, 'the document');
 			$this->fail('the write should have been refused');
 		} catch (PadFileChangedException $e) {
-			$this->assertSame('The .pad file changed while its pad was being provisioned.', $e->getMessage());
+			$this->assertSame('The .pad file changed before its document was written.', $e->getMessage());
 		}
 		$this->assertNull($claim->writtenHash);
 	}

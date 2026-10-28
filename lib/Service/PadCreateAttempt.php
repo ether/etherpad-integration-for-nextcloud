@@ -13,10 +13,6 @@ namespace OCA\EtherpadNextcloud\Service;
  * What one create has made so far, and therefore what its rollback owns:
  * the file it claimed, until it disowns one that turns out to be somebody
  * else's; the pad it provisioned; the file a binding write began for.
- *
- * The template flow's pad stays out of the create's rollback:
- * `materializeTemplateInto()` takes it down itself, with an attempt of its
- * own that holds only its pad and the binding write.
  */
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
@@ -46,7 +42,7 @@ class PadCreateAttempt {
 
 	/**
 	 * The file a binding write began for, recorded immediately before
-	 * createBinding, which can commit and still throw.
+	 * createBinding (see ProvisionedPadRollback::discardCreated()).
 	 *
 	 * The id rather than a flag: the rollback needs it to ask about the row,
 	 * and reading it off the claim instead would tie that question to the
@@ -66,7 +62,7 @@ class PadCreateAttempt {
 		return $this->padId;
 	}
 
-	/** Where the file ended up, for the rollback's log lines. */
+	/** Where the file ended up, for the create's answer and the rollback's log lines. */
 	public function recordPath(string $path): void {
 		$this->path = $path;
 	}

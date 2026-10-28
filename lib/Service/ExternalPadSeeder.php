@@ -11,12 +11,8 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCP\Files\File;
 
 /**
- * The `ext.<remote-id>` document - frontmatter with a snapshot of the remote
- * pad's text - for a `.pad` file: built for `PadCreationService`'s
- * `createFromUrl` and the external tile in Files, which write it through
- * `ClaimedFileWriter` (prepare()), and written through the node it is
- * handed for `PadLegacyMigrationService`'s cross-origin branch, where the
- * file already existed as a legacy `[InternetShortcut]` (seed()).
+ * The `ext.<remote-id>` document for a `.pad` file: frontmatter with a
+ * snapshot of the remote pad's text.
  *
  * Lives in its own service to keep `PadCreationService` and
  * `PadLegacyMigrationService` from forming a constructor cycle with

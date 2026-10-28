@@ -74,11 +74,7 @@ class ProvisionedPadRollbackTest extends TestCase {
 			->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'create');
 	}
 
-	/**
-	 * A create's pad before its binding write is the create's beyond doubt:
-	 * it goes without a question the binding table may not answer. Once the
-	 * write began, the table is asked, and without an answer the pad stays.
-	 */
+	/** Once the write began, a table that does not answer keeps the pad. */
 	public function testACreatesPadIsAskedAboutOnlyOnceItsBindingWriteBegan(): void {
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('isBoundTo')->willThrowException(new \RuntimeException('database gone'));
@@ -90,11 +86,7 @@ class ProvisionedPadRollbackTest extends TestCase {
 		$rollback->discardCreated($this->attempt('nc-abc', 4711), 4711, 'create');
 	}
 
-	/**
-	 * Once a create's binding write began, a row naming its pad goes with
-	 * the pad - createBinding can commit and still throw - while a row
-	 * naming another pad belongs to whoever won the file, and stays.
-	 */
+	/** A row naming another pad belongs to whoever won the file. */
 	public function testACreatesRowGoesWithItsPadButAnotherPadsRowStays(): void {
 		foreach ([true, false] as $namesThePad) {
 			$binding = $this->createMock(BindingService::class);
@@ -107,7 +99,6 @@ class ProvisionedPadRollbackTest extends TestCase {
 		}
 	}
 
-	/** A pad a create cannot take down is named with its file and way: nothing else leads to it. */
 	public function testACreatesPadLeftOverIsNamedWithItsFileAndWay(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('etherpad down'));

@@ -13,12 +13,11 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCP\Files\File;
 
 /**
- * Writes into a `.pad` file a create, a template in Files, the external
- * tile or a blank first open holds a claim on, and tells whether that file
- * is still as the claim left it. One guard for those: a write that took the
- * file as it was handed over would destroy whatever was written into it
- * meanwhile. The legacy Ownpad migration writes through the node it is
- * handed.
+ * Writes into a `.pad` file a create holds a claim on, and tells whether
+ * that file is still as the claim left it. The file is found again by its
+ * id and written only while it holds what the claim expects, so content
+ * written meanwhile is not written over; the claim records the write for
+ * the create's cleanup.
  */
 class ClaimedFileWriter {
 	public function __construct(
@@ -29,7 +28,7 @@ class ClaimedFileWriter {
 	}
 
 	/**
-	 * The document naming a new pad, written into the claimed file.
+	 * The document naming the pad, written into the claimed file.
 	 *
 	 * @return string the pad's URL
 	 * @throws \OCP\Files\NotFoundException
@@ -46,7 +45,7 @@ class ClaimedFileWriter {
 	 * Re-resolve by id and require the claimed content before writing.
 	 *
 	 * File::putContent() uses its remembered path, which may have been reused
-	 * during provisioning. The content check and write are not atomic.
+	 * meanwhile. The content check and write are not atomic.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/Node/File.php
 	 * @throws \OCP\Files\NotFoundException
@@ -55,7 +54,7 @@ class ClaimedFileWriter {
 	public function write(CreatedFileClaim $claim, string $content): void {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
 		if ($node->getContent() !== $claim->expectedBefore()) {
-			throw new PadFileChangedException('The .pad file changed while its pad was being provisioned.');
+			throw new PadFileChangedException('The .pad file changed before its document was written.');
 		}
 		$node->putContent($content);
 		// Record on the shared claim so recovery retains proof if binding fails next.

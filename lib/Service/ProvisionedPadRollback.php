@@ -17,14 +17,13 @@ use Psr\Log\LoggerInterface;
  * fails partway. The `.pad` file is each flow's own business.
  *
  * Which method a flow calls turns on whether a row naming the new pad is
- * the flow's to take back. discardUnlessBoundToFile() lets such a row stand,
- * and the pad with it: a first init's row is the finished half of its job,
- * which the next open completes, and a restore uses it where its row should
- * not name the new pad, keeping a pad one does name.
- * removeMatchingBindingAndDiscard() takes the row away with the pad, where
- * the row is the flow's own: the claim of a restore, the row of a create.
- * discardCreated() is that for a create, asking about the row only once its
- * binding write began.
+ * the flow's to take back. discardUnlessBoundToFile() lets such a row
+ * stand, and the pad with it: a first init's row is the finished half of
+ * its job, which the next open completes; a restore calls it where its row
+ * should not name the new pad, so a row that does keeps the pad.
+ * removeMatchingBindingAndDiscard() takes the row with the pad where the
+ * row is the flow's own: a restore's claim, a create's row
+ * (discardCreated()).
  *
  * Only for a pad provisioned in the same call: `discardProvisioned` removes
  * a group outright. A flow that adopted an existing pad - the legacy Ownpad
@@ -49,12 +48,12 @@ class ProvisionedPadRollback {
 	}
 
 	/**
-	 * The pad of a failed create - empty or from a template - with the row
-	 * naming it once the binding write began, as createBinding can commit
-	 * and still throw. Failing earlier, the pad is the create's beyond doubt
-	 * and goes without a database question, which is what happens when that
-	 * question cannot be answered. $fileId names the file in the line of a
-	 * pad left over before the binding write.
+	 * The pad of a failed create - empty or from a template. Before its
+	 * binding write began, no row can name the pad, so it goes without a
+	 * lookup. Once the write began, createBinding may have committed and
+	 * still thrown: a row naming the pad goes with it, and a binding table
+	 * that does not answer keeps it. $fileId names the file in the line of
+	 * a pad left over before the binding write.
 	 */
 	public function discardCreated(PadCreateAttempt $attempt, ?int $fileId, string $operation): void {
 		$padId = $attempt->padId();

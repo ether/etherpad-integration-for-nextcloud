@@ -115,11 +115,7 @@ class PadCreationServiceTest extends TestCase {
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 	}
 
-	/**
-	 * The file id reaches the rollback only once the binding write begins.
-	 * Failing before it, the pad is ours beyond doubt and is discarded
-	 * without asking the database about a row that cannot exist.
-	 */
+	/** The file id reaches the rollback only once the binding write begins. */
 	public function testCreateThatFailsBeforeTheBindingWriteReportsNoAttempt(): void {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(123);
@@ -816,12 +812,7 @@ class PadCreationServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
-	/**
-	 * Everything after the file is created can still fail, and the rollback
-	 * then has to be told which file to remove. The template flow used to
-	 * signal that with a boolean; carrying the id is what makes cleanup
-	 * follow the file rather than its name.
-	 */
+	/** Everything after the file is created can still fail; the rollback follows the file's id, not its name. */
 	public function testCreateFromTemplateRollsBackWithTheCreatedFileId(): void {
 		$templateNode = $this->createMock(\OCP\Files\File::class);
 		$templateNode->method('getName')->willReturn('Tpl.pad');

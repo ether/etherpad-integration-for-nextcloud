@@ -189,7 +189,6 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$creation = $this->createMock(PadCreationService::class);
 		$claim = $this->expectClaimFor($creation, $this->file('Team pad.pad'));
-		// Written by its id, guarded like any create's file.
 		$this->writer->expects($this->once())->method('write')->with($claim, 'the document');
 		$creation->expects($this->never())->method('materializeTemplateInto');
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -256,13 +255,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->assertStringNotContainsString('s3cret', json_encode($logged[0]));
 	}
 
-	/**
-	 * An empty `.pad` left behind would become an ordinary local pad on first
-	 * open — not what the user picked. Nextcloud turns the exception into its
-	 * own "could not create from template" message.
-	 *
-	 * @return iterable<string,array{0:array<string,mixed>}>
-	 */
+	/** @return iterable<string,array{0:array<string,mixed>}> */
 	public static function unusableAddressProvider(): iterable {
 		yield 'field missing' => [[]];
 		yield 'field empty' => [['pad_url' => ['content' => '   ']]];
@@ -313,12 +306,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
 	}
 
-	/**
-	 * The remote fetch takes its time. A file written meanwhile is neither
-	 * written over nor removed: the guarded write refuses it, and the file
-	 * is no longer as the claim left it.
-	 */
-	public function testLeavesAFileWrittenMeanwhileWhileTheExternalPadWasFetched(): void {
+	/** A file written meanwhile is neither written over nor removed. */
+	public function testLeavesAFileWrittenWhileTheExternalPadWasFetched(): void {
 		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
 		$target->expects($this->never())->method('delete');
@@ -330,7 +319,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$seeder->method('prepare')->willReturn(['content' => 'the document', 'result' => ['file_id' => 42, 'pad_id' => 'ext.x', 'access_mode' => 'public', 'pad_url' => 'https://pad.remote.test/p/x']]);
 		$creation = $this->createMock(PadCreationService::class);
 		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
-		$this->writer->method('write')->willThrowException(new PadFileChangedException('The .pad file changed while its pad was being provisioned.'));
+		$this->writer->method('write')->willThrowException(new PadFileChangedException('The .pad file changed before its document was written.'));
 		$this->writer->method('resolveUnchanged')->willReturn(null);
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
@@ -412,11 +401,6 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		}
 	}
 
-	/**
-	 * An instance that allows only external pads still shows "New pad" and,
-	 * with it, Nextcloud's blank entry. Provisioning then fails — correctly —
-	 * and the empty file must not stay behind.
-	 */
 	public function testRemovesTheBlankFileWhenNoPadTypeIsEnabled(): void {
 		$target = $this->file('Notes.pad');
 		$target->expects($this->once())->method('delete');

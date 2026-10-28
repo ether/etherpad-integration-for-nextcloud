@@ -758,8 +758,8 @@ class PadBootstrapServiceTest extends TestCase {
 	}
 
 	/**
-	 * A file holding only whitespace counts as empty, and is written over
-	 * as it was read: the guard compares with that, not with nothing.
+	 * A file of only whitespace counts as empty, and the guard compares with
+	 * what was read, not with an empty string.
 	 */
 	public function testWritesOverAFileOfWhitespaceAsItWasRead(): void {
 		$bindingService = $this->createMock(BindingService::class);
