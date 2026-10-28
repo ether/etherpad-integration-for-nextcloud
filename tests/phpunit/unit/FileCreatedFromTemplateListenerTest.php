@@ -203,8 +203,13 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Template event fired without an active user — resetting target to empty.',
+			['app' => 'etherpad_nextcloud', 'fileId' => 42],
+		);
 
-		$listener = $this->buildListener($creation, $bootstrap, withUser: false);
+		$listener = $this->buildListener($creation, $bootstrap, withUser: false, logger: $logger);
 		$listener->handle(new FileCreatedFromTemplateEvent($template, $target, []));
 	}
 
@@ -376,8 +381,13 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$creation->method('materializeTemplateInto')->willThrowException(new \RuntimeException('etherpad unreachable'));
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not reset target file content after rejected template.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 4242, \OCP\Lock\LockedException::class]),
+		);
 
-		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
+		$this->buildListener($creation, $bootstrap, logger: $logger)->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
 	}
 
 	/**
