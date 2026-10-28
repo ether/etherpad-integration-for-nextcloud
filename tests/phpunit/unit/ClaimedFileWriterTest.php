@@ -75,15 +75,18 @@ class ClaimedFileWriterTest extends TestCase {
 		$this->assertSame($untouched, $this->writer($untouched)->resolveUnchanged(new CreatedFileClaim('alice', 4242)));
 	}
 
-	/** Another's content, or a file that cannot be read, is not the claim's. */
+	/** Another's content, a read that gives no string, or a file that cannot be read: not the claim's. */
 	public function testDoesNotRecogniseAStrangersContent(): void {
 		$claim = new CreatedFileClaim('alice', 4242);
 		$claim->writtenHash = hash('sha256', 'our document');
 		$unreadable = $this->createMock(File::class);
 		$unreadable->method('getContent')->willThrowException(new \RuntimeException('storage gone'));
+		$nothing = $this->createMock(File::class);
+		$nothing->method('getContent')->willReturn(null);
 
 		$this->assertNull($this->writer($this->fileHolding('somebody else\'s notes'))->resolveUnchanged($claim));
 		$this->assertNull($this->writer($unreadable)->resolveUnchanged($claim));
+		$this->assertNull($this->writer($nothing)->resolveUnchanged(new CreatedFileClaim('alice', 4242)));
 	}
 
 	private function writer(File $node): ClaimedFileWriter {

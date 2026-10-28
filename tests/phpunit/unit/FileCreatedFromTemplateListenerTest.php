@@ -249,6 +249,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		]));
 
 		$this->assertCount(1, $logged);
+		$this->assertSame('etherpad_nextcloud', $logged[0]['app'] ?? null);
 		$this->assertSame('pad.remote.test', $logged[0]['padHost'] ?? null);
 		$this->assertSame(4242, $logged[0]['fileId'] ?? null);
 		$this->assertStringNotContainsString('RemotePad', json_encode($logged[0]));
@@ -363,7 +364,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('isExternalMarkerFile')->willReturn(true);
 		$seeder = $this->createMock(ExternalPadSeeder::class);
-		$seeder->method('prepare')->willThrowException(new \RuntimeException('pad not reachable'));
+		$failure = new \RuntimeException('pad not reachable');
+		$seeder->method('prepare')->willThrowException($failure);
 		$creation = $this->createMock(PadCreationService::class);
 		$this->expectClaimFor($creation, $byId);
 		$logged = [];
@@ -376,8 +378,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder, logger: $logger)
 				->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
 			$this->fail('the failure goes on');
-		} catch (\RuntimeException) {
-			// The fetch's failure, as the listener lets it go on.
+		} catch (\RuntimeException $e) {
+			$this->assertSame($failure, $e);
 		}
 		$this->assertSame(4242, $logged['Could not remove the .pad file of a failed template create.'] ?? null);
 	}
@@ -564,8 +566,13 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Left the template target alone: it is no longer the file this create was given.',
+			['app' => 'etherpad_nextcloud', 'targetFileId' => 4242],
+		);
 
-		$this->buildListener($creation, $bootstrap)
+		$this->buildListener($creation, $bootstrap, logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
 	}
 
