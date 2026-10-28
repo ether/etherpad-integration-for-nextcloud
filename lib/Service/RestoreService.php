@@ -367,7 +367,9 @@ class RestoreService {
 		// A failure leaves the row on the lost pad, moved back onto it if it
 		// was claimed already: the pad is the file's, only lost, and the
 		// next open offers the new pad again - a failure that passes,
-		// Etherpad gone while seeding or the file locked, costs nothing.
+		// Etherpad gone while seeding or the file locked, costs nothing. A
+		// row that cannot be moved back goes with the new pad instead
+		// (letGoOfNewPad()).
 		$result = $this->restoreOntoNewPad(
 			$file,
 			$file->getPath(),
@@ -544,7 +546,7 @@ class RestoreService {
 			} catch (\Throwable $e) {
 				// The rollback below asks the row again, and takes it with the
 				// new pad should it still name that.
-				$this->logger->warning('Could not move the row of a restored .pad file back to its old pad.', [
+				$this->logger->warning('Could not make sure the row of a restored .pad file names its old pad.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
 					'flow' => $flow,

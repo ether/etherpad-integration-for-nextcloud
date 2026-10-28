@@ -61,6 +61,7 @@ class ClaimedFileWriter {
 		if (!$claim->holds($node->getContent())) {
 			throw new PadFileChangedException('The .pad file changed before its document was written.');
 		}
+		$written = hash('sha256', $content);
 		try {
 			$node->putContent($content);
 		} catch (\Throwable $e) {
@@ -68,11 +69,11 @@ class ClaimedFileWriter {
 			// write event, say. Read back, the file says whether it did, so the
 			// cleanup takes a file that names this create's pad for its own.
 			if ($this->holdsAlready($node, $content)) {
-				$claim->writtenHash = hash('sha256', $content);
+				$claim->writtenHash = $written;
 			}
 			throw $e;
 		}
-		$claim->writtenHash = hash('sha256', $content);
+		$claim->writtenHash = $written;
 	}
 
 	/** Whether $node reads as $content; a read that fails says no. */

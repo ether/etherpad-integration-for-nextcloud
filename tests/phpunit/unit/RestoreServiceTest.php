@@ -128,7 +128,7 @@ class RestoreServiceTest extends TestCase {
 			// The failed write, as the restore reports it.
 		}
 		$this->assertSame(2, $rebinds);
-		$this->assertSame(['etherpad_nextcloud', 84, 'restore with replacement', \RuntimeException::class], $lines['Could not move the row of a restored .pad file back to its old pad.'] ?? null);
+		$this->assertSame(['etherpad_nextcloud', 84, 'restore with replacement', \RuntimeException::class], $lines['Could not make sure the row of a restored .pad file names its old pad.'] ?? null);
 	}
 
 	/**

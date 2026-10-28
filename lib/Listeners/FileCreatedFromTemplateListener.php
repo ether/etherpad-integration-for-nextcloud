@@ -257,10 +257,9 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	}
 
 	/**
-	 * `$fileId` is passed in rather than read here: this runs while an error
-	 * is already being handled, and `Node::getId()` re-reads through the
-	 * node's path — it can throw, and on a replaced path it answers for the
-	 * wrong file.
+	 * `$fileId` is passed in by a caller handling an error rather than read
+	 * here: `Node::getId()` re-reads through the node's path — it can throw,
+	 * and on a replaced path it answers for the wrong file.
 	 */
 	private function resetTargetToEmpty(File $target, ?int $fileId = null): void {
 		try {
