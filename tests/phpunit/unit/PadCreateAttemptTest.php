@@ -20,13 +20,14 @@ class PadCreateAttemptTest extends TestCase {
 
 		$claim = $attempt->claimFile('alice', 4242);
 		$attempt->recordPath('/Notes/Meeting.pad');
+		$this->assertTrue($claim->holds(''), 'the file it created is expected empty');
 		// The same instance, not a copy: what the write records on it, the rollback reads.
 		$claim->writtenHash = hash('sha256', 'our document');
 
 		$this->assertSame($claim, $attempt->claim());
 		$this->assertSame(
-			['alice', 4242, '', hash('sha256', 'our document'), '/Notes/Meeting.pad'],
-			[$claim->uid, $claim->fileId, $claim->expectedBefore(), $attempt->claim()?->writtenHash, $attempt->path()],
+			['alice', 4242, hash('sha256', 'our document'), '/Notes/Meeting.pad'],
+			[$claim->uid, $claim->fileId, $attempt->claim()?->writtenHash, $attempt->path()],
 		);
 
 		// Found to be somebody else's pad: nothing left for the rollback.

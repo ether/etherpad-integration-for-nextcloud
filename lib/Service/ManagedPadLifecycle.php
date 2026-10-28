@@ -234,9 +234,9 @@ class ManagedPadLifecycle {
 	 * can tell the two apart; the caller has to know which it has.
 	 *
 	 * Best effort: those rollbacks go on whatever this does, and none has a
-	 * row naming the pad by then. So a pad Etherpad would not delete is
-	 * named in the log by its id, against the rule elsewhere: the line is
-	 * the only handle left on it.
+	 * row naming the pad by then. So a pad whose removal Etherpad does not
+	 * confirm is named in the log by its id, against the rule elsewhere:
+	 * should it still be there, the line is the only handle left on it.
 	 *
 	 * @param array<string,mixed> $context the caller's keys for that line;
 	 *   `app`, `padId` and SafeError's keys are set here and win a collision
@@ -250,7 +250,7 @@ class ManagedPadLifecycle {
 				$this->etherpadClient->deleteGroup($groupId);
 			}
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not remove a new Etherpad pad; it is left over.', [
+			$this->logger->warning('Could not confirm removal of a new Etherpad pad.', [
 				'app' => 'etherpad_nextcloud',
 				'padId' => $padId,
 				...SafeError::context($e),

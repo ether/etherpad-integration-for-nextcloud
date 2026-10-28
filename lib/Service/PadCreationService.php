@@ -120,9 +120,8 @@ class PadCreationService {
 	 * the blank create's step (writeAndBind()) on the file the caller
 	 * claimed.
 	 *
-	 * When it fails, this method takes down the pad it provisioned, and a
-	 * row naming it, as far as it can; the caller's rollback takes only the
-	 * file.
+	 * A failure takes down the pad it provisioned where writeAndBind()
+	 * does; the file is the caller's.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
@@ -179,7 +178,9 @@ class PadCreationService {
 	 * The claim on a file Nextcloud made from a template or the external
 	 * tile: its identity and the content copied into it, before anything is
 	 * written. The listener shares it with the materialization or the
-	 * external tile's write, and with their recovery.
+	 * external tile's write, and with their recovery. A read that gives no
+	 * string counts as empty, which lets the claim write over or remove
+	 * only a file that reads as empty.
 	 */
 	public function claimTemplateTarget(File $target, string $uid): CreatedFileClaim {
 		if ($uid === '') {
@@ -215,11 +216,13 @@ class PadCreationService {
 	/**
 	 * The step the blank create and a template take once they have a pad.
 	 * The document is written before the row, so a failed write leaves no
-	 * row to take back. A failure takes the pad down here, and once the
-	 * binding write began a row naming it, as createBinding can commit and
-	 * still throw. The create's rollback takes only the file, so a step
-	 * that can fail, added after this one, would have to take the pad down
-	 * itself.
+	 * row to take back. A failure takes the pad down here: before the
+	 * binding write without asking the binding table, as no row can name
+	 * the pad yet; once the write began with a row naming it, as
+	 * createBinding can commit and still throw. The create's rollback takes
+	 * only the file, so a step that can fail, added between the pad's
+	 * provisioning and this one or after it, would have to take the pad
+	 * down itself.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
@@ -228,7 +231,7 @@ class PadCreationService {
 		try {
 			$padUrl = $this->claimedFileWriter->writePadDocument($claim, $padId, $accessMode, $snapshot);
 		} catch (\Throwable $e) {
-			$this->provisionedPadRollback->discardCreated($fileId, $padId, $operation);
+			$this->padLifecycle->discardProvisioned($padId, ['fileId' => $fileId, 'operation' => $operation]);
 			throw $e;
 		}
 		try {

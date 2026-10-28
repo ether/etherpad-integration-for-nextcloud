@@ -73,15 +73,6 @@ class ProvisionedPadRollbackTest extends TestCase {
 			->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'create');
 	}
 
-	public function testACreatesPadGoesWithoutAQuestionToTheBindingTable(): void {
-		$binding = $this->createMock(BindingService::class);
-		$binding->expects($this->never())->method('isBoundTo');
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
-
-		$this->buildRollback($binding, $etherpad)->discardCreated(4711, 'nc-abc', 'create');
-	}
-
 	/** A row naming another pad belongs to whoever won the file. */
 	public function testACreatesRowGoesWithItsPadButAnotherPadsRowStays(): void {
 		foreach ([true, false] as $namesThePad) {
@@ -95,12 +86,12 @@ class ProvisionedPadRollbackTest extends TestCase {
 		}
 	}
 
-	/** Before its row or after it is gone, a pad left over is named with its file and way. */
+	/** Once its row is gone, a pad whose removal is not confirmed is named with its file and way. */
 	public function testAPadLeftOverIsNamedWithItsFileAndWay(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('etherpad down'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->exactly(2))->method('warning')->with('Could not remove a new Etherpad pad; it is left over.', $this->callback(static fn (array $context): bool => array_diff_key($context, ['error_origin' => true]) === [
+		$logger->expects($this->once())->method('warning')->with('Could not confirm removal of a new Etherpad pad.', $this->callback(static fn (array $context): bool => array_diff_key($context, ['error_origin' => true]) === [
 			'app' => 'etherpad_nextcloud',
 			'padId' => 'nc-abc',
 			'error' => \RuntimeException::class,
@@ -110,7 +101,6 @@ class ProvisionedPadRollbackTest extends TestCase {
 		]));
 		$rollback = new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($etherpad, $logger), $logger);
 
-		$rollback->discardCreated(4711, 'nc-abc', 'template materialization');
 		$rollback->removeMatchingBindingAndDiscard(4711, 'nc-abc', 'template materialization');
 	}
 

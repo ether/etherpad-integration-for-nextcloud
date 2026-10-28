@@ -84,10 +84,9 @@ class PadCreationServiceTest extends TestCase {
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
 		$expectedRemoval = [$this->callback(
-			// Check identity, baseline and write evidence, not just the claim's type.
+			// Check identity and write evidence, not just the claim's type.
 			static fn (CreatedFileClaim $claim): bool => $claim->uid === 'alice'
 				&& $claim->fileId === 123
-				&& $claim->expectedBefore() === ''
 				&& $claim->writtenHash !== null
 		), ['file' => '/Test.pad']];
 
@@ -105,12 +104,21 @@ class PadCreationServiceTest extends TestCase {
 		// The binding write began, so the row is asked about, and goes with the pad.
 		$bindingService->method('isBoundTo')->with(123, 'g.ABC$pad')->willReturn(true);
 		$bindingService->expects($this->once())->method('deleteActiveBinding')->with(123, 'g.ABC$pad')->willReturn(true);
-		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABC');
+		// The pad and its row go where they were made, before the file.
+		$order = [];
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABC')->willReturnCallback(static function () use (&$order): void {
+			$order[] = 'pad';
+		});
 
-		$this->expectException(BindingException::class);
-
-		$this->buildService($padFileService, $padPaths, $fileCreator, null, $expectedRemoval, $bindingService, $etherpadClient, $bootstrap)
-			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
+		try {
+			$this->buildService($padFileService, $padPaths, $fileCreator, null, $expectedRemoval, $bindingService, $etherpadClient, $bootstrap, onRemoval: static function () use (&$order): void {
+				$order[] = 'file';
+			})->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
+			$this->fail('the binding failure goes on');
+		} catch (BindingException) {
+			// The create's own failure, for the API to answer.
+		}
+		$this->assertSame(['pad', 'file'], $order);
 	}
 
 	/** Failing before its row, the pad goes unasked; one Etherpad keeps is named with its file. */
@@ -142,7 +150,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
 		$padLifecycleLogger->expects($this->once())->method('warning')->with(
-			'Could not remove a new Etherpad pad; it is left over.',
+			'Could not confirm removal of a new Etherpad pad.',
 			$this->callback(static fn (array $context): bool => $context['fileId'] === 123 && $context['padId'] === 'g.ABC$pad' && $context['operation'] === 'create'),
 		);
 
@@ -435,7 +443,7 @@ class PadCreationServiceTest extends TestCase {
 		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
 		$padLifecycleLogger->expects($this->once())
 			->method('warning')
-			->with('Could not remove a new Etherpad pad; it is left over.', $this->callback(
+			->with('Could not confirm removal of a new Etherpad pad.', $this->callback(
 				static fn (array $context): bool => ($context['fileId'] ?? null) === 4321
 					&& ($context['padId'] ?? null) === 'nc-new'
 					&& ($context['operation'] ?? null) === 'template materialization'
@@ -639,7 +647,7 @@ class PadCreationServiceTest extends TestCase {
 	 * Written, then the binding fails. The claimed id finds the empty file
 	 * the create made, so the write lands and the binding write is reached.
 	 */
-	public function testCreateFromTemplateRollsBackOnlyTheFileWhenTheBindingFails(): void {
+	public function testATemplatesPadAndFileGoWhenTheBindingFails(): void {
 		$templateNode = $this->buildMaterializeTemplate();
 
 		$written = $this->createMock(\OCP\Files\File::class);
@@ -785,7 +793,7 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects(self::once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP')->willThrowException(new \RuntimeException('etherpad down'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
-			'Could not remove a new Etherpad pad; it is left over.',
+			'Could not confirm removal of a new Etherpad pad.',
 			$this->callback(static fn (array $context): bool => $context['fileId'] === 4321 && $context['padId'] === $padId && $context['operation'] === 'template materialization'),
 		);
 
@@ -814,8 +822,8 @@ class PadCreationServiceTest extends TestCase {
 
 		$claim = $service->claimTemplateTarget($copied, 'alice');
 
-		$this->assertSame(['alice', 4321, 'template bytes'], [$claim->uid, $claim->fileId, $claim->expectedBefore()]);
-		$this->assertSame('', $service->claimTemplateTarget($unread, 'alice')->expectedBefore());
+		$this->assertSame(['alice', 4321, true, false], [$claim->uid, $claim->fileId, $claim->holds('template bytes'), $claim->holds('')]);
+		$this->assertTrue($service->claimTemplateTarget($unread, 'alice')->holds(''));
 		$this->expectExceptionObject(new \RuntimeException('Cannot claim a template target without a user to resolve the file by.'));
 		$service->claimTemplateTarget($copied, '');
 	}
@@ -985,6 +993,7 @@ class PadCreationServiceTest extends TestCase {
 		?\OCA\EtherpadNextcloud\Service\PadTypePolicy $padTypePolicy = null,
 		?LoggerInterface $logger = null,
 		?LoggerInterface $padLifecycleLogger = null,
+		?\Closure $onRemoval = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
 			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000));
@@ -1014,7 +1023,8 @@ class PadCreationServiceTest extends TestCase {
 				->setConstructorArgs([$userNodeResolver, $padFileService, $etherpadClient, $this->createMock(LoggerInterface::class)])
 				->onlyMethods(['deleteIfUnchanged'])
 				->getMock();
-			$claimedFileWriter->expects($this->once())->method('deleteIfUnchanged')->with(...$expectedRemoval);
+			$claimedFileWriter->expects($this->once())->method('deleteIfUnchanged')->with(...$expectedRemoval)->willReturnCallback($onRemoval ?? static function (): void {
+			});
 		}
 		return new PadCreationService(
 			$padFileService,

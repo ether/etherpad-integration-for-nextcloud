@@ -165,7 +165,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$target = $this->untouchedTarget('Team pad.pad');
 		$creation = $this->createMock(PadCreationService::class);
-		$claim = $this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
+		$claim = $this->expectClaimFor($creation, $target);
 		$this->writer->expects($this->once())->method('write')->with($claim, 'the document');
 
 		$this->createFromTheExternalTile($creation, $seeder, $target, [
@@ -183,7 +183,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$seeder->method('prepare')->willReturn($this->prepared(['snapshot_warning_code' => 'remote_export_unavailable']));
 		$target = $this->file('Team pad.pad');
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
+		$this->expectClaimFor($creation, $target);
 
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
@@ -226,7 +226,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		}
 		$target = $this->untouchedTarget('Team pad.pad');
 		$creation = $this->createMock(PadCreationService::class);
-		$claim = $this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
+		$claim = $this->expectClaimFor($creation, $target);
 		$this->writer->expects($this->never())->method('write');
 		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->identicalTo($claim));
 		$logger = $this->createMock(LoggerInterface::class);
@@ -301,7 +301,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		} catch (PadTypeDisabledException) {
 			// The refusal, for Nextcloud to report.
 		}
-		$this->assertSame(['etherpad_nextcloud', 42], $logged['Could not remove the .pad file of a failed template create.'] ?? null);
+		$this->assertSame(['etherpad_nextcloud', 42], $logged['Could not remove the .pad file of a failed create.'] ?? null);
 	}
 
 	/**
@@ -372,7 +372,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target = $this->untouchedTarget('Notes.pad');
 
 		$creation = $this->createMock(PadCreationService::class);
-		$claim = $this->expectClaimFor($creation, $target, $this->file('Notes.pad'));
+		$claim = $this->expectClaimFor($creation, $target);
 		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->identicalTo($claim));
 		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -439,14 +439,17 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * The event's $target claimed as file 4242 and still as the claim left
-	 * it: its id finds $byId - another node, as the file found by its id
-	 * need not be the one the event remembers by path.
+	 * The event's $target claimed as file 4242. With $byId, the file is
+	 * still as the claim left it and its id finds $byId - another node, as
+	 * the file found by its id need not be the one the event remembers by
+	 * path.
 	 */
-	private function expectClaimFor(PadCreationService $creation, File $target, File $byId): CreatedFileClaim {
+	private function expectClaimFor(PadCreationService $creation, File $target, ?File $byId = null): CreatedFileClaim {
 		$claim = new CreatedFileClaim('alice', 4242);
 		$creation->method('claimTemplateTarget')->with($this->identicalTo($target), 'alice')->willReturn($claim);
-		$this->writer->method('resolveUnchanged')->with($claim)->willReturn($byId);
+		if ($byId !== null) {
+			$this->writer->method('resolveUnchanged')->with($claim)->willReturn($byId);
+		}
 
 		return $claim;
 	}
@@ -508,7 +511,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target->expects($this->never())->method('getId');
 
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $target, $this->file('Notes.pad'));
+		$this->expectClaimFor($creation, $target);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new PadFileChangedException('changed'));
 

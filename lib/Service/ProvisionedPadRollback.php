@@ -23,7 +23,6 @@ use Psr\Log\LoggerInterface;
  * should not name the new pad, so a row that does keeps the pad.
  * removeMatchingBindingAndDiscard() takes the row with the pad where the
  * row is the flow's own: a restore's claim, a create's binding write.
- * discardCreated() is for a create's pad before any row can name it.
  *
  * Only for a pad provisioned in the same call: `discardProvisioned` removes
  * a group outright. A flow that adopted an existing pad - the legacy Ownpad
@@ -45,15 +44,6 @@ class ProvisionedPadRollback {
 	/** A row naming this pad goes, then the pad. One naming another stays. */
 	public function removeMatchingBindingAndDiscard(int $fileId, string $padId, string $operation): void {
 		$this->rollback($fileId, $padId, $operation, keepBinding: false);
-	}
-
-	/**
-	 * The pad of a create that failed before its binding write began -
-	 * empty or from a template. No row can name the pad yet, so it goes
-	 * without a lookup, also where the binding table does not answer.
-	 */
-	public function discardCreated(int $fileId, string $padId, string $operation): void {
-		$this->padLifecycle->discardProvisioned($padId, ['fileId' => $fileId, 'operation' => $operation]);
 	}
 
 	private function rollback(int $fileId, string $padId, string $operation, bool $keepBinding): void {

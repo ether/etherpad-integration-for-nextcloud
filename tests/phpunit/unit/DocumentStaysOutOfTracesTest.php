@@ -51,7 +51,7 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 		$live = new LivePadHtml(self::DOCUMENT, false);
 		yield 'a pad as it is now' => [$live, static fn (): array => [$live->html()]];
 		$claim = new CreatedFileClaim('alice', 7, self::DOCUMENT);
-		yield 'a template copied into a new file' => [$claim, static fn (): array => [$claim->expectedBefore()]];
+		yield 'a template copied into a new file' => [$claim, static fn (): array => [$claim->holds(self::DOCUMENT) ? self::DOCUMENT : 'lost']];
 		$sink = new ExportAttemptSink(100);
 		$sink->chunk(null, self::DOCUMENT);
 		yield 'an attempt at an external export' => [$sink, static fn (): array => [$sink->body()]];

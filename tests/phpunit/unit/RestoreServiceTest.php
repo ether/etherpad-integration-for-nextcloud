@@ -195,7 +195,7 @@ class RestoreServiceTest extends TestCase {
 			// The seed's failure, as the restore reports it.
 		}
 
-		$this->assertSame([$fileId, 'restore from snapshot'], $lines['Could not remove a new Etherpad pad; it is left over.'] ?? null);
+		$this->assertSame([$fileId, 'restore from snapshot'], $lines['Could not confirm removal of a new Etherpad pad.'] ?? null);
 	}
 
 	/**

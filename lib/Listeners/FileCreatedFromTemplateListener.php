@@ -240,7 +240,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		try {
 			$target->delete();
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not remove the .pad file of a failed template create.', [
+			$this->logger->warning('Could not remove the .pad file of a failed create.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $this->idOrNull($target),
 				...SafeError::context($e),

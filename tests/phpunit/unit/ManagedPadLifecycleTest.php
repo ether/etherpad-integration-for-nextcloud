@@ -598,7 +598,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('warning')
-			->with('Could not remove a new Etherpad pad; it is left over.', $this->callback(
+			->with('Could not confirm removal of a new Etherpad pad.', $this->callback(
 				static fn (array $context): bool => ($context['app'] ?? null) === 'etherpad_nextcloud'
 					&& ($context['padId'] ?? null) === 'nc-pad'
 					&& ($context['fileId'] ?? null) === 7
@@ -661,6 +661,6 @@ class ManagedPadLifecycleTest extends TestCase {
 
 		$fallback = $lines['Could not import the HTML snapshot; falling back to plain text.'] ?? [];
 		$this->assertSame(['etherpad_nextcloud', \RuntimeException::class], [$fallback[0] ?? null, $fallback[2] ?? null]);
-		$this->assertSame(['etherpad_nextcloud', 'nc-pad', \TypeError::class], $lines['Could not remove a new Etherpad pad; it is left over.'] ?? null);
+		$this->assertSame(['etherpad_nextcloud', 'nc-pad', \TypeError::class], $lines['Could not confirm removal of a new Etherpad pad.'] ?? null);
 	}
 }

@@ -25,15 +25,11 @@ class CreatedFileClaim {
 		/**
 		 * What the file held when it was claimed: nothing for an API
 		 * create's new file, what Nextcloud copied in for a template or the
-		 * external tile, what a first init read. Private behind its method,
-		 * for the reason given at ParsedPadFile: it is a document.
+		 * external tile, what a first init read. Private, for the reason
+		 * given at ParsedPadFile: it is a document.
 		 */
 		private readonly string $expectedBefore = '',
 	) {
-	}
-
-	public function expectedBefore(): string {
-		return $this->expectedBefore;
 	}
 
 	/**
@@ -43,9 +39,6 @@ class CreatedFileClaim {
 	 * another create's may name the same file id - so a written file that
 	 * is emptied, or holds what was expected again, has been changed. A
 	 * competing create's empty file is indistinguishable from this one's.
-	 *
-	 * Callers pass the read uncast: a read that gives no string then fails
-	 * here, as a read that failed, instead of passing for an empty file.
 	 */
 	public function holds(string $content): bool {
 		return $this->writtenHash === null

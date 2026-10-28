@@ -38,16 +38,21 @@ class ClaimedFileWriterTest extends TestCase {
 		$this->assertSame(hash('sha256', 'the document'), $claim->writtenHash);
 	}
 
-	/** @return iterable<string,array{?string}> what the claimed id finds where the claim expects nothing */
+	/**
+	 * What the claimed id finds where the claim expects nothing, and how
+	 * the write fails: a read that gives no string fails as a read that
+	 * failed, not as a change.
+	 *
+	 * @return iterable<string,array{?string,class-string<\Throwable>}>
+	 */
 	public static function filesTheWriteRefuses(): iterable {
-		yield 'written meanwhile' => ['written meanwhile'];
-		// A read that gives no string counts as a change.
-		yield 'a read that gives no string' => [null];
+		yield 'written meanwhile' => ['written meanwhile', PadFileChangedException::class];
+		yield 'a read that gives no string' => [null, \TypeError::class];
 	}
 
 	/** Content written meanwhile is not written over, and no write is recorded. */
 	#[DataProvider('filesTheWriteRefuses')]
-	public function testRefusesAFileThatIsNotAsTheClaimExpects(?string $content): void {
+	public function testRefusesAFileThatIsNotAsTheClaimExpects(?string $content, string $failure): void {
 		$claim = new CreatedFileClaim('alice', 4242);
 		$node = $this->createMock(File::class);
 		$node->method('getContent')->willReturn($content);
@@ -56,8 +61,11 @@ class ClaimedFileWriterTest extends TestCase {
 		try {
 			$this->writer($node)->write($claim, 'the document');
 			$this->fail('the write should have been refused');
-		} catch (PadFileChangedException $e) {
-			$this->assertSame('The .pad file changed before its document was written.', $e->getMessage());
+		} catch (PadFileChangedException|\TypeError $e) {
+			$this->assertInstanceOf($failure, $e);
+			if ($e instanceof PadFileChangedException) {
+				$this->assertSame('The .pad file changed before its document was written.', $e->getMessage());
+			}
 		}
 		$this->assertNull($claim->writtenHash);
 	}
@@ -102,6 +110,8 @@ class ClaimedFileWriterTest extends TestCase {
 		yield 'the id does not resolve' => [new NotFoundException('gone'), null, 'info', 'Left a claimed .pad file alone: its id did not resolve.', null];
 		yield 'the lookup fails' => [new \RuntimeException('storage down'), null, 'warning', 'Left a .pad file in place: it could not be looked up or read.', \RuntimeException::class];
 		yield 'the read fails' => [null, new LockedException('/Created.pad'), 'warning', 'Left a .pad file in place: it could not be looked up or read.', LockedException::class];
+		// Found by its id, then gone before its read: not an id that did not resolve.
+		yield 'the file goes before its read' => [null, new NotFoundException('gone'), 'warning', 'Left a .pad file in place: it could not be looked up or read.', NotFoundException::class];
 		// Not taken for an empty file, which a claim that wrote nothing would remove.
 		yield 'the read gives no string' => [null, null, 'warning', 'Left a .pad file in place: it could not be looked up or read.', \TypeError::class];
 	}
