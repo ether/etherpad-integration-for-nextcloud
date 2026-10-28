@@ -33,12 +33,12 @@ class CreatedFileClaim {
 	}
 
 	/**
-	 * Whether a file holding $content is still as this claim left it: what
-	 * the claim expected while it has written nothing, what it wrote once
-	 * it has. Only the hash of its write proves a document its own -
-	 * another create's may name the same file id - so a written file that
-	 * is emptied, or holds what was expected again, has been changed. A
-	 * competing create's empty file is indistinguishable from this one's.
+	 * Whether a file holding $content is still as this claim left it.
+	 * Before a recorded write, only the content the claim expected matches;
+	 * after it, only content with the recorded hash, as another create's
+	 * document may name the same file id. A written file that is emptied,
+	 * or holds the expected content again, does not match. Before a write,
+	 * a competing create's empty file cannot be told from this one's.
 	 */
 	public function holds(string $content): bool {
 		return $this->writtenHash === null

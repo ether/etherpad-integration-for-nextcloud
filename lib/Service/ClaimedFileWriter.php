@@ -61,7 +61,7 @@ class ClaimedFileWriter {
 		if (!$claim->holds($node->getContent())) {
 			throw new PadFileChangedException('The .pad file changed before its document was written.');
 		}
-		$written = hash('sha256', $content);
+		$writtenHash = hash('sha256', $content);
 		try {
 			$node->putContent($content);
 		} catch (\Throwable $e) {
@@ -69,11 +69,11 @@ class ClaimedFileWriter {
 			// write event, say. Read back, the file says whether it did, so the
 			// cleanup takes a file that names this create's pad for its own.
 			if ($this->holdsAlready($node, $content)) {
-				$claim->writtenHash = $written;
+				$claim->writtenHash = $writtenHash;
 			}
 			throw $e;
 		}
-		$claim->writtenHash = $written;
+		$claim->writtenHash = $writtenHash;
 	}
 
 	/** Whether $node reads as $content; a read that fails says no. */
@@ -88,9 +88,8 @@ class ClaimedFileWriter {
 	/**
 	 * The claimed file while it is as the claim left it
 	 * (CreatedFileClaim::holds()); null, with a line saying why, when it is
-	 * not, or cannot be resolved or read. This does not lock it. The read
-	 * goes to holds() uncast, so one that gives no string is left as a read
-	 * that failed rather than passing for an empty file.
+	 * not, or cannot be resolved or read - a read that gives no string
+	 * included, as for write(). This does not lock it.
 	 *
 	 * @param array<string,mixed> $context the caller's keys for that line
 	 */

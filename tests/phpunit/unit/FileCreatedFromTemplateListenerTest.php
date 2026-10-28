@@ -153,8 +153,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * The picker collects the pad's address as a template field, so the file is
-	 * linked as it is created — no half-finished file is ever stored.
+	 * The picker supplies the address as a template field; the listener
+	 * trims it and writes the prepared document through the file's claim.
 	 */
 	public function testSeedsAFileFromTheExternalTileWithTheAddressThePickerAsked(): void {
 		$seeder = $this->createMock(ExternalPadSeeder::class);
@@ -392,10 +392,11 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	public function testDoesNotBlankAFileThatIsNoLongerTheClaimedOne(): void {
 		$target = $this->untouchedTarget('Notes.pad');
 
+		$claim = new CreatedFileClaim('alice', 4242);
 		$creation = $this->createMock(PadCreationService::class);
-		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
+		$creation->method('claimTemplateTarget')->willReturn($claim);
 		// The claimed file is no longer accessible or its content changed.
-		$this->writer->method('resolveUnchanged')->willReturn(null);
+		$this->writer->expects($this->once())->method('resolveUnchanged')->with($this->identicalTo($claim))->willReturn(null);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('etherpad unreachable'));
 

@@ -164,11 +164,7 @@ class PadBootstrapServiceTest extends TestCase {
 	 */
 	public function testInitializeMissingFrontmatterKeepsAConsistentPairWhenTheWriteFails(): void {
 		$fileId = 99;
-		// Shaped like the real thing: `g.` plus the sixteen characters
-		// `createGroup` answers with. Nothing enforces that length — the one
-		// rule, PadId, only asks for `g.<something>$<something>` — but a
-		// fixture that looks like Etherpad's output keeps the test honest
-		// about what it stands in for.
+		// Shaped like the group id `createGroup` answers with.
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
 
 		$bindingService = $this->createMock(BindingService::class);

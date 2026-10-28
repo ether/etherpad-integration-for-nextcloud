@@ -120,8 +120,9 @@ class PadCreationService {
 	 * the blank create's step (writeAndBind()) on the file the caller
 	 * claimed.
 	 *
-	 * A failure takes down the pad it provisioned: provisionSeeded() when
-	 * the seed fails, writeAndBind() after it. The file is the caller's.
+	 * A failure has the pad it provisioned taken down as far as it can be:
+	 * by provisionSeeded() when the seed fails, by writeAndBind() after it.
+	 * The file is the caller's.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
@@ -216,13 +217,13 @@ class PadCreationService {
 	/**
 	 * The step the blank create and a template take once they have a pad.
 	 * The document is written before the row, so a failed write leaves no
-	 * row to take back. A failure takes the pad down here: before the
-	 * binding write without asking the binding table, as no row can name
-	 * the pad yet; once the write began with a row naming it, as
-	 * createBinding can commit and still throw. The create's rollback takes
-	 * only the file, so a step that can fail, added between the pad's
-	 * provisioning and this one or after it, would have to take the pad
-	 * down itself.
+	 * row to take back. A failure has the pad taken down here, as far as
+	 * it can be: before the binding write without asking the binding
+	 * table, as no row can name the pad yet; once the write began with a
+	 * row naming it, as createBinding can commit and still throw. The
+	 * create's rollback takes only the file, so a step that can fail, added
+	 * between the pad's provisioning and this one or after it, would have
+	 * to take the pad down itself.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */

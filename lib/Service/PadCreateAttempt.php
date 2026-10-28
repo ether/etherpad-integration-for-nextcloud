@@ -10,9 +10,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * The file one create claimed, and so what its rollback owns, until it
- * disowns one that turns out to be somebody else's; and where that file
- * ended up.
+ * The file one create claimed, and so what its rollback owns, until the
+ * create disowns a file that turns out to be somebody else's; and where
+ * that file ended up.
  */
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
