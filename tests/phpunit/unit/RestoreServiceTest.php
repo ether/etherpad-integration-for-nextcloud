@@ -106,6 +106,31 @@ class RestoreServiceTest extends TestCase {
 		}
 	}
 
+	/** A row the move-back cannot reach is named, as the rollback may take it with the new pad. */
+	public function testNamesARowThatCannotBeMovedBackToItsOldPad(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$rebinds = 0;
+		$bindingService->method('rebind')->willReturnCallback(static function () use (&$rebinds): bool {
+			return $rebinds++ === 0 ? true : throw new \RuntimeException('connection lost');
+		});
+		$file = $this->padFile(84, 'Restored.pad');
+		$file->method('putContent')->willThrowException(new \RuntimeException('refused'));
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context = []) use (&$lines): void {
+			$lines[$message] = [$context['app'] ?? null, $context['fileId'] ?? null, $context['flow'] ?? null, $context['error'] ?? null];
+		});
+
+		try {
+			$this->buildRowRestoreService(84, 'old-pad', $bindingService, $this->buildEtherpadWithoutThePad(), logger: $logger)->restore($file);
+			$this->fail('the restore went through');
+		} catch (LifecycleException) {
+			// The failed write, as the restore reports it.
+		}
+		$this->assertSame(2, $rebinds);
+		$this->assertSame(['etherpad_nextcloud', 84, 'restore with replacement', \RuntimeException::class], $lines['Could not move the row of a restored .pad file back to its old pad.'] ?? null);
+	}
+
 	/**
 	 * No replacement can be made - Etherpad gone while it is seeded - and
 	 * the row stays on the lost pad: the pad is the file's, only lost, and

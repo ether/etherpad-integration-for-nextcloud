@@ -120,8 +120,8 @@ class PadCreationService {
 	 * the blank create's step (writeAndBind()) on the file the caller
 	 * claimed.
 	 *
-	 * A failure takes down the pad it provisioned where writeAndBind()
-	 * does; the file is the caller's.
+	 * A failure takes down the pad it provisioned: provisionSeeded() when
+	 * the seed fails, writeAndBind() after it. The file is the caller's.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */

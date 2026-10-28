@@ -541,8 +541,15 @@ class RestoreService {
 		if ($rowStays) {
 			try {
 				$this->bindingService->rebind($fileId, $newPadId, BindingService::STATE_ACTIVE, $oldPadId, BindingService::STATE_ACTIVE);
-			} catch (\Throwable) {
-				// The rollback below asks the row again.
+			} catch (\Throwable $e) {
+				// The rollback below asks the row again, and takes it with the
+				// new pad should it still name that.
+				$this->logger->warning('Could not move the row of a restored .pad file back to its old pad.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					'flow' => $flow,
+					...SafeError::context($e),
+				]);
 			}
 		}
 		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);

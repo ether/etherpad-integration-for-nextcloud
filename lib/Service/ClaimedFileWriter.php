@@ -61,8 +61,27 @@ class ClaimedFileWriter {
 		if (!$claim->holds($node->getContent())) {
 			throw new PadFileChangedException('The .pad file changed before its document was written.');
 		}
-		$node->putContent($content);
+		try {
+			$node->putContent($content);
+		} catch (\Throwable $e) {
+			// A write can land and still throw - in a listener of Nextcloud's
+			// write event, say. Read back, the file says whether it did, so the
+			// cleanup takes a file that names this create's pad for its own.
+			if ($this->holdsAlready($node, $content)) {
+				$claim->writtenHash = hash('sha256', $content);
+			}
+			throw $e;
+		}
 		$claim->writtenHash = hash('sha256', $content);
+	}
+
+	/** Whether $node reads as $content; a read that fails says no. */
+	private function holdsAlready(File $node, string $content): bool {
+		try {
+			return $node->getContent() === $content;
+		} catch (\Throwable) {
+			return false;
+		}
 	}
 
 	/**
@@ -75,7 +94,7 @@ class ClaimedFileWriter {
 	 * @param array<string,mixed> $context the caller's keys for that line
 	 */
 	public function resolveUnchanged(CreatedFileClaim $claim, array $context = []): ?File {
-		$context = ['app' => 'etherpad_nextcloud', 'uid' => $claim->uid, 'fileId' => $claim->fileId] + $context;
+		$context = $this->lineContext($claim, $context);
 		try {
 			try {
 				$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
@@ -109,7 +128,15 @@ class ClaimedFileWriter {
 		try {
 			$node?->delete();
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not remove the .pad file of a failed create.', ['app' => 'etherpad_nextcloud', 'uid' => $claim->uid, 'fileId' => $claim->fileId] + $context + SafeError::context($e));
+			$this->logger->warning('Could not remove the .pad file of a failed create.', $this->lineContext($claim, $context) + SafeError::context($e));
 		}
+	}
+
+	/**
+	 * @param array<string,mixed> $context
+	 * @return array<string,mixed>
+	 */
+	private function lineContext(CreatedFileClaim $claim, array $context): array {
+		return ['app' => 'etherpad_nextcloud', 'uid' => $claim->uid, 'fileId' => $claim->fileId] + $context;
 	}
 }

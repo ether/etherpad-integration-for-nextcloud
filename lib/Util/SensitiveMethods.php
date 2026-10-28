@@ -90,7 +90,7 @@ final class SensitiveMethods {
 			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
-		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write'],
+		\OCA\EtherpadNextcloud\Service\ClaimedFileWriter::class => ['write', 'holdsAlready'],
 		\OCA\EtherpadNextcloud\Service\PadBootstrapService::class => ['initializeMissingFrontmatter'],
 		\OCA\EtherpadNextcloud\Service\PadPlaceholderResolver::class => ['applyForContent', 'applyInternal'],
 		\OCA\EtherpadNextcloud\Service\PadTemplateAdminService::class => ['add'],

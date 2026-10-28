@@ -71,6 +71,42 @@ class ClaimedFileWriterTest extends TestCase {
 	}
 
 	/**
+	 * What the file reads as once its write threw (null: the read fails
+	 * too), and whether the write counts as this create's.
+	 *
+	 * @return iterable<string,array{?string,bool}>
+	 */
+	public static function writesThatThrow(): iterable {
+		yield 'landed, then a listener threw' => ['the document', true];
+		yield 'never landed' => ['', false];
+		yield 'cannot be read back' => [null, false];
+	}
+
+	/** A write that threw is recorded only if the file holds it, and its failure goes on. */
+	#[DataProvider('writesThatThrow')]
+	public function testRecordsAWriteThatThrewOnlyIfItLanded(?string $readBack, bool $recorded): void {
+		$claim = new CreatedFileClaim('alice', 4242);
+		$failure = new \RuntimeException('a listener of the write failed');
+		$reads = 0;
+		$node = $this->createMock(File::class);
+		$node->method('getContent')->willReturnCallback(static function () use (&$reads, $readBack): string {
+			if ($reads++ === 0) {
+				return '';
+			}
+			return $readBack ?? throw new LockedException('/Created.pad');
+		});
+		$node->expects($this->once())->method('putContent')->with('the document')->willThrowException($failure);
+
+		try {
+			$this->writer($node)->write($claim, 'the document');
+			$this->fail('the failed write goes on');
+		} catch (\RuntimeException $e) {
+			$this->assertSame($failure, $e);
+		}
+		$this->assertSame($recorded ? hash('sha256', 'the document') : null, $claim->writtenHash);
+	}
+
+	/**
 	 * What the claimed id finds, what this create wrote (null: nothing), and
 	 * whether the file goes. A file that stays is named, with whether this
 	 * create wrote it.
