@@ -368,7 +368,7 @@ class RestoreService {
 		// was claimed already: the pad is the file's, only lost, and the
 		// next open offers the new pad again - a failure that passes,
 		// Etherpad gone while seeding or the file locked, costs nothing. A
-		// row that cannot be moved back goes with the new pad instead
+		// row that cannot be moved back may go with the new pad instead
 		// (letGoOfNewPad()).
 		$result = $this->restoreOntoNewPad(
 			$file,
