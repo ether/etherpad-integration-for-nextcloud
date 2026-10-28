@@ -160,8 +160,6 @@ class PadCreationService {
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);
 		$resolvedHtml = $this->placeholderResolver->applyForContent($snapshot['html'], $user);
 
-		$fileId = $claim->fileId;
-
 		// The template's content is in the file from the start, so the file
 		// records the pad's revisions, as a restore does: they make it hold
 		// saved content should Etherpad lose the pad before its first sync,
@@ -172,13 +170,12 @@ class PadCreationService {
 			$this->padBootstrapService->newGroupPadName(...),
 			$resolvedText,
 			$resolvedHtml,
-			['fileId' => $fileId, 'operation' => 'template materialization'],
+			['fileId' => $claim->fileId, 'operation' => 'template materialization'],
 		);
-		// Its own attempt: the file is the caller's.
 		$attempt = new PadCreateAttempt();
 		$attempt->recordPad($padId);
 		try {
-			$padUrl = $this->writeAndBind(
+			return $this->writeAndBind(
 				$attempt,
 				$claim,
 				$padId,
@@ -188,16 +185,9 @@ class PadCreationService {
 				new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
 			);
 		} catch (\Throwable $e) {
-			$this->provisionedPadRollback->discardCreated($attempt, $fileId, 'template materialization');
+			$this->provisionedPadRollback->discardCreated($attempt, $claim->fileId, 'template materialization');
 			throw $e;
 		}
-
-		return [
-			'file_id' => $fileId,
-			'pad_id' => $padId,
-			'access_mode' => $accessMode,
-			'pad_url' => $padUrl,
-		];
 	}
 
 	/**
@@ -234,15 +224,8 @@ class PadCreationService {
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
 		$attempt->recordPad($padId);
-		$padUrl = $this->writeAndBind($attempt, $claim, $padId, $accessMode);
 
-		return [
-			'file' => $attempt->path(),
-			'file_id' => $claim->fileId,
-			'pad_id' => $padId,
-			'access_mode' => $accessMode,
-			'pad_url' => $padUrl,
-		];
+		return ['file' => $attempt->path()] + $this->writeAndBind($attempt, $claim, $padId, $accessMode);
 	}
 
 	/**
@@ -250,14 +233,19 @@ class PadCreationService {
 	 * the document naming the pad written into the file, then the row; the
 	 * attempt records the binding write as it begins.
 	 *
-	 * @return string the pad's URL
+	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	private function writeAndBind(PadCreateAttempt $attempt, CreatedFileClaim $claim, string $padId, string $accessMode, ?PadSnapshot $snapshot = null): string {
+	private function writeAndBind(PadCreateAttempt $attempt, CreatedFileClaim $claim, string $padId, string $accessMode, ?PadSnapshot $snapshot = null): array {
 		$padUrl = $this->claimedFileWriter->writePadDocument($claim, $padId, $accessMode, $snapshot);
 		$attempt->recordBindingAttempt($claim->fileId);
 		$this->bindingService->createBinding($claim->fileId, $padId, $accessMode);
 
-		return $padUrl;
+		return [
+			'file_id' => $claim->fileId,
+			'pad_id' => $padId,
+			'access_mode' => $accessMode,
+			'pad_url' => $padUrl,
+		];
 	}
 
 	/**

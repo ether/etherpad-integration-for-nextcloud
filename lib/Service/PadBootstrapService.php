@@ -10,7 +10,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
 

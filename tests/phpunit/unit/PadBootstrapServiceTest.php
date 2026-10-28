@@ -768,25 +768,12 @@ class PadBootstrapServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('doc-content');
 
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
-
 		$file = $this->writableFile("\n");
 		$file->method('getId')->willReturn(4242);
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
-		$this->assertFalse($this->bootstrap(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$secureRandom,
-			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
-			$this->buildPadTypePolicy(true),
-			$this->resolverReturning($file),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		)->initializeMissingFrontmatter('alice', $file, "\n"));
+		$this->assertFalse($this->buildService($bindingService, $padFileService, $this->createMock(EtherpadClient::class), $this->buildPadTypePolicy(true), $file)
+			->initializeMissingFrontmatter('alice', $file, "\n"));
 	}
 
 	/**

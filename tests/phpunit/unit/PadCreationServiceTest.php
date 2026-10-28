@@ -806,10 +806,13 @@ class PadCreationServiceTest extends TestCase {
 			$padFileService, $padPaths, $fileCreator, $userNodeResolver, null, $bindingService, $etherpadClient, $bootstrap)
 			->createFromTemplate('alice', '/Meetings/Protokoll {{date:next monday|d.m.Y}}.pad', 7, $user);
 
-		$this->assertSame('/Meetings/Protokoll 18.05.2026.pad', $result['file']);
-		$this->assertSame(99, $result['file_id']);
-		$this->assertSame('g.AbCdEfGh12345678$p-fresh', $result['pad_id']);
-		$this->assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
+		$this->assertSame([
+			'file' => '/Meetings/Protokoll 18.05.2026.pad',
+			'file_id' => 99,
+			'pad_id' => 'g.AbCdEfGh12345678$p-fresh',
+			'access_mode' => BindingService::ACCESS_PROTECTED,
+			'pad_url' => 'https://pad.example.test/p/g.AbCdEfGh12345678$p-fresh',
+		], $result);
 	}
 
 	/** Everything after the file is created can still fail; the rollback follows the file's id, not its name. */
