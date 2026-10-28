@@ -17,8 +17,6 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
-use OCA\EtherpadNextcloud\Service\PadCreateAttempt;
-use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCA\EtherpadNextcloud\Service\PadFileService;
@@ -83,19 +81,13 @@ class PadCreationServiceTest extends TestCase {
 		$padPaths->method('normalizeCreatePath')->with('/Test')->willReturn('/Test.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->expects($this->once())
-			->method('rollbackFailedCreate')
-			->with('alice', $this->callback(
-				// Check identity, baseline and write evidence, not just the claim's type.
-				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/Test.pad'
-					&& $attempt->padId() === 'g.ABC$pad'
-					&& $attempt->bindingAttemptFileId() === 123
-					&& $attempt->claim()?->uid === 'alice'
-					&& $attempt->claim()->fileId === 123
-					&& $attempt->claim()->expectedBefore() === ''
-					&& $attempt->claim()->writtenHash !== null
-			));
+		$expectedRemoval = [$this->callback(
+			// Check identity, baseline and write evidence, not just the claim's type.
+			static fn (CreatedFileClaim $claim): bool => $claim->uid === 'alice'
+				&& $claim->fileId === 123
+				&& $claim->expectedBefore() === ''
+				&& $claim->writtenHash !== null
+		), ['file' => '/Test.pad']];
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -108,15 +100,19 @@ class PadCreationServiceTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new BindingException('Duplicate binding.'));
+		// The binding write began, so the row is asked about, and goes with the pad.
+		$bindingService->method('isBoundTo')->with(123, 'g.ABC$pad')->willReturn(true);
+		$bindingService->expects($this->once())->method('deleteActiveBinding')->with(123, 'g.ABC$pad')->willReturn(true);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABC');
 
 		$this->expectException(BindingException::class);
 
-		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, $bindingService, $etherpadClient, $bootstrap)
+		$this->buildService($padFileService, $padPaths, $fileCreator, null, $expectedRemoval, $bindingService, $etherpadClient, $bootstrap)
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 	}
 
-	/** The file id reaches the rollback only once the binding write begins. */
-	public function testCreateThatFailsBeforeTheBindingWriteReportsNoAttempt(): void {
+	/** Failing before its row, the pad goes unasked; one Etherpad keeps is named with its file. */
+	public function testABlankCreatesPadThatFailsBeforeItsRowGoesWithoutAskingTheBindingTable(): void {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(123);
 
@@ -125,31 +121,32 @@ class PadCreationServiceTest extends TestCase {
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
 
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->expects($this->once())
-			->method('rollbackFailedCreate')
-			->with('alice', $this->callback(
-				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/Test.pad'
-					&& $attempt->padId() === 'g.ABC$pad'
-					&& $attempt->bindingAttemptFileId() === null
-			));
+		$expectedRemoval = [$this->callback(static fn (CreatedFileClaim $claim): bool => $claim->fileId === 123), ['file' => '/Test.pad']];
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/g.ABC$pad');
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABC')->willThrowException(new \RuntimeException('etherpad down'));
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('createBinding');
+		$bindingService->expects($this->never())->method('isBoundTo');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')
 			->willThrowException(new \RuntimeException('cannot build the document'));
 
-		$this->expectException(\RuntimeException::class);
+		$rollbackLogger = $this->createMock(LoggerInterface::class);
+		$rollbackLogger->expects($this->once())->method('warning')->with(
+			'Could not remove a new Etherpad pad; it is left over.',
+			$this->callback(static fn (array $context): bool => $context['fileId'] === 123 && $context['padId'] === 'g.ABC$pad' && $context['operation'] === 'create'),
+		);
 
-		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, $bindingService, $etherpadClient, $bootstrap)
+		$this->expectExceptionMessage('cannot build the document');
+
+		$this->buildService($padFileService, $padPaths, $fileCreator, null, $expectedRemoval, $bindingService, $etherpadClient, $bootstrap, rollbackLogger: $rollbackLogger)
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 	}
 
@@ -173,11 +170,9 @@ class PadCreationServiceTest extends TestCase {
 			$bootstrap->method('provisionPadId')->willThrowException($failure);
 			$logger = $this->createMock(LoggerInterface::class);
 			$logger->expects($this->never())->method($this->anything());
-			$rollback = $this->createMock(PadCreateRollbackService::class);
-			$rollback->expects($this->once())->method('rollbackFailedCreate');
 
 			try {
-				$this->buildService(padPaths: $padPaths, fileCreator: $fileCreator, rollbackService: $rollback, bootstrap: $bootstrap, logger: $logger)
+				$this->buildService(padPaths: $padPaths, fileCreator: $fileCreator, expectedRemoval: [$this->isInstanceOf(CreatedFileClaim::class), ['file' => '/Test.pad']], bootstrap: $bootstrap, logger: $logger)
 					->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 				$this->fail($case . ': the create went through.');
 			} catch (\Throwable $e) {
@@ -266,20 +261,13 @@ class PadCreationServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')
 			->willThrowException(new \OCP\Files\NotFoundException('outside the user tree'));
 
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->expects($this->once())
-			->method('rollbackFailedCreate')
-			->with('alice', $this->callback(
-				static fn (PadCreateAttempt $attempt): bool => $attempt->padId() === '' && $attempt->claim()?->fileId === 4242
-			));
-
 		$this->expectException(\OCP\Files\NotFoundException::class);
 
 		$this->buildService(
 			padPaths: $padPaths,
 			fileCreator: $fileCreator,
 			userNodeResolver: $userNodeResolver,
-			rollbackService: $rollbackService,
+			expectedRemoval: [$this->callback(static fn (CreatedFileClaim $claim): bool => $claim->fileId === 4242), ['file' => '']],
 		)->createInParent('alice', 99, 'Test', BindingService::ACCESS_PUBLIC);
 	}
 
@@ -486,7 +474,7 @@ class PadCreationServiceTest extends TestCase {
 		$padLifecycleLogger = $this->createMock(LoggerInterface::class);
 		$padLifecycleLogger->expects($this->once())
 			->method('warning')
-			->with('Could not remove a new Etherpad pad after seeding it failed.', $this->callback(
+			->with('Could not remove a new Etherpad pad; it is left over.', $this->callback(
 				static fn (array $context): bool => ($context['fileId'] ?? null) === 4321
 					&& ($context['padId'] ?? null) === 'nc-new'
 					&& ($context['operation'] ?? null) === 'template materialization'
@@ -561,8 +549,6 @@ class PadCreationServiceTest extends TestCase {
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
 			->with('https://pad.remote.test/p/RemotePad')
@@ -594,7 +580,7 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$result = $this->buildService(
-			$padFileService, $padPaths, $fileCreator, $this->resolverFor($fileNode), $rollbackService, $bindingService, externalPadExportFetcher: $fetcher)
+			$padFileService, $padPaths, $fileCreator, $this->resolverFor($fileNode), null, $bindingService, externalPadExportFetcher: $fetcher)
 			->createFromUrl('alice', '/External', 'https://pad.remote.test/p/RemotePad');
 
 		$this->assertSame([
@@ -616,8 +602,6 @@ class PadCreationServiceTest extends TestCase {
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
 			->with('https://pad.remote.test/p/RemotePad')
@@ -648,7 +632,7 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$result = $this->buildService(
-			$padFileService, $padPaths, $fileCreator, $this->resolverFor($fileNode), $rollbackService, $bindingService, externalPadExportFetcher: $fetcher)
+			$padFileService, $padPaths, $fileCreator, $this->resolverFor($fileNode), null, $bindingService, externalPadExportFetcher: $fetcher)
 			->createFromUrl('alice', '/External', 'https://pad.remote.test/p/RemotePad');
 
 		$this->assertSame([
@@ -693,7 +677,7 @@ class PadCreationServiceTest extends TestCase {
 			$padPaths,
 			$fileCreator,
 			null,
-			$this->createMock(PadCreateRollbackService::class),
+			null,
 			$this->createMock(BindingService::class),
 			externalPadExportFetcher: $fetcher,
 		)->createFromUrl('alice', '/External', 'https://pad.remote.test/p/RemotePad');
@@ -710,12 +694,6 @@ class PadCreationServiceTest extends TestCase {
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->expects($this->once())->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->expects($this->once())
-			->method('rollbackCreatedFileOnly')
-			->with('alice', $this->callback(
-				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/External.pad' && $attempt->claim() !== null
-			));
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
@@ -727,7 +705,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(EtherpadClientException::class);
 
-		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, externalPadExportFetcher: $fetcher)
+		$this->buildService($padFileService, $padPaths, $fileCreator, null, [$this->isInstanceOf(CreatedFileClaim::class), ['file' => '/External.pad']], externalPadExportFetcher: $fetcher)
 			->createFromUrl('alice', '/External', 'https://pad.remote.test/p/RemotePad');
 	}
 
@@ -831,20 +809,13 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willThrowException(new \RuntimeException('template unreadable'));
 
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->expects($this->once())
-			->method('rollbackCreatedFileOnly')
-			->with('alice', $this->callback(
-				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/FromTpl.pad' && $attempt->claim()?->fileId === 4242
-			));
-
 		$this->expectException(\RuntimeException::class);
 
 		$this->buildService(
 			padPaths: $padPaths,
 			fileCreator: $fileCreator,
 			padFileService: $padFileService,
-			rollbackService: $rollbackService,
+			expectedRemoval: [$this->callback(static fn (CreatedFileClaim $claim): bool => $claim->fileId === 4242), ['file' => '/FromTpl.pad']],
 			userNodeResolver: $userNodeResolver,
 		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
 	}
@@ -895,14 +866,6 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('deletePad')->with('nc-fresh');
 
-		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->expects($this->once())
-			->method('rollbackCreatedFileOnly')
-			->with('alice', $this->callback(
-				static fn (PadCreateAttempt $attempt): bool => $attempt->path() === '/FromTpl.pad' && $attempt->claim()?->writtenHash !== null
-			));
-		$rollbackService->expects($this->never())->method('rollbackFailedCreate');
-
 		$this->expectException(\RuntimeException::class);
 
 		$this->buildService(
@@ -913,7 +876,7 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
-			rollbackService: $rollbackService,
+			expectedRemoval: [$this->callback(static fn (CreatedFileClaim $claim): bool => $claim->writtenHash !== null), ['file' => '/FromTpl.pad']],
 		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
 	}
 
@@ -954,11 +917,6 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
-			rollbackService: new PadCreateRollbackService(
-				$this->createMock(UserNodeResolver::class),
-				$this->createMock(\Psr\Log\LoggerInterface::class),
-			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
@@ -1046,7 +1004,7 @@ class PadCreationServiceTest extends TestCase {
 		$resolver->method('resolveUserFileNodeById')->willReturn($changed);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
-			'Could not cleanup failed Etherpad create',
+			'Could not remove a new Etherpad pad; it is left over.',
 			$this->callback(static fn (array $context): bool => $context['fileId'] === 4321 && $context['operation'] === 'template materialization'),
 		);
 
@@ -1157,11 +1115,6 @@ class PadCreationServiceTest extends TestCase {
 			padPaths: $padPaths,
 			fileCreator: $fileCreator,
 			bootstrap: $bootstrap,
-			rollbackService: new PadCreateRollbackService(
-				$this->createMock(UserNodeResolver::class),
-				$this->createMock(\Psr\Log\LoggerInterface::class),
-			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		),
 		);
 	}
 
@@ -1253,19 +1206,12 @@ class PadCreationServiceTest extends TestCase {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->never())->method('resolveUserFileNodeById');
 
-		$rollbackService = new PadCreateRollbackService(
-			$resolver,
-			$this->createMock(\Psr\Log\LoggerInterface::class),
-			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
-
 		$this->expectException(\RuntimeException::class);
 
 		$this->buildService(
 			padPaths: $padPaths,
 			fileCreator: $fileCreator,
 			userNodeResolver: $resolver,
-			rollbackService: $rollbackService,
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
@@ -1286,7 +1232,7 @@ class PadCreationServiceTest extends TestCase {
 		?PathNormalizer $padPaths = null,
 		?PadFileCreator $fileCreator = null,
 		?UserNodeResolver $userNodeResolver = null,
-		?PadCreateRollbackService $rollbackService = null,
+		?array $expectedRemoval = null,
 		?BindingService $bindingService = null,
 		?EtherpadClient $etherpadClient = null,
 		?PadBootstrapService $bootstrap = null,
@@ -1303,6 +1249,7 @@ class PadCreationServiceTest extends TestCase {
 		}
 		$padFileService = $padFileService ?? $this->createMock(PadFileService::class);
 		$etherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);
+		$rollbackLogger = $rollbackLogger ?? $this->createMock(LoggerInterface::class);
 		$externalPadExportFetcher = $externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class);
 		// Build a real seeder from the test's mocked deps by default so the
 		// createFromUrl tests can keep stubbing
@@ -1317,21 +1264,29 @@ class PadCreationServiceTest extends TestCase {
 			$userNodeResolver = $this->createMock(UserNodeResolver::class);
 			$userNodeResolver->method('resolveUserFileNodeById')->willReturn($empty);
 		}
+		$claimedFileWriter = new ClaimedFileWriter($userNodeResolver, $padFileService, $etherpadClient, $this->createMock(LoggerInterface::class));
+		if ($expectedRemoval !== null) {
+			// The real writer but for the removal: what a failed create hands it is the point.
+			$claimedFileWriter = $this->getMockBuilder(ClaimedFileWriter::class)
+				->setConstructorArgs([$userNodeResolver, $padFileService, $etherpadClient, $this->createMock(LoggerInterface::class)])
+				->onlyMethods(['deleteIfUnchanged'])
+				->getMock();
+			$claimedFileWriter->expects($this->once())->method('deleteIfUnchanged')->with(...$expectedRemoval);
+		}
 		return new PadCreationService(
 			$padFileService,
 			$padPaths ?? $this->createMock(PathNormalizer::class),
 			$fileCreator ?? $this->createMock(PadFileCreator::class),
 			$userNodeResolver,
-			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),
 			$bindingService ?? $this->createMock(BindingService::class),
-			new ClaimedFileWriter($userNodeResolver, $padFileService, $etherpadClient),
+			$claimedFileWriter,
 			new ManagedPadLifecycle($etherpadClient, $padLifecycleLogger ?? $this->createMock(LoggerInterface::class)),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,
 			$externalPadSeeder,
 			$padTypePolicy ?? $this->buildPadTypePolicy(true, true),
 			$logger ?? $this->createMock(LoggerInterface::class),
-			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $rollbackLogger ?? $this->createMock(LoggerInterface::class)),
+			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $rollbackLogger), $rollbackLogger),
 		);
 	}
 

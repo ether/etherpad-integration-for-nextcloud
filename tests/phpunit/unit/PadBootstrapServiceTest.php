@@ -702,7 +702,7 @@ class PadBootstrapServiceTest extends TestCase {
 		return new PadBootstrapService(
 			$bindingService,
 			$padFileService,
-			new ClaimedFileWriter($userNodeResolver, $padFileService, $etherpadClient),
+			new ClaimedFileWriter($userNodeResolver, $padFileService, $etherpadClient, $this->createMock(LoggerInterface::class)),
 			$padLifecycle,
 			$secureRandom,
 			$legacyMigrationService,

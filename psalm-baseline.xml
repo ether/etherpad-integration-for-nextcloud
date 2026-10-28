@@ -262,11 +262,6 @@
       <code><![CDATA[(int)$node->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PadCreateRollbackService.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$node->getContent()]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/PadCreationService.php">
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$fileNode->getId()]]></code>

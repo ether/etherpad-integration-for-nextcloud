@@ -12,7 +12,6 @@ class PadCreateAttemptTest extends TestCase {
 		$attempt = new PadCreateAttempt();
 
 		$this->assertNull($attempt->claim(), 'nothing created, nothing to roll back');
-		$this->assertSame('', $attempt->padId());
 		$this->assertSame('', $attempt->path());
 	}
 
@@ -41,13 +40,11 @@ class PadCreateAttemptTest extends TestCase {
 		$attempt = new PadCreateAttempt();
 
 		$attempt->claimFile('alice', 4242);
-		$attempt->recordPad('g.ABC$pad');
 		$attempt->recordPath('/Notes/Meeting.pad');
 
 		$this->assertSame('alice', $attempt->claim()?->uid);
 		$this->assertSame(4242, $attempt->claim()?->fileId);
 		$this->assertSame('', $attempt->claim()?->expectedBefore());
-		$this->assertSame('g.ABC$pad', $attempt->padId());
 		$this->assertSame('/Notes/Meeting.pad', $attempt->path());
 	}
 }

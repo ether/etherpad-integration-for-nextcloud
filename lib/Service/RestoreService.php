@@ -533,16 +533,19 @@ class RestoreService {
 
 	/**
 	 * The new pad let go after a claim or a write that failed, the file
-	 * still naming the old pad: a row a replacement claimed moved back onto
-	 * it ($rowStays), an active row naming the new pad gone with it
-	 * otherwise.
+	 * still naming the old pad: the active row a replacement claimed moved
+	 * back onto it ($rowStays), then an active row still naming the new pad
+	 * gone with it - one the claim never reached is not touched.
 	 */
 	private function letGoOfNewPad(int $fileId, string $newPadId, string $oldPadId, string $flow, bool $rowStays): void {
-		if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
-			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
-		} else {
-			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
+		if ($rowStays) {
+			try {
+				$this->bindingService->rebind($fileId, $newPadId, BindingService::STATE_ACTIVE, $oldPadId, BindingService::STATE_ACTIVE);
+			} catch (\Throwable) {
+				// The rollback below asks the row again.
+			}
 		}
+		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
 	}
 
 	/**
@@ -577,19 +580,6 @@ class RestoreService {
 			return $this->padFileService->readPad($this->lockRetry->readContentWithOpenLockRetry($file))->padId === $padId;
 		} catch (\Throwable) {
 			return null;
-		}
-	}
-
-	/**
-	 * The active row a failed replacement claimed, back on the old pad.
-	 * False when it does not name the new pad - the claim never landed -
-	 * or cannot be moved.
-	 */
-	private function moveRowBack(int $fileId, string $newPadId, string $oldPadId): bool {
-		try {
-			return $this->bindingService->rebind($fileId, $newPadId, BindingService::STATE_ACTIVE, $oldPadId, BindingService::STATE_ACTIVE);
-		} catch (\Throwable) {
-			return false;
 		}
 	}
 

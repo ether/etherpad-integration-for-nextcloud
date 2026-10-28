@@ -22,8 +22,8 @@ use Psr\Log\LoggerInterface;
  * its job, which the next open completes; a restore calls it where its row
  * should not name the new pad, so a row that does keeps the pad.
  * removeMatchingBindingAndDiscard() takes the row with the pad where the
- * row is the flow's own: a restore's claim, a create's row
- * (discardCreated()).
+ * row is the flow's own: a restore's claim, a create's binding write.
+ * discardCreated() is for a create's pad before any row can name it.
  *
  * Only for a pad provisioned in the same call: `discardProvisioned` removes
  * a group outright. A flow that adopted an existing pad - the legacy Ownpad
@@ -48,33 +48,12 @@ class ProvisionedPadRollback {
 	}
 
 	/**
-	 * The pad of a failed create - empty or from a template. Before its
-	 * binding write began, no row can name the pad, so it goes without a
-	 * lookup. Once the write began, createBinding may have committed and
-	 * still thrown: a row naming the pad goes with it, and a binding table
-	 * that does not answer keeps it. $fileId names the file in the line of
-	 * a pad left over before the binding write.
+	 * The pad of a create that failed before its binding write began -
+	 * empty or from a template. No row can name the pad yet, so it goes
+	 * without a lookup, also where the binding table does not answer.
 	 */
-	public function discardCreated(PadCreateAttempt $attempt, ?int $fileId, string $operation): void {
-		$padId = $attempt->padId();
-		$bindingAttemptFileId = $attempt->bindingAttemptFileId();
-		if ($bindingAttemptFileId !== null) {
-			$this->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, $operation);
-			return;
-		}
-		try {
-			$this->padLifecycle->discardProvisioned($padId);
-		} catch (\Throwable $cleanupError) {
-			// The pad id too, against the rule everywhere else: no row links
-			// the file to this pad, so the line is the only way to it.
-			$this->logger->warning('Could not cleanup failed Etherpad create', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $padId,
-				'operation' => $operation,
-				...SafeError::context($cleanupError),
-			]);
-		}
+	public function discardCreated(int $fileId, string $padId, string $operation): void {
+		$this->padLifecycle->discardProvisioned($padId, ['fileId' => $fileId, 'operation' => $operation]);
 	}
 
 	private function rollback(int $fileId, string $padId, string $operation, bool $keepBinding): void {
@@ -106,13 +85,6 @@ class ProvisionedPadRollback {
 			return;
 		}
 
-		try {
-			$this->padLifecycle->discardProvisioned($padId);
-		} catch (\Throwable $cleanupError) {
-			// The active row is gone by here, so nothing maps the file id
-			// back to this pad any more: the orphan is only findable by name.
-			$this->logger->warning('Could not remove the Etherpad pad while rolling back.',
-				array_merge($context, ['padId' => $padId], SafeError::context($cleanupError)));
-		}
+		$this->padLifecycle->discardProvisioned($padId, $context);
 	}
 }

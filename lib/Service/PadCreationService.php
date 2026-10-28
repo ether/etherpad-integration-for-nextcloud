@@ -24,7 +24,6 @@ class PadCreationService {
 		private PathNormalizer $padPaths,
 		private PadFileCreator $padFileCreator,
 		private UserNodeResolver $userNodeResolver,
-		private PadCreateRollbackService $rollbackService,
 		private BindingService $bindingService,
 		private ClaimedFileWriter $claimedFileWriter,
 		private ManagedPadLifecycle $padLifecycle,
@@ -50,7 +49,6 @@ class PadCreationService {
 
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
-			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
 	}
 
@@ -72,7 +70,6 @@ class PadCreationService {
 				// order is part of what callers compare against.
 				return ['file' => $created['file'], 'file_id' => $created['file_id'], 'parent_folder_id' => $parentFolderId] + $created;
 			},
-			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
 	}
 
@@ -91,7 +88,6 @@ class PadCreationService {
 
 				return ['file' => $path] + $prepared['result'];
 			},
-			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
 	}
 
@@ -115,7 +111,6 @@ class PadCreationService {
 
 				return ['file' => $path] + $this->materializeTemplateInto($templateNode, $user, $claim);
 			},
-			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
 	}
 
@@ -169,22 +164,15 @@ class PadCreationService {
 			$resolvedHtml,
 			['fileId' => $claim->fileId, 'operation' => 'template materialization'],
 		);
-		$attempt = new PadCreateAttempt();
-		$attempt->recordPad($padId);
-		try {
-			return $this->writeAndBind(
-				$attempt,
-				$claim,
-				$padId,
-				$accessMode,
-				// Without an answer from Etherpad the file starts at 0: a
-				// snapshot's revision is never negative.
-				new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
-			);
-		} catch (\Throwable $e) {
-			$this->provisionedPadRollback->discardCreated($attempt, $claim->fileId, 'template materialization');
-			throw $e;
-		}
+		return $this->writeAndBind(
+			$claim,
+			$padId,
+			$accessMode,
+			'template materialization',
+			// Without an answer from Etherpad the file starts at 0: a
+			// snapshot's revision is never negative.
+			new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
+		);
 	}
 
 	/**
@@ -220,25 +208,38 @@ class PadCreationService {
 		$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
-		$attempt->recordPad($padId);
 
-		return ['file' => $attempt->path()] + $this->writeAndBind($attempt, $claim, $padId, $accessMode);
+		return ['file' => $attempt->path()] + $this->writeAndBind($claim, $padId, $accessMode, 'create');
 	}
 
 	/**
 	 * The step the blank create and a template take once they have a pad.
 	 * The document is written before the row, so a failed write leaves no
-	 * row to take back.
+	 * row to take back. A failure takes the pad down here, and once the
+	 * binding write began a row naming it, as createBinding can commit and
+	 * still throw. The create's rollback takes only the file, so a step
+	 * that can fail, added after this one, would have to take the pad down
+	 * itself.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	private function writeAndBind(PadCreateAttempt $attempt, CreatedFileClaim $claim, string $padId, string $accessMode, ?PadSnapshot $snapshot = null): array {
-		$padUrl = $this->claimedFileWriter->writePadDocument($claim, $padId, $accessMode, $snapshot);
-		$attempt->recordBindingAttempt($claim->fileId);
-		$this->bindingService->createBinding($claim->fileId, $padId, $accessMode);
+	private function writeAndBind(CreatedFileClaim $claim, string $padId, string $accessMode, string $operation, ?PadSnapshot $snapshot = null): array {
+		$fileId = $claim->fileId;
+		try {
+			$padUrl = $this->claimedFileWriter->writePadDocument($claim, $padId, $accessMode, $snapshot);
+		} catch (\Throwable $e) {
+			$this->provisionedPadRollback->discardCreated($fileId, $padId, $operation);
+			throw $e;
+		}
+		try {
+			$this->bindingService->createBinding($fileId, $padId, $accessMode);
+		} catch (\Throwable $e) {
+			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $padId, $operation);
+			throw $e;
+		}
 
 		return [
-			'file_id' => $claim->fileId,
+			'file_id' => $fileId,
 			'pad_id' => $padId,
 			'access_mode' => $accessMode,
 			'pad_url' => $padUrl,
@@ -343,24 +344,26 @@ class PadCreationService {
 	}
 
 	/**
-	 * Runs one create attempt, owning the state the rollback needs.
-	 *
-	 * The attempt is made here and handed to both closures, so nothing has
-	 * to be threaded through by reference and the two cannot disagree about
-	 * what was created. What went wrong is not logged here: it reaches the
+	 * Runs one create attempt, owning the state its rollback needs: the
+	 * file it claimed, which goes when the create fails, while it is as the
+	 * claim left it (ClaimedFileWriter::deleteIfUnchanged()). Without a
+	 * claim the file stays. A create's pad goes where it was made
+	 * (writeAndBind()). What went wrong is not logged here: it reaches the
 	 * error mapper, which reports it once (ApiErrorLog).
 	 *
 	 * @template T
 	 * @param callable(PadCreateAttempt):T $action
-	 * @param callable(PadCreateAttempt):void $rollback
 	 * @return T
 	 */
-	private function withCreateRollback(callable $action, callable $rollback): mixed {
+	private function withCreateRollback(callable $action): mixed {
 		$attempt = new PadCreateAttempt();
 		try {
 			return $action($attempt);
 		} catch (\Throwable $e) {
-			$rollback($attempt);
+			$claim = $attempt->claim();
+			if ($claim !== null) {
+				$this->claimedFileWriter->deleteIfUnchanged($claim, ['file' => $attempt->path()]);
+			}
 			throw $e;
 		}
 	}

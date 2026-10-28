@@ -12,7 +12,6 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
-use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -121,30 +120,29 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// reason and leave an empty .pad nobody can open.
 			$this->logger->warning('Pad template create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
-				'targetFileId' => $claim->fileId,
+				'fileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
-			$this->deleteIfUnchanged($claim);
+			$this->claimedFileWriter->deleteIfUnchanged($claim);
 			throw $e;
 		} catch (PadFileChangedException $e) {
 			// Do not blank content that the guarded write refused to overwrite.
 			$this->logger->warning('Pad template create stopped: the target file changed while the pad was provisioned.', [
 				'app' => 'etherpad_nextcloud',
-				'targetFileId' => $claim->fileId,
+				'fileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
 			return;
 		} catch (\Throwable $e) {
 			$this->logger->error('Pad template materialization failed — falling back to blank-pad init.', [
 				'app' => 'etherpad_nextcloud',
-				'targetFileId' => $claim->fileId,
+				'fileId' => $claim->fileId,
 				'templateFileId' => $templateFileId,
 				...SafeError::context($e),
 			]);
 			// Other failures do not imply unchanged content: check before resetting.
 			$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
 			if ($unchanged === null) {
-				$this->leftAlone($claim);
 				return;
 			}
 			$this->resetTargetToEmpty($unchanged, $claim->fileId);
@@ -219,26 +217,9 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'fileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
-			$this->deleteIfUnchanged($claim);
+			$this->claimedFileWriter->deleteIfUnchanged($claim);
 			throw $e;
 		}
-	}
-
-	/** The claimed file removed while it is as the claim left it; left, and said so, otherwise. */
-	private function deleteIfUnchanged(CreatedFileClaim $claim): void {
-		$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
-		if ($unchanged === null) {
-			$this->leftAlone($claim);
-			return;
-		}
-		$this->deleteTarget($unchanged, $claim->fileId);
-	}
-
-	private function leftAlone(CreatedFileClaim $claim): void {
-		$this->logger->warning('Left the template target alone: it changed since this create was given it, or could not be found or read.', [
-			'app' => 'etherpad_nextcloud',
-			'targetFileId' => $claim->fileId,
-		]);
 	}
 
 	/**
@@ -255,19 +236,13 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		return is_string($field) ? trim($field) : '';
 	}
 
-	/**
-	 * `$fileId` is passed in rather than read here: this runs while an error
-	 * is already being handled, and `Node::getId()` re-reads through the
-	 * node's path — it can throw, and on a replaced path it answers for the
-	 * wrong file.
-	 */
-	private function deleteTarget(File $target, ?int $fileId = null): void {
+	private function deleteTarget(File $target): void {
 		try {
 			$target->delete();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not remove the .pad file of a failed template create.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId ?? $this->idOrNull($target),
+				'fileId' => $this->idOrNull($target),
 				...SafeError::context($e),
 			]);
 		}
@@ -281,7 +256,12 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		}
 	}
 
-	/** See deleteTarget() for why the id is a parameter. */
+	/**
+	 * `$fileId` is passed in rather than read here: this runs while an error
+	 * is already being handled, and `Node::getId()` re-reads through the
+	 * node's path — it can throw, and on a replaced path it answers for the
+	 * wrong file.
+	 */
 	private function resetTargetToEmpty(File $target, ?int $fileId = null): void {
 		try {
 			$target->putContent('');

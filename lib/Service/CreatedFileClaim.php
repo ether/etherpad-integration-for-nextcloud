@@ -10,7 +10,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * Identity, expected content and write evidence for one create or first init.
+ * Identity, expected content and write evidence of a claim on one `.pad`
+ * file.
  *
  * Pass the same instance through writing and recovery so a later failure
  * retains the write evidence. A claim does not lock the file.
@@ -22,9 +23,10 @@ class CreatedFileClaim {
 		public readonly string $uid,
 		public readonly int $fileId,
 		/**
-		 * Empty for an API create; what Nextcloud copied in for a template
-		 * or the external tile; what a first init read. Private behind its
-		 * method, for the reason given at ParsedPadFile: it is a document.
+		 * What the file held when it was claimed: nothing for an API
+		 * create's new file, what Nextcloud copied in for a template or the
+		 * external tile, what a first init read. Private behind its method,
+		 * for the reason given at ParsedPadFile: it is a document.
 		 */
 		private readonly string $expectedBefore = '',
 	) {
@@ -32,5 +34,22 @@ class CreatedFileClaim {
 
 	public function expectedBefore(): string {
 		return $this->expectedBefore;
+	}
+
+	/**
+	 * Whether a file holding $content is still as this claim left it: what
+	 * the claim expected while it has written nothing, what it wrote once
+	 * it has. Only the hash of its write proves a document its own -
+	 * another create's may name the same file id - so a written file that
+	 * is emptied, or holds what was expected again, has been changed. A
+	 * competing create's empty file is indistinguishable from this one's.
+	 *
+	 * Callers pass the read uncast: a read that gives no string then fails
+	 * here, as a read that failed, instead of passing for an empty file.
+	 */
+	public function holds(string $content): bool {
+		return $this->writtenHash === null
+			? $content === $this->expectedBefore
+			: hash_equals($this->writtenHash, hash('sha256', $content));
 	}
 }
