@@ -114,7 +114,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$byId->expects($this->once())->method('putContent')->with('');
 
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $byId);
+		$this->expectClaimFor($creation, $target, $byId);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('boom'));
 
@@ -189,7 +189,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			]]);
 
 		$creation = $this->createMock(PadCreationService::class);
-		$claim = $this->expectClaimFor($creation, $this->file('Team pad.pad'));
+		$claim = $this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
 		$this->writer->expects($this->once())->method('write')->with($claim, 'the document');
 		$creation->expects($this->never())->method('materializeTemplateInto');
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -224,7 +224,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			'snapshot_warning_code' => 'remote_export_unavailable',
 		]]);
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $this->file('Team pad.pad'));
+		$this->expectClaimFor($creation, $target, $this->file('Team pad.pad'));
 
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
@@ -275,7 +275,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$seeder = $this->createMock(ExternalPadSeeder::class);
 		$seeder->expects($this->never())->method('prepare');
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $byId);
+		$this->expectClaimFor($creation, $target, $byId);
 
 		$this->expectException(\RuntimeException::class);
 		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
@@ -295,7 +295,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$seeder = $this->createMock(ExternalPadSeeder::class);
 		$seeder->method('prepare')->willThrowException(new \RuntimeException('pad not reachable'));
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $byId);
+		$this->expectClaimFor($creation, $target, $byId);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
 			'Could not link a new .pad file to an external pad.',
@@ -318,7 +318,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$seeder = $this->createMock(ExternalPadSeeder::class);
 		$seeder->method('prepare')->willReturn(['content' => 'the document', 'result' => ['file_id' => 42, 'pad_id' => 'ext.x', 'access_mode' => 'public', 'pad_url' => 'https://pad.remote.test/p/x']]);
 		$creation = $this->createMock(PadCreationService::class);
-		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
+		$creation->method('claimTemplateTarget')->with($this->identicalTo($target), 'alice')->willReturn(new CreatedFileClaim('alice', 42));
 		$this->writer->method('write')->willThrowException(new PadFileChangedException('The .pad file changed before its document was written.'));
 		$this->writer->method('resolveUnchanged')->willReturn(null);
 		$logged = [];
@@ -356,7 +356,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$failure = new \RuntimeException('pad not reachable');
 		$seeder->method('prepare')->willThrowException($failure);
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $byId);
+		$this->expectClaimFor($creation, $target, $byId);
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$logged): void {
@@ -516,7 +516,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$byId->expects($this->once())->method('delete');
 
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $byId);
+		$this->expectClaimFor($creation, $target, $byId);
 		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -572,13 +572,13 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * A claimed target that remains eligible for recovery: file 4242, whose
-	 * id finds $byId - another node than the event's, as the file found by
-	 * its id need not be the one the event remembers by path.
+	 * The event's $target claimed as file 4242 and still as the claim left
+	 * it: its id finds $byId - another node, as the file found by its id
+	 * need not be the one the event remembers by path.
 	 */
-	private function expectClaimFor(PadCreationService $creation, File $byId): CreatedFileClaim {
+	private function expectClaimFor(PadCreationService $creation, File $target, File $byId): CreatedFileClaim {
 		$claim = new CreatedFileClaim('alice', 4242);
-		$creation->method('claimTemplateTarget')->with($this->anything(), 'alice')->willReturn($claim);
+		$creation->method('claimTemplateTarget')->with($this->identicalTo($target), 'alice')->willReturn($claim);
 		$this->writer->method('resolveUnchanged')->with($claim)->willReturn($byId);
 
 		return $claim;
@@ -646,7 +646,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target->expects($this->never())->method('getId');
 
 		$creation = $this->createMock(PadCreationService::class);
-		$this->expectClaimFor($creation, $this->file('Notes.pad'));
+		$this->expectClaimFor($creation, $target, $this->file('Notes.pad'));
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new PadFileChangedException('changed'));
 

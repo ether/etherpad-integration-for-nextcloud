@@ -56,7 +56,6 @@ class ClaimedFileWriter {
 			throw new PadFileChangedException('The .pad file changed before its document was written.');
 		}
 		$node->putContent($content);
-		// Record on the shared claim so recovery retains proof if binding fails next.
 		$claim->writtenHash = hash('sha256', $content);
 	}
 

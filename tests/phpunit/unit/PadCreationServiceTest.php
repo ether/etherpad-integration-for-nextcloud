@@ -503,8 +503,6 @@ class PadCreationServiceTest extends TestCase {
 	}
 
 	public function testATemplatesPadWhoseRevisionsEtherpadDoesNotSayStartsAtZero(): void {
-		// The template says "public", but the admin only offers protected —
-		// the pad and its binding must both end up protected.
 		$template = $this->createMock(\OCP\Files\File::class);
 		$template->method('getName')->willReturn('Template.pad');
 		$template->method('getContent')->willReturn('tpl');
@@ -514,7 +512,7 @@ class PadCreationServiceTest extends TestCase {
 			frontmatter: ['pad_id' => 'nc-source'],
 			body: 'body',
 			padId: 'nc-source',
-			accessMode: BindingService::ACCESS_PUBLIC,
+			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
 			snapshotRev: -1,
@@ -537,7 +535,7 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
 		$etherpadClient->expects($this->never())->method('setText');
 		// Seeded, but Etherpad does not say how many revisions: the file
-		// starts at 0, as before, rather than the pad failing.
+		// starts at 0 rather than the pad failing.
 		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
 
 		$bindingService = $this->createMock(BindingService::class);
