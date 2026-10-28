@@ -300,11 +300,6 @@
       <code><![CDATA[(string)$file->getContent()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PadLegacyMigrationService.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$file->getId()]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/PadMetadataService.php">
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$node->getId()]]></code>

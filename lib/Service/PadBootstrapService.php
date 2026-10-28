@@ -53,8 +53,8 @@ class PadBootstrapService {
 	 * write would fail after them, and leave them to the owner's next open.
 	 * Asked of the node the write goes through: the file by id, a writable
 	 * path to it first, as a reader by one path may be a writer by another.
-	 * The legacy migration is handed that node; ClaimedFileWriter asks for
-	 * it again.
+	 * The init and the legacy migration both write through ClaimedFileWriter,
+	 * which finds the file by its id again and holds it to what was read.
 	 *
 	 * @throws PadFileNotWritableException
 	 */
@@ -71,7 +71,7 @@ class PadBootstrapService {
 		$writable = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		PadFileNotWritableException::unlessUpdateable($writable);
 		if ($legacyShortcut !== null) {
-			$this->legacyMigrationService->migrate($uid, $writable, $legacyShortcut);
+			$this->legacyMigrationService->migrate(new CreatedFileClaim($uid, $fileId, $existingContent), $legacyShortcut);
 			return true;
 		}
 

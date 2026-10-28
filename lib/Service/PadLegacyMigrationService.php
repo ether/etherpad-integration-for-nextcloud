@@ -17,7 +17,6 @@ use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
-use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
 
@@ -26,6 +25,11 @@ use Psr\Log\LoggerInterface;
  * `[InternetShortcut]` block instead of YAML frontmatter) into the current
  * binding-and-`.pad` model, called from `PadBootstrapService`. The branches
  * and what each leaves behind are in docs/legacy-ownpad-migration.md.
+ *
+ * The document goes in through the claim on the shortcut as it was read
+ * (ClaimedFileWriter): the row lookups, a group's listing and a remote
+ * export all come before the write, and a file written meanwhile is not
+ * written over.
  */
 class PadLegacyMigrationService {
 	public function __construct(
@@ -36,6 +40,7 @@ class PadLegacyMigrationService {
 		private ExternalPadSeeder $externalPadSeeder,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
+		private ClaimedFileWriter $claimedFileWriter,
 	) {
 	}
 
@@ -132,6 +137,7 @@ class PadLegacyMigrationService {
 	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
+	 * @param CreatedFileClaim $claim the file, and the shortcut as it was read
 	 * @param array{url:string,pad_id:string} $legacyShortcut output of
 	 *   `PadFileService::parseLegacyOwnpadShortcut`
 	 *
@@ -141,9 +147,12 @@ class PadLegacyMigrationService {
 	 *   group pad and this instance does not import those.
 	 * @throws LegacyPadNotFoundException when the file names a pad it cannot
 	 *   be linked to.
+	 * @throws \OCA\EtherpadNextcloud\Exception\PadFileChangedException
+	 *   when the file no longer holds the shortcut as it was read.
 	 */
-	public function migrate(string $uid, File $file, array $legacyShortcut): void {
-		$fileId = (int)$file->getId();
+	public function migrate(CreatedFileClaim $claim, array $legacyShortcut): void {
+		$uid = $claim->uid;
+		$fileId = $claim->fileId;
 		$sourceUrl = $legacyShortcut['url'];
 		$sourcePadId = $legacyShortcut['pad_id'];
 
@@ -152,7 +161,7 @@ class PadLegacyMigrationService {
 		$isSameOrigin = $configuredOrigin !== '' && $configuredOrigin === $sourceOrigin;
 
 		if (!$isSameOrigin) {
-			$this->externalPadSeeder->seed($file, $fileId, $sourceUrl);
+			$this->claimedFileWriter->write($claim, $this->externalPadSeeder->prepare($fileId, $sourceUrl)['content']);
 			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
@@ -211,7 +220,7 @@ class PadLegacyMigrationService {
 				// Fall through to the collision-with-access handling below.
 			}
 			if ($existingBinding === null) {
-				$file->putContent($document);
+				$this->claimedFileWriter->write($claim, $document);
 				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
 				return;
 			}
@@ -223,7 +232,7 @@ class PadLegacyMigrationService {
 			// succeeded in creating the binding but failed before the file
 			// write. Just finish the file-side work; the binding already
 			// covers us.
-			$file->putContent($document);
+			$this->claimedFileWriter->write($claim, $document);
 			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'self'));
 			return;
 		}
@@ -243,7 +252,7 @@ class PadLegacyMigrationService {
 		// Collision-with-access: write managed frontmatter but do NOT create
 		// a second binding row. The file becomes a "copy of a pad" in our
 		// model and the existing copy-handling flow takes over.
-		$file->putContent($document);
+		$this->claimedFileWriter->write($claim, $document);
 		$this->logger->info('Migrated legacy Ownpad .pad as copy of an already-bound pad.', [
 			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'with_access'),
 			'boundFileId' => $boundFileId,

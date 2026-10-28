@@ -178,7 +178,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener::class => ['seedExternalPad', 'padUrlField'],
 		\OCA\EtherpadNextcloud\Controller\PadCreateController::class => ['createFromUrl'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['createFromUrl'],
-		\OCA\EtherpadNextcloud\Service\ExternalPadSeeder::class => ['prepare', 'seed'],
+		\OCA\EtherpadNextcloud\Service\ExternalPadSeeder::class => ['prepare'],
 		\OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher::class => [
 			'normalizeAndFetchExternalPublicPadText', 'normalizeAndFetchExternalPublicPadTextOrEmpty',
 			'fetchExternalPublicPadHtml', 'normalizeAndValidateExternalPublicPadUrl', 'buildPublicExportUrl',

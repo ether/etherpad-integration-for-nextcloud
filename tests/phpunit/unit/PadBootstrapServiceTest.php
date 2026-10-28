@@ -343,7 +343,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$file->method('getId')->willReturn(4321);
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$migration->expects($this->once())->method('migrate')->with('alice', $file, $legacy);
+		$migration->expects($this->once())->method('migrate')->with(new \OCA\EtherpadNextcloud\Service\CreatedFileClaim('alice', 4321, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n"), $legacy);
 
 		$service = $this->bootstrap($bindingService, $padFileService, migration: $migration, policy: $this->buildPadTypePolicy(false), file: $file);
 
@@ -431,8 +431,9 @@ class PadBootstrapServiceTest extends TestCase {
 
 	/**
 	 * A reader by the path a request named may be a writer by another -
-	 * a share of the file, and the owner's own folder. The migration writes
-	 * through the node that was asked, not the one the request named.
+	 * a share of the file, and the owner's own folder. The migration is
+	 * asked once the file by its id may be written, and is handed the
+	 * claim on that file with the shortcut as it was read.
 	 */
 	public function testALegacyShortcutIsMigratedThroughTheWritableNode(): void {
 		$legacy = ['url' => 'https://pad.example.test/p/public-pad', 'pad_id' => 'public-pad'];
@@ -443,7 +444,11 @@ class PadBootstrapServiceTest extends TestCase {
 		$named->method('isUpdateable')->willReturn(false);
 		$writable = $this->writableFile();
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$migration->expects($this->once())->method('migrate')->with('bob', $this->identicalTo($writable), $legacy);
+		$migration->expects($this->once())->method('migrate')->with(
+			$this->callback(static fn (\OCA\EtherpadNextcloud\Service\CreatedFileClaim $claim): bool => $claim->uid === 'bob' && $claim->fileId === 4711
+				&& $claim->holds("[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n") && $claim->writtenHash === null),
+			$legacy,
+		);
 		$bindingService = $this->createMock(BindingService::class);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, migration: $migration, file: $writable);

@@ -12,6 +12,8 @@ use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
@@ -25,14 +27,22 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadLegacyMigrationServiceTest extends TestCase {
+	/** The shortcut as the first open read it. */
+	private const SHORTCUT = "[InternetShortcut]\nURL=https://pad.our-server.test/p/team-pad\n";
+
+	/** The file the claim names, as the writer finds it by its id. */
+	private ?File $claimedFile = null;
+
 	public function testCrossOriginShortcutRoutesThroughExternalSeed(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(101);
+		$file->expects($this->once())->method('putContent')->with('external-frontmatter');
 
 		$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
 		$externalPadSeeder->expects($this->once())
-			->method('seed')
-			->with($file, 101, 'https://legacy.example.test/p/team-meeting');
+			->method('prepare')
+			->with(101, 'https://legacy.example.test/p/team-meeting')
+			->willReturn(['content' => 'external-frontmatter', 'result' => []]);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
@@ -48,7 +58,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			etherpadClient: $etherpadClient,
 			externalPadSeeder: $externalPadSeeder,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://legacy.example.test/p/team-meeting',
 			'pad_id' => 'team-meeting',
 		]);
@@ -87,7 +97,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/team-pad',
 			'pad_id' => 'team-pad',
 		]);
@@ -123,7 +133,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$team-meeting',
 			'pad_id' => 'g.abcdefghijklmnop$team-meeting',
 		]);
@@ -167,7 +177,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			resolver: $resolver,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
 			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
@@ -207,7 +217,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.xxxxxxxxxxxxxxxx$y',
 			'pad_id' => 'g.xxxxxxxxxxxxxxxx$y',
 		]);
@@ -266,7 +276,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			resolver: $resolver,
 			logger: $logger,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/race-pad',
 			'pad_id' => 'race-pad',
 		]);
@@ -314,7 +324,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			logger: $this->refusalLine('the pad it names cannot be linked.', 506, BindingService::ACCESS_PROTECTED, 'mallory', ['reason' => 'not_in_group']),
-		)->migrate('mallory', $file, [
+		)->migrate($this->claimOn('mallory', $file), [
 			'url' => 'https://pad.our-server.test/p/g.VICTIMGROUPID123$made-up',
 			'pad_id' => 'g.VICTIMGROUPID123$made-up',
 		]);
@@ -349,7 +359,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: new PadFileService(new FixedClock()),
 			etherpadClient: $etherpadClient,
 			logger: $this->refusalLine('the pad it names cannot be linked.', 514, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'case_variant', 'boundFileId' => 999]),
-		)->migrate('mallory', $file, [
+		)->migrate($this->claimOn('mallory', $file), [
 			'url' => 'https://pad.our-server.test/p/NC-ABC',
 			'pad_id' => 'NC-ABC',
 		]);
@@ -382,7 +392,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: new PadFileService(new FixedClock()),
 			etherpadClient: $etherpadClient,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$team-meeting',
 			'pad_id' => 'g.abcdefghijklmnop$team-meeting',
 		]);
@@ -412,7 +422,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			logger: $this->refusalLine('the pad it names cannot be linked.', 511, BindingService::ACCESS_PROTECTED, 'mallory', ['reason' => 'not_in_group']),
-		)->migrate('mallory', $file, [
+		)->migrate($this->claimOn('mallory', $file), [
 			'url' => 'https://pad.our-server.test/p/g.NOSUCHGROUP00000$notes',
 			'pad_id' => 'g.NOSUCHGROUP00000$notes',
 		]);
@@ -460,7 +470,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: new PadFileService(new FixedClock()),
 			etherpadClient: $etherpadClient,
 			logger: $this->refusalLine('the pad it names cannot be linked.', 507, $accessMode, 'mallory', ['reason' => 'invalid_id'], collision: null),
-		)->migrate('mallory', $file, [
+		)->migrate($this->claimOn('mallory', $file), [
 			'url' => 'https://pad.our-server.test/p/' . rawurlencode($padId),
 			'pad_id' => $padId,
 		]);
@@ -488,7 +498,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.short$notes',
 			'pad_id' => 'g.short$notes',
 		]);
@@ -516,10 +526,45 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: new PadFileService(new FixedClock()),
 			etherpadClient: $etherpadClient,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/a:b',
 			'pad_id' => 'a:b',
 		]);
+	}
+
+	/**
+	 * The lookups, the group's listing and a remote export all come before
+	 * the write: a file written since the open read its shortcut is not
+	 * written over, on either way - and the same-origin way keeps the row
+	 * it made, for the next open to finish.
+	 */
+	public function testDoesNotWriteOverAFileWrittenSinceItsShortcutWasRead(): void {
+		foreach (['https://legacy.example.test', 'https://pad.our-server.test'] as $origin) {
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(612);
+			$file->method('getContent')->willReturn('notes written meanwhile');
+			$file->expects($this->never())->method('putContent');
+			$this->claimedFile = $file;
+			$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
+			$externalPadSeeder->method('prepare')->willReturn(['content' => 'external-frontmatter', 'result' => []]);
+			$padFileService = $this->createMock(PadFileService::class);
+			$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+			$padFileService->method('buildInitialDocument')->willReturn('written-frontmatter');
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+			$etherpadClient->method('normalizeOrigin')->willReturn($origin);
+			$binding = $this->createMock(BindingService::class);
+			$binding->method('findByPadId')->willReturn(null);
+			$binding->expects($this->never())->method('deleteActiveBinding');
+
+			try {
+				$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient, externalPadSeeder: $externalPadSeeder)
+					->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => $origin . '/p/team-pad', 'pad_id' => 'team-pad']);
+				$this->fail('the write went through for ' . $origin);
+			} catch (\OCA\EtherpadNextcloud\Exception\PadFileChangedException) {
+				$this->addToAssertionCount(1);
+			}
+		}
 	}
 
 	/**
@@ -530,7 +575,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(510);
 		$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
-		$externalPadSeeder->expects($this->once())->method('seed')->with($file, 510, 'https://legacy.example.test/p/a:b');
+		$externalPadSeeder->expects($this->once())->method('prepare')->with(510, 'https://legacy.example.test/p/a:b')
+			->willReturn(['content' => 'external-frontmatter', 'result' => []]);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://legacy.example.test');
@@ -538,7 +584,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$this->buildService(
 			etherpadClient: $etherpadClient,
 			externalPadSeeder: $externalPadSeeder,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://legacy.example.test/p/a:b',
 			'pad_id' => 'a:b',
 		]);
@@ -571,7 +617,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 				padFileService: $padFileService,
 				etherpadClient: $etherpadClient,
 				logger: $logger,
-			)->migrate('alice', $file, [
+			)->migrate($this->claimOn('alice', $file), [
 				'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
 				'pad_id' => 'g.abcdefghijklmnop$x',
 			]);
@@ -602,7 +648,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			binding: $binding,
 			padFileService: $this->createMock(PadFileService::class),
 			etherpadClient: $etherpadClient,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
 			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
@@ -643,7 +689,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			resolver: $resolver,
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
 			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
@@ -658,6 +704,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		?LegacyImportPolicy $legacyImportPolicy = null,
 		?LoggerInterface $logger = null,
 	): PadLegacyMigrationService {
+		$byId = $this->createMock(UserNodeResolver::class);
+		$byId->method('resolveUserFileNodeById')->willReturnCallback(fn (): ?File => $this->claimedFile);
 		return new PadLegacyMigrationService(
 			$binding ?? $this->createMock(BindingService::class),
 			$legacyImportPolicy ?? $this->allowingPolicy(),
@@ -666,7 +714,18 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$resolver ?? $this->createMock(UserNodeResolver::class),
 			$logger ?? $this->createMock(LoggerInterface::class),
+			new ClaimedFileWriter($byId, $this->createMock(PadFileService::class), $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 		);
+	}
+
+	/**
+	 * The claim the first open hands over: the file by its id, holding the
+	 * shortcut as it was read.
+	 */
+	private function claimOn(string $uid, File $file): CreatedFileClaim {
+		$file->method('getContent')->willReturn(self::SHORTCUT);
+		$this->claimedFile = $file;
+		return new CreatedFileClaim($uid, (int)$file->getId(), self::SHORTCUT);
 	}
 
 	/**
@@ -701,7 +760,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/g.ourgroup00000000$notes',
 			'pad_id' => 'g.ourgroup00000000$notes',
 		]);
@@ -790,7 +849,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
 			logger: $this->refusalLine('protected import is switched off.', 202, BindingService::ACCESS_PROTECTED, 'mallory'),
-		)->migrate('mallory', $file, [
+		)->migrate($this->claimOn('mallory', $file), [
 			'url' => 'https://pad.our-server.test/p/g.someoneelses0000$notes',
 			'pad_id' => 'g.someoneelses0000$notes',
 		]);
@@ -820,7 +879,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
 			legacyImportPolicy: $this->policyAllowing(false),
-		)->migrate('alice', $file, [
+		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://pad.our-server.test/p/team-notes',
 			'pad_id' => 'team-notes',
 		]);
