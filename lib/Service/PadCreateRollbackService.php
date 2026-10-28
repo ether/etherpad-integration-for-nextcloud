@@ -25,57 +25,34 @@ use Psr\Log\LoggerInterface;
  */
 class PadCreateRollbackService {
 	public function __construct(
-		private ManagedPadLifecycle $padLifecycle,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim, ?int $bindingAttemptFileId = null): void {
-		$this->rollbackCreatedFileOnly($uid, $path, $claim);
+	public function rollbackFailedCreate(string $uid, PadCreateAttempt $attempt): void {
+		$this->rollbackCreatedFileOnly($uid, $attempt);
 
-		if ($padId === '') {
+		if ($attempt->padId() === '') {
 			return;
 		}
-
-		// Only a create that got as far as writing the row has to ask about
-		// one: createBinding can commit and still throw. Failing earlier, the
-		// pad is ours beyond doubt and goes without a database question -
-		// which is what happens when that question cannot be answered.
-		if ($bindingAttemptFileId !== null) {
-			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, 'create');
-			return;
-		}
-
-		try {
-			$this->padLifecycle->discardProvisioned($padId);
-		} catch (\Throwable $cleanupError) {
-			// Both, and the pad id against the rule everywhere else:
-			// reaching here means no binding row was written, so
-			// ep_pad_bindings cannot lead from the one to the other, and the
-			// claim is null whenever the create failed before it was taken.
-			$this->logger->warning('Could not cleanup failed Etherpad create', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $claim?->fileId,
-				'padId' => $padId,
-				...SafeError::context($cleanupError),
-			]);
-		}
+		$this->provisionedPadRollback->discardCreated($attempt, $attempt->claim()?->fileId, 'create');
 	}
 
 	/**
-	 * Remove only the file, leaving the pad alone.
-	 *
-	 * For the flows that clean up their own pad — the template
-	 * materialisation deletes it before rethrowing — so the full rollback
-	 * would delete it a second time, costing a round trip and logging a
-	 * warning about a pad that is already gone.
+	 * Remove only the file, leaving any pad alone: for the creates whose pad
+	 * is not this rollback's - a template's, which its materialisation takes
+	 * down itself, and an external one's, on another server. Called by name
+	 * rather than through rollbackFailedCreate() with no pad recorded, so a
+	 * pad step added there cannot reach them.
 	 */
-	public function rollbackCreatedFileOnly(string $uid, string $path, ?CreatedFileClaim $claim): void {
+	public function rollbackCreatedFileOnly(string $uid, PadCreateAttempt $attempt): void {
+		$claim = $attempt->claim();
 		if ($claim === null) {
 			return;
 		}
+		$path = $attempt->path();
 
 		try {
 			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
@@ -115,12 +92,6 @@ class PadCreateRollbackService {
 		}
 	}
 
-	public function rollbackExternalCreate(string $uid, string $path, ?CreatedFileClaim $claim): void {
-		// An external create links a pad that already exists elsewhere, so
-		// there is nothing of ours on the Etherpad side to remove.
-		$this->rollbackCreatedFileOnly($uid, $path, $claim);
-	}
-
 	/**
 	 * Allow deletion only if empty with no recorded write, or matching the
 	 * recorded SHA-256. A matching file_id alone does not prove authorship.
@@ -131,7 +102,14 @@ class PadCreateRollbackService {
 	private function isStillOurs(File $node, string $path, ?string $writtenHash): bool {
 		try {
 			if ((int)$node->getSize() === 0) {
-				return $writtenHash === null;
+				if ($writtenHash === null) {
+					return true;
+				}
+				$this->logger->warning('Left a .pad file in place: it reads as empty, though this create wrote it', [
+					'app' => 'etherpad_nextcloud',
+					'file' => $path,
+				]);
+				return false;
 			}
 			if ($writtenHash === null) {
 				$this->logger->warning('Left a .pad file in place: it has content this create never wrote', [
@@ -161,5 +139,4 @@ class PadCreateRollbackService {
 
 		return false;
 	}
-
 }

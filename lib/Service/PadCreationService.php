@@ -11,7 +11,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
-use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -27,14 +26,14 @@ class PadCreationService {
 		private UserNodeResolver $userNodeResolver,
 		private PadCreateRollbackService $rollbackService,
 		private BindingService $bindingService,
-		private EtherpadClient $etherpadClient,
+		private ClaimedFileWriter $claimedFileWriter,
 		private ManagedPadLifecycle $padLifecycle,
 		private PadBootstrapService $padBootstrapService,
 		private PadPlaceholderResolver $placeholderResolver,
 		private ExternalPadSeeder $externalPadSeeder,
 		private PadTypePolicy $padTypePolicy,
 		private LoggerInterface $logger,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -47,14 +46,11 @@ class PadCreationService {
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $accessMode): array {
-				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
 	}
 
@@ -72,20 +68,11 @@ class PadCreationService {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
 				$created = $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode);
 
-				// Rebuilt rather than appended: the response's key order is
-				// part of what callers compare against.
-				return [
-					'file' => $created['file'],
-					'file_id' => $created['file_id'],
-					'parent_folder_id' => $parentFolderId,
-					'pad_id' => $created['pad_id'],
-					'access_mode' => $created['access_mode'],
-					'pad_url' => $created['pad_url'],
-				];
+				// The folder's id right after the file's: the response's key
+				// order is part of what callers compare against.
+				return ['file' => $created['file'], 'file_id' => $created['file_id'], 'parent_folder_id' => $parentFolderId] + $created;
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackFailedCreate($uid, $attempt),
 		);
 	}
 
@@ -97,91 +84,54 @@ class PadCreationService {
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $padUrl) {
-				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
-				$fileId = $claim->fileId;
+				$prepared = $this->externalPadSeeder->prepare($claim->fileId, $padUrl);
+				$this->claimedFileWriter->write($claim, $prepared['content']);
 
-				$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
-				$this->writeCreatedFile($claim, $prepared['content']);
-				$seeded = $prepared['result'];
-				// `file` first, where the response has always had it.
-				$result = ['file' => $path] + $seeded;
-				return $result;
+				return ['file' => $path] + $prepared['result'];
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackExternalCreate($uid, $attempt->path(), $attempt->claim());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
 	}
 
 	/**
-	 * Materializes a new pad from an existing `.pad` source file. Reuses the
-	 * same provisioning + binding pipeline as create(), but seeds the new
-	 * pad with the template's body (placeholders resolved). The source can
-	 * be any `.pad` in the requester's userspace — caller picks the file
-	 * by id, so a custom frontend can decide what counts as a template
-	 * (current folder, ancestor scan, a fixed picker, …).
+	 * A new pad from a managed `.pad` file the user can read, with its
+	 * body's placeholders resolved. The source is picked by id, so the
+	 * caller decides what counts as a template; an external pad or an
+	 * empty file is refused.
 	 *
 	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
 	public function createFromTemplate(string $uid, string $targetFile, int $templateFileId, ?IUser $user): array {
-		$resolvedTargetFile = $this->placeholderResolver->applyForPath($targetFile, $user);
-		$path = $this->padPaths->normalizeCreatePath($resolvedTargetFile);
+		$path = $this->padPaths->normalizeCreatePath($this->placeholderResolver->applyForPath($targetFile, $user));
 
 		$templateNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $templateFileId);
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $templateNode, $user): array {
-				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				// API creates start empty; do not replace this baseline with a later read.
 				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
-				// The pad is materializeTemplateInto()'s, which removes it itself
-				// before rethrowing, so the rollback below is file-only.
-				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user, $claim);
-
-				return [
-					'file' => $path,
-					'file_id' => $result['file_id'],
-					'pad_id' => $result['pad_id'],
-					'access_mode' => $result['access_mode'],
-					'pad_url' => $result['pad_url'],
-				];
+				return ['file' => $path] + $this->materializeTemplateInto($templateNode, $user, $claim);
 			},
-			function (PadCreateAttempt $attempt) use ($uid): void {
-				// File only: materializeTemplateInto() has already deleted the
-				// pad it provisioned before rethrowing.
-				$this->rollbackService->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim());
-			},
+			fn (PadCreateAttempt $attempt) => $this->rollbackService->rollbackCreatedFileOnly($uid, $attempt),
 		);
-	}
-
-	/** The file and the row were both made here, so neither outlives the other. */
-	private function unwindMaterializedPad(int $fileId, string $padId): void {
-		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $padId, 'template materialization');
 	}
 
 	/**
 	 * Shared core of the template materialization pipeline: validate the
-	 * template, resolve placeholders, provision a pad, seed it, write the
-	 * target file, bind it. The target file must already exist.
+	 * template, resolve placeholders, provision a pad, seed it, then take
+	 * the blank create's step (writeAndBind()) on the file the caller
+	 * claimed.
 	 *
-	 * This method owns the Etherpad-side lifecycle of the pad it provisions.
-	 * A caller wrapping it in an outer rollback must not also delete that
-	 * pad - the outer wrapper's job is the Nextcloud file it created.
+	 * When it fails, this method takes down the pad it provisioned, and a
+	 * row naming it, as far as it can; the caller's rollback takes only the
+	 * file.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	public function materializeTemplateInto(
-		File $target,
-		File $template,
-		?IUser $user,
-		?CreatedFileClaim $claim = null
-	): array {
-		// Keep the caller's baseline; only claim the current content if none was supplied.
-		$claim ??= $this->claimTemplateTarget($target, $user);
+	public function materializeTemplateInto(File $template, ?IUser $user, CreatedFileClaim $claim): array {
 		if (!PadFileType::isPad($template->getName())) {
 			throw new NotAPadFileException('Template is not a .pad file.');
 		}
@@ -207,8 +157,6 @@ class PadCreationService {
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);
 		$resolvedHtml = $this->placeholderResolver->applyForContent($snapshot['html'], $user);
 
-		$fileId = $claim->fileId;
-
 		// The template's content is in the file from the start, so the file
 		// records the pad's revisions, as a restore does: they make it hold
 		// saved content should Etherpad lose the pad before its first sync,
@@ -219,85 +167,38 @@ class PadCreationService {
 			$this->padBootstrapService->newGroupPadName(...),
 			$resolvedText,
 			$resolvedHtml,
-			['fileId' => $fileId, 'operation' => 'template materialization'],
+			['fileId' => $claim->fileId, 'operation' => 'template materialization'],
 		);
+		$attempt = new PadCreateAttempt();
+		$attempt->recordPad($padId);
 		try {
-			$padUrl = $this->etherpadClient->buildPadUrl($padId);
-
-			$content = $this->padFileService->buildInitialDocument(
-				$fileId,
+			return $this->writeAndBind(
+				$attempt,
+				$claim,
 				$padId,
 				$accessMode,
-				// Without an answer from Etherpad the file starts at 0, as it
-				// always did: a snapshot's revision is never negative.
-				snapshot: new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
-				padUrl: $padUrl,
+				// Without an answer from Etherpad the file starts at 0: a
+				// snapshot's revision is never negative.
+				new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
 			);
-			$this->writeCreatedFile($claim, $content);
-			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 		} catch (\Throwable $e) {
-			$this->unwindMaterializedPad($fileId, $padId);
+			$this->provisionedPadRollback->discardCreated($attempt, $claim->fileId, 'template materialization');
 			throw $e;
 		}
-
-		return [
-			'file_id' => $fileId,
-			'pad_id' => $padId,
-			'access_mode' => $accessMode,
-			'pad_url' => $padUrl,
-		];
 	}
 
 	/**
-	 * Capture identity and copied template content before materialization.
-	 * The listener shares this claim with materialization and recovery.
+	 * The claim on a file Nextcloud made from a template or the external
+	 * tile: its identity and the content copied into it, before anything is
+	 * written. The listener shares it with the materialization or the
+	 * external tile's write, and with their recovery.
 	 */
-	public function claimTemplateTarget(File $target, ?IUser $user): CreatedFileClaim {
-		$uid = $user?->getUID();
-		if ($uid === null || $uid === '') {
-			throw new \RuntimeException('Cannot materialize a template without a user to resolve the file by.');
+	public function claimTemplateTarget(File $target, string $uid): CreatedFileClaim {
+		if ($uid === '') {
+			throw new \RuntimeException('Cannot claim a template target without a user to resolve the file by.');
 		}
 
 		return new CreatedFileClaim($uid, $this->requireFileId($target), (string)$target->getContent());
-	}
-
-	/**
-	 * Re-resolve by id and require the claimed content before writing.
-	 *
-	 * File::putContent() uses its remembered path, which may have been reused
-	 * during provisioning. The content check and write are not atomic.
-	 *
-	 * @throws \OCP\Files\NotFoundException
-	 * @throws PadFileChangedException
-	 */
-	private function writeCreatedFile(CreatedFileClaim $claim, string $content): void {
-		$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-		if ((string)$node->getContent() !== $claim->expectedBefore()) {
-			throw new PadFileChangedException('The target .pad file changed while the pad was being provisioned.');
-		}
-		$node->putContent($content);
-		// Record on the shared claim so recovery retains proof if binding fails next.
-		$claim->writtenHash = hash('sha256', $content);
-	}
-
-	/**
-	 * Resolve for recovery only if the original content or recorded write still matches.
-	 * Return null if the file changed or cannot be resolved or read. This does not lock it.
-	 */
-	public function resolveUnchangedClaim(CreatedFileClaim $claim): ?File {
-		try {
-			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-			$current = (string)$node->getContent();
-			$isOurs = $current === $claim->expectedBefore()
-				|| ($claim->writtenHash !== null && hash_equals($claim->writtenHash, hash('sha256', $current)));
-			if (!$isOurs) {
-				return null;
-			}
-		} catch (\Throwable) {
-			return null;
-		}
-
-		return $node;
 	}
 
 	/**
@@ -317,20 +218,27 @@ class PadCreationService {
 		string $path = ''
 	): array {
 		$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
-		$fileId = $claim->fileId;
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
 		$attempt->recordPad($padId);
-		$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
-		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, padUrl: $padUrl);
-		$this->writeCreatedFile($claim, $content);
-		$attempt->recordBindingAttempt($fileId);
-		$this->bindingService->createBinding($fileId, $padId, $accessMode);
+		return ['file' => $attempt->path()] + $this->writeAndBind($attempt, $claim, $padId, $accessMode);
+	}
+
+	/**
+	 * The step the blank create and a template take once they have a pad.
+	 * The document is written before the row, so a failed write leaves no
+	 * row to take back.
+	 *
+	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
+	 */
+	private function writeAndBind(PadCreateAttempt $attempt, CreatedFileClaim $claim, string $padId, string $accessMode, ?PadSnapshot $snapshot = null): array {
+		$padUrl = $this->claimedFileWriter->writePadDocument($claim, $padId, $accessMode, $snapshot);
+		$attempt->recordBindingAttempt($claim->fileId);
+		$this->bindingService->createBinding($claim->fileId, $padId, $accessMode);
 
 		return [
-			'file' => $attempt->path(),
-			'file_id' => $fileId,
+			'file_id' => $claim->fileId,
 			'pad_id' => $padId,
 			'access_mode' => $accessMode,
 			'pad_url' => $padUrl,
@@ -342,12 +250,12 @@ class PadCreationService {
 	 *
 	 * One method because the order is the point: the id before anything
 	 * that can throw, the ownership check before any write, the disown
-	 * before the throw. Written out four times it was already drifting.
+	 * before the throw.
 	 *
 	 * An empty `$path` means create-by-parent, which cannot know it before
 	 * the file exists; deriving it can throw, hence after the claim.
 	 */
-	private function claimCreatedFile(PadCreateAttempt $attempt, string $uid, File $fileNode, string $path = ''): CreatedFileClaim {
+	private function claimCreatedFile(PadCreateAttempt $attempt, string $uid, File $fileNode, string $path): CreatedFileClaim {
 		$fileId = $this->requireFileId($fileNode);
 		$claim = $attempt->claimFile($uid, $fileId);
 
@@ -456,5 +364,4 @@ class PadCreationService {
 			throw $e;
 		}
 	}
-
 }

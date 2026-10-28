@@ -47,18 +47,35 @@ class ExternalPadSeederTest extends TestCase {
 			->willReturn('seeded-frontmatter');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
-		$result = (new ExternalPadSeeder($padFileService, $fetcher))
+		(new ExternalPadSeeder($padFileService, $fetcher))
 			->seed($fileNode, 999, 'https://pad.remote.test/p/RemotePad');
-
-		$this->assertSame([
-			'file_id' => 999,
-			'pad_id' => 'ext.RemotePad',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => 'https://pad.remote.test/p/RemotePad',
-		], $result);
 	}
 
-	public function testSeedSurfacesSnapshotUnavailableWarningCode(): void {
+	/** The document for the file, and what the create answers. */
+	public function testPreparesTheDocumentAndTheAnswer(): void {
+		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
+		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
+			->willReturn([
+				'pad_url' => 'https://pad.remote.test/p/RemotePad',
+				'origin' => 'https://pad.remote.test',
+				'pad_id' => 'RemotePad',
+				'text' => 'snapshot-body',
+			]);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')->willReturn('seeded-frontmatter');
+
+		$this->assertSame([
+			'content' => 'seeded-frontmatter',
+			'result' => [
+				'file_id' => 999,
+				'pad_id' => 'ext.RemotePad',
+				'access_mode' => BindingService::ACCESS_PUBLIC,
+				'pad_url' => 'https://pad.remote.test/p/RemotePad',
+			],
+		], (new ExternalPadSeeder($padFileService, $fetcher))->prepare(999, 'https://pad.remote.test/p/RemotePad'));
+	}
+
+	public function testPrepareSurfacesSnapshotUnavailableWarningCode(): void {
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
 			->willReturn([
@@ -72,9 +89,9 @@ class ExternalPadSeederTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
 
-		$result = (new ExternalPadSeeder($padFileService, $fetcher))
-			->seed($this->createMock(File::class), 1, 'https://pad.remote.test/p/RemotePad');
+		$prepared = (new ExternalPadSeeder($padFileService, $fetcher))
+			->prepare(1, 'https://pad.remote.test/p/RemotePad');
 
-		$this->assertSame('remote_export_unavailable', $result['snapshot_warning_code']);
+		$this->assertSame('remote_export_unavailable', $prepared['result']['snapshot_warning_code']);
 	}
 }

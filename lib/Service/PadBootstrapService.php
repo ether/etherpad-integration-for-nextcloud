@@ -9,9 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
-use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
 
@@ -19,13 +17,13 @@ class PadBootstrapService {
 	public function __construct(
 		private BindingService $bindingService,
 		private PadFileService $padFileService,
-		private EtherpadClient $etherpadClient,
+		private ClaimedFileWriter $claimedFileWriter,
 		private ManagedPadLifecycle $padLifecycle,
 		private ISecureRandom $secureRandom,
 		private PadLegacyMigrationService $legacyMigrationService,
 		private PadTypePolicy $padTypePolicy,
 		private UserNodeResolver $userNodeResolver,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -55,17 +53,15 @@ class PadBootstrapService {
 	 * write would fail after them, and leave them to the owner's next open.
 	 * Asked of the node the write goes through: the file by id, a writable
 	 * path to it first, as a reader by one path may be a writer by another.
-	 * The legacy migration is handed that node, writeInitialDocument() asks
-	 * for it again.
+	 * The legacy migration is handed that node; ClaimedFileWriter asks for
+	 * it again.
 	 *
 	 * @throws PadFileNotWritableException
 	 */
 	public function initializeMissingFrontmatter(string $uid, File $file, string $existingContent, ?string $preferredAccessMode = null): bool {
 		$fileId = (int)$file->getId();
-		$existingContentTrimmed = trim($existingContent);
-		$isEmptyFile = $existingContentTrimmed === '';
 		$legacyShortcut = $this->padFileService->parseLegacyOwnpadShortcut($existingContent);
-		if (!$isEmptyFile && $legacyShortcut === null) {
+		if (trim($existingContent) !== '' && $legacyShortcut === null) {
 			// Not the same thing as "has no frontmatter yet": this file has
 			// content that is neither. Saying so with the other type would
 			// answer this refusal with the code that asks a client to call
@@ -84,10 +80,8 @@ class PadBootstrapService {
 
 		$padId = '';
 
-		// The provisioning is inside the try, not before it. The cleanup used
-		// to start only after the binding had been written, so a binding that
-		// failed left the pad behind with nothing pointing at it — the one
-		// failure in this method that produced an orphan rather than an error.
+		// createBinding sits inside the try, so a failed row reaches the
+		// cleanup as a failed document does.
 		try {
 			if ($binding !== null) {
 				$padId = $binding->padId;
@@ -112,32 +106,13 @@ class PadBootstrapService {
 				$this->bindingService->createBinding($fileId, $padId, $accessMode);
 			}
 
-			$padUrl = $this->etherpadClient->buildPadUrl($padId);
-			$doc = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, padUrl: $padUrl);
-			// Re-resolve after provisioning: the original File still writes to its remembered path.
-			$this->writeInitialDocument($uid, $fileId, $existingContent, $doc);
+			$this->claimedFileWriter->writePadDocument(new CreatedFileClaim($uid, $fileId, $existingContent), $padId, $accessMode);
 		} catch (\Throwable $e) {
 			if ($createdNewPad) {
-				$this->rollbackProvisionedPad($fileId, $padId);
+				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
 			}
 			throw $e;
 		}
 		return false;
 	}
-
-	/**
-	 * @throws PadFileChangedException when the content differs from what the caller read
-	 */
-	private function writeInitialDocument(string $uid, int $fileId, string $expectedBefore, string $doc): void {
-		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
-		if ((string)$node->getContent() !== $expectedBefore) {
-			throw new PadFileChangedException('The .pad file changed while its pad was being provisioned.');
-		}
-		$node->putContent($doc);
-	}
-
-	private function rollbackProvisionedPad(int $fileId, string $padId): void {
-		$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
-	}
-
 }

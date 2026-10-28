@@ -32,13 +32,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$externalPadSeeder = $this->createMock(ExternalPadSeeder::class);
 		$externalPadSeeder->expects($this->once())
 			->method('seed')
-			->with($file, 101, 'https://legacy.example.test/p/team-meeting')
-			->willReturn([
-				'file_id' => 101,
-				'pad_id' => 'ext.team-meeting',
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'pad_url' => 'https://legacy.example.test/p/team-meeting',
-			]);
+			->with($file, 101, 'https://legacy.example.test/p/team-meeting');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
@@ -358,6 +352,39 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		)->migrate('mallory', $file, [
 			'url' => 'https://pad.our-server.test/p/NC-ABC',
 			'pad_id' => 'NC-ABC',
+		]);
+	}
+
+	/**
+	 * The pad is Ownpad's, never the migration's: a write that fails after
+	 * the row was made leaves row and pad in place, and nothing goes in
+	 * Etherpad, not even a group pad's group.
+	 */
+	public function testAWriteThatFailsAfterTheRowLeavesRowAndPad(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(515);
+		$file->method('putContent')->willThrowException(new \RuntimeException('storage gone'));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('listPads')->willReturn(['g.abcdefghijklmnop$team-meeting']);
+		$etherpadClient->expects($this->never())->method('deletePad');
+		$etherpadClient->expects($this->never())->method('deleteGroup');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->expects($this->once())->method('createBinding')->with(515, 'g.abcdefghijklmnop$team-meeting', BindingService::ACCESS_PROTECTED);
+		$binding->expects($this->never())->method('deleteActiveBinding');
+		$binding->expects($this->never())->method('deleteInState');
+
+		$this->expectExceptionMessage('storage gone');
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: new PadFileService(new FixedClock()),
+			etherpadClient: $etherpadClient,
+		)->migrate('alice', $file, [
+			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$team-meeting',
+			'pad_id' => 'g.abcdefghijklmnop$team-meeting',
 		]);
 	}
 

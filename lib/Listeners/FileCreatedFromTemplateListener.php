@@ -11,6 +11,8 @@ namespace OCA\EtherpadNextcloud\Listeners;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -42,6 +44,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
+		private ClaimedFileWriter $claimedFileWriter,
 	) {
 	}
 
@@ -82,7 +85,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// The external tile's address arrives with the event, so the file is
 		// complete before anyone opens it.
 		if ($this->templateStorage->isExternalMarkerFile($template)) {
-			$this->seedExternalPad($target, $event->getTemplateFields());
+			$this->seedExternalPad($target, $user->getUID(), $event->getTemplateFields());
 			return;
 		}
 
@@ -99,7 +102,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// again while an error is handled, an id can throw, or name whatever
 		// holds the path by then.
 		try {
-			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+			$claim = $this->padCreationService->claimTemplateTarget($target, $user->getUID());
 			$templateFileId = (int)$template->getId();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Pad template create skipped: the target could not be identified.', [
@@ -110,7 +113,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		}
 
 		try {
-			$this->padCreationService->materializeTemplateInto($target, $template, $user, $claim);
+			$this->padCreationService->materializeTemplateInto($template, $user, $claim);
 		} catch (PadTypeDisabledException $e) {
 			// Not a hiccup to retry around: the instance creates no pads at all
 			// right now, which happens when the setting changes while the
@@ -121,10 +124,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'targetFileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
-			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
-			if ($unchanged !== null) {
-				$this->deleteTarget($unchanged, $claim->fileId);
-			}
+			$this->deleteIfUnchanged($claim);
 			throw $e;
 		} catch (PadFileChangedException $e) {
 			// Do not blank content that the guarded write refused to overwrite.
@@ -142,12 +142,9 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				...SafeError::context($e),
 			]);
 			// Other failures do not imply unchanged content: check before resetting.
-			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
+			$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
 			if ($unchanged === null) {
-				$this->logger->warning('Left the template target alone: it is no longer the file this create was given.', [
-					'app' => 'etherpad_nextcloud',
-					'targetFileId' => $claim->fileId,
-				]);
+				$this->leftAlone($claim);
 				return;
 			}
 			$this->resetTargetToEmpty($unchanged, $claim->fileId);
@@ -184,24 +181,27 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	}
 
 	/**
-	 * A file that cannot be linked is removed rather than left behind: an empty
-	 * `.pad` would become an ordinary local pad on first open, which is not
-	 * what the user picked. Nextcloud turns the exception into its own "could
-	 * not create from template" message and logs the reason.
+	 * The document is written by the file's id and guarded, as the remote
+	 * fetch can take seconds. A file that cannot be linked is removed while
+	 * it is as the claim left it, rather than left behind: an empty `.pad`
+	 * would become an ordinary local pad on first open, which is not what
+	 * the user picked. One that cannot be claimed stays, as nothing tells it
+	 * from a file written meanwhile. Nextcloud turns an exception into its
+	 * own "Failed to create file from template" message and logs it.
 	 *
+	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/Template/TemplateManager.php
 	 * @param array<string,mixed> $templateFields
 	 */
-	private function seedExternalPad(File $target, array $templateFields): void {
-		$fileId = (int)$target->getId();
+	private function seedExternalPad(File $target, string $uid, array $templateFields): void {
+		$claim = $this->padCreationService->claimTemplateTarget($target, $uid);
 		try {
 			$padUrl = $this->padUrlField($templateFields);
 			if ($padUrl === '') {
 				throw new \RuntimeException('No pad address was given for the external pad template.');
 			}
-			if ($fileId <= 0) {
-				throw new \RuntimeException('Could not resolve new file ID.');
-			}
-			$seeded = $this->externalPadSeeder->seed($target, $fileId, $padUrl);
+			$prepared = $this->externalPadSeeder->prepare($claim->fileId, $padUrl);
+			$this->claimedFileWriter->write($claim, $prepared['content']);
+			$seeded = $prepared['result'];
 			if (($seeded['snapshot_warning_code'] ?? '') === 'remote_export_unavailable') {
 				// The pad is linked and opens; only its snapshot stays empty, as
 				// the remote refused the export. This line is the admin's
@@ -209,19 +209,36 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				// in it, give access to the pad.
 				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
 					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
+					'fileId' => $claim->fileId,
 					'padHost' => parse_url((string)($seeded['pad_url'] ?? ''), PHP_URL_HOST) ?: '',
 				]);
 			}
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not link a new .pad file to an external pad.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
+				'fileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
-			$this->deleteTarget($target);
+			$this->deleteIfUnchanged($claim);
 			throw $e;
 		}
+	}
+
+	/** The claimed file removed while it is as the claim left it; left, and said so, otherwise. */
+	private function deleteIfUnchanged(CreatedFileClaim $claim): void {
+		$unchanged = $this->claimedFileWriter->resolveUnchanged($claim);
+		if ($unchanged === null) {
+			$this->leftAlone($claim);
+			return;
+		}
+		$this->deleteTarget($unchanged, $claim->fileId);
+	}
+
+	private function leftAlone(CreatedFileClaim $claim): void {
+		$this->logger->warning('Left the template target alone: it changed since this create was given it, or could not be found or read.', [
+			'app' => 'etherpad_nextcloud',
+			'targetFileId' => $claim->fileId,
+		]);
 	}
 
 	/**

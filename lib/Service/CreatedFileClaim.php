@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * Identity, expected content and write evidence for one create attempt.
+ * Identity, expected content and write evidence for one create or first init.
  *
  * Pass the same instance through writing and recovery so a later failure
  * retains the write evidence. A claim does not lock the file.
@@ -22,9 +22,9 @@ class CreatedFileClaim {
 		public readonly string $uid,
 		public readonly int $fileId,
 		/**
-		 * Initially empty for API creates; copied template content for the
-		 * hook. Private behind its method, for the reason given at
-		 * ParsedPadFile: it is a document.
+		 * Empty for an API create; what Nextcloud copied in for a template
+		 * or the external tile; what a first init read. Private behind its
+		 * method, for the reason given at ParsedPadFile: it is a document.
 		 */
 		private readonly string $expectedBefore = '',
 	) {

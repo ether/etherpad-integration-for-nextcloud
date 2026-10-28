@@ -11,11 +11,8 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCP\Files\File;
 
 /**
- * Writes `ext.<remote-id>` frontmatter (with a snapshot of the remote pad's
- * text) into an existing `.pad` file. Used by both `PadCreationService`'s
- * `createFromUrl` (where the file was just created) and
- * `PadLegacyMigrationService`'s cross-origin branch (where the file already
- * existed as a legacy `[InternetShortcut]`).
+ * The `ext.<remote-id>` document for a `.pad` file: frontmatter with a
+ * snapshot of the remote pad's text.
  *
  * Lives in its own service to keep `PadCreationService` and
  * `PadLegacyMigrationService` from forming a constructor cycle with
@@ -74,15 +71,8 @@ class ExternalPadSeeder {
 		return ['content' => $content, 'result' => $result];
 	}
 
-	/**
-	 * Prepare and write through the supplied node without re-resolving or checking it.
-	 *
-	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}
-	 */
-	public function seed(File $file, int $fileId, string $padUrl): array {
-		$prepared = $this->prepare($fileId, $padUrl);
-		$file->putContent($prepared['content']);
-
-		return $prepared['result'];
+	/** Prepare and write through the supplied node without re-resolving or checking it. */
+	public function seed(File $file, int $fileId, string $padUrl): void {
+		$file->putContent($this->prepare($fileId, $padUrl)['content']);
 	}
 }
