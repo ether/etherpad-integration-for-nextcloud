@@ -92,7 +92,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			ini_set('zend.exception_ignore_args', (string)$ignoreArgs);
 		}
 
-		// The frames are there, arguments and all: the event the listener took.
+		// The event shows, so a trace without arguments cannot pass for one
+		// without the address.
 		$this->assertStringContainsString('FileCreatedFromTemplateEvent', $logged);
 		$this->assertStringNotContainsString('SecretPad', $logged);
 		$this->assertStringNotContainsString('s3cret', $logged);

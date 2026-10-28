@@ -64,12 +64,13 @@ namespace OCA\EtherpadNextcloud\Util;
  * take a document or a credential so and are not here. It goes by the
  * parameter's name, which is all a signature says of a string.
  *
- * The list has an end. From PHP 8.2 on, #[\SensitiveParameter] on the
- * parameter does this in the trace itself, for every reader of it, and
- * stands for an entry here one for one. On PHP 8.1 the attribute does
- * nothing, and Nextcloud 32 still runs there. Once the app's floor is a
- * Nextcloud that needs PHP 8.2, as 33 does, the attribute takes over and
- * the list goes; keeping both until then would be the same thing twice.
+ * The list has an end, though not one for one. From PHP 8.2 on,
+ * #[\SensitiveParameter] hides a parameter in its own frame, for every
+ * reader of the trace; unlike an entry here, it leaves the same value in
+ * the frames that passed it on, so those need it too. On PHP 8.1 the
+ * attribute does nothing, and Nextcloud 32 still runs there. Once the
+ * app's floor is a Nextcloud that needs PHP 8.2, as 33 does, the
+ * attribute can take over, on every frame such a value passes through.
  */
 final class SensitiveMethods {
 	/** @var array<class-string, list<string>> */
@@ -166,11 +167,8 @@ final class SensitiveMethods {
 		],
 		\OCA\EtherpadNextcloud\Service\ApiErrorLog::class => ['scalar'],
 		// A pad's address, which opens a pad on another server to whoever
-		// has it: as the API or the picker hands it over, in the picker's
-		// template fields as it was typed, as an Ownpad file links it and in
-		// the shortcut it is read from, the export URL made of it, and the
-		// objects that answer with it. One by hand, under a name no rule
-		// knows: the parts fetchPublicExport() takes as $resolved.
+		// has it. fetchPublicExport() by hand: its $resolved carries the
+		// address under a name the source check does not know.
 		\OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener::class => ['seedExternalPad', 'padUrlField'],
 		\OCA\EtherpadNextcloud\Controller\PadCreateController::class => ['createFromUrl'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['createFromUrl'],
