@@ -186,21 +186,21 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	 * fetch can take seconds. A file that cannot be linked is removed while
 	 * it is as the claim left it, rather than left behind: an empty `.pad`
 	 * would become an ordinary local pad on first open, which is not what
-	 * the user picked. Nextcloud turns the exception into its own "Failed to
-	 * create file from template" message and logs the reason.
+	 * the user picked. One that cannot be claimed stays, as nothing tells it
+	 * from a file written meanwhile. Nextcloud turns an exception into its
+	 * own "Failed to create file from template" message and logs it.
 	 *
+	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/Template/TemplateManager.php
 	 * @param array<string,mixed> $templateFields
 	 */
 	private function seedExternalPad(File $target, IUser $user, array $templateFields): void {
-		$claim = null;
+		$claim = $this->padCreationService->claimTemplateTarget($target, $user);
 		try {
-			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
-			$fileId = $claim->fileId;
 			$padUrl = $this->padUrlField($templateFields);
 			if ($padUrl === '') {
 				throw new \RuntimeException('No pad address was given for the external pad template.');
 			}
-			$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
+			$prepared = $this->externalPadSeeder->prepare($claim->fileId, $padUrl);
 			$this->claimedFileWriter->write($claim, $prepared['content']);
 			$seeded = $prepared['result'];
 			if (($seeded['snapshot_warning_code'] ?? '') === 'remote_export_unavailable') {
@@ -210,23 +210,17 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				// in it, give access to the pad.
 				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
 					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
+					'fileId' => $claim->fileId,
 					'padHost' => parse_url((string)($seeded['pad_url'] ?? ''), PHP_URL_HOST) ?: '',
 				]);
 			}
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not link a new .pad file to an external pad.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $claim?->fileId,
+				'fileId' => $claim->fileId,
 				...SafeError::context($e),
 			]);
-			if ($claim === null) {
-				// Without a claim nothing tells this file from another: it goes
-				// as Nextcloud handed it over.
-				$this->deleteTarget($target);
-			} else {
-				$this->deleteIfUnchanged($claim);
-			}
+			$this->deleteIfUnchanged($claim);
 			throw $e;
 		}
 	}

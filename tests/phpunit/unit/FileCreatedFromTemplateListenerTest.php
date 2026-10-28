@@ -385,14 +385,13 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * Without a claim - its id cannot be read - nothing tells the file from
-	 * another: it goes as Nextcloud handed it over, before the remote pad is
-	 * asked, and the failure goes on.
+	 * Its id cannot be read: nothing tells the file from one written
+	 * meanwhile, so it stays, and the remote pad is not asked.
 	 */
-	public function testRemovesTheFileAsHandedOverWhenItCannotBeClaimed(): void {
+	public function testLeavesTheFileWhenItCannotBeClaimed(): void {
 		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
-		$target->expects($this->once())->method('delete');
+		$target->expects($this->never())->method('delete');
 
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('isExternalMarkerFile')->willReturn(true);
@@ -403,14 +402,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$creation->method('claimTemplateTarget')->willThrowException($failure);
 		$this->writer->expects($this->never())->method('write');
 		$this->writer->expects($this->never())->method('resolveUnchanged');
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with(
-			'Could not link a new .pad file to an external pad.',
-			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && array_key_exists('fileId', $context) && $context['fileId'] === null),
-		);
 
 		try {
-			$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder, logger: $logger)
+			$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
 				->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
 			$this->fail('the failure goes on');
 		} catch (\RuntimeException $e) {
