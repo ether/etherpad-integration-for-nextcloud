@@ -94,18 +94,17 @@ use Psr\Log\LoggerInterface;
  * process, and a process killed before loses it: those pads stay, and the
  * consistency check lists them.
  *
- * Nextcloud 34, and 35.0.0, report a removed folder's descendants under
- * the wrong ids - their places in a block of a thousand - and again with
- * each block (fixed for 35.0.1 by Nextcloud server pull request 63998; the
- * backport to 34, pull request 64497, is in no 34 release yet, 34.0.5
- * came without it). The
- * block comes first (CacheEntriesRemovedEvent, from 34 on); one that holds
- * id 0, which no file has, is such a block, and none of its removals
- * counts. The block reaches this listener ahead of others
+ * Some Nextcloud releases report a removed folder's descendants under the
+ * wrong ids - their places in a block of a thousand - and again with each
+ * block (docs/deleting-pads.md names them, and the fix). The block comes
+ * first (CacheEntriesRemovedEvent, from 34 on); one that holds id 0,
+ * which no file has, is such a block, and none of its removals counts.
+ * The block reaches this listener ahead of others
  * (Application::register()), so one throwing first cannot keep it away;
  * should it not come, a removal under a wrong id still marks no file the
- * file cache has - but it can mark a row whose file vanished before. The files in a folder deleted for good there keep their
- * pads, and the consistency check lists them.
+ * file cache has - but it can mark a row whose file vanished before. The
+ * files in a folder deleted for good there keep their pads, and the
+ * consistency check lists them.
  *
  * Nothing here may stop a delete, and nothing throws. What a failure
  * leaves unmarked, the consistency check lists as vanished.

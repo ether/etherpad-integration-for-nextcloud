@@ -181,7 +181,8 @@ export const KNOWN_ELSEWHERE = [
 		id: 'viewer-close-sidebar-fullscreen',
 		kind: 'console',
 		pattern: /^TypeError: OCA\.Files\.Sidebar\.setFullScreenMode is not a function[\s\S]*\/apps\/viewer\//,
-		reason: 'Nextcloud 35: the Viewer\'s `close()` calls `OCA.Files.Sidebar.setFullScreenMode(false)` once it finds `OCA.Files.Sidebar`, and the Files app of 35 has that object without the method. Every file the Viewer closes logs it, a pad among them.',
+		// https://github.com/nextcloud/viewer/blob/v35.0.2/src/views/Viewer.vue close()
+		reason: 'The Viewer of Nextcloud 35.0.2 calls `OCA.Files.Sidebar.setFullScreenMode(false)` as it closes, checking only that the sidebar is there, and the Files sidebar of 35 has no such method: not a pad\'s, any file\'s the Viewer closes. Its stable35 branch checks for the method since, so the entry stays at 0 once a 35 release carries that.',
 	},
 	{
 		id: 'service-worker-stack-certificate',

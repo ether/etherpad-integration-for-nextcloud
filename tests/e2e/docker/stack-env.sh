@@ -16,7 +16,7 @@
 env_file="$here/../.env.e2e.docker"
 
 if [[ ! -f "$env_file" ]]; then
-	echo "$env_file is missing; run FULLTEXTSEARCH=1 NC_VERSION=34 $here/up.sh first." >&2
+	echo "$env_file is missing; run FULLTEXTSEARCH=1 NC_VERSION=35 $here/up.sh first." >&2
 	exit 1
 fi
 
@@ -41,7 +41,7 @@ require_stack_env() {
 
 require_elasticsearch() {
 	if ! compose ps --services --status running | grep -qx elasticsearch; then
-		echo "Elasticsearch is not running; start a fresh NC 34 stack with FULLTEXTSEARCH=1." >&2
+		echo "Elasticsearch is not running; start a fresh NC 35 stack with FULLTEXTSEARCH=1." >&2
 		exit 1
 	fi
 }

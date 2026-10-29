@@ -111,13 +111,12 @@ test.describe('public share access without login', () => {
 
 	/**
 	 * The app's old address for a share with a password hands on to the
-	 * share page, which asks for it - Nextcloud answered 404 while that
-	 * address was served behind its own check of the share. The pad opens
-	 * once the visitor gives it, and the app's own route answers that
-	 * session. A changed password ends it: the route answers as for a share
-	 * the session has not passed, and the share asks again, until the new
-	 * password opens it. One share for all of it: Nextcloud lets a user make
-	 * 20 in ten minutes.
+	 * share page, which asks for it. Given, the password opens the pad, and
+	 * the app's own route answers the session that passed it. Nextcloud
+	 * holds that session's proof to the share's current password hash, so
+	 * after a change the route refuses it and the share asks again, until
+	 * the new password opens it. One share for all of it: Nextcloud lets a
+	 * user make 20 in ten minutes.
 	 */
 	test('hands a share with a password to its password page, opens it once given, and asks again once it changes', async ({ browser, browserNoise }) => {
 		const name = uniquePadName('public-share-password')

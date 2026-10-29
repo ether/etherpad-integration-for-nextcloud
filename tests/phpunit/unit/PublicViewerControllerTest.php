@@ -365,10 +365,8 @@ class PublicViewerControllerTest extends TestCase {
 	}
 
 	/**
-	 * From Nextcloud 35 a share says itself whether it is protected: one
-	 * that is, without a password - by what may follow one -, is refused,
-	 * as no session holds a hash of it, and one that says it is not opens
-	 * without, whatever its password field holds.
+	 * What a share on Nextcloud 35 says of its protection goes before its
+	 * password field; protected without a password, it is refused.
 	 *
 	 * @return iterable<string, array{bool, ?string, bool}> what the share says, its password, and whether it opens without a session
 	 */
@@ -378,8 +376,9 @@ class PublicViewerControllerTest extends TestCase {
 	}
 
 	/**
-	 * A token that names no share is no share behind a password: Nextcloud
-	 * refuses it as not found before it asks for a session.
+	 * Whether the token names a share and whether the session passed its
+	 * password are two checks: no share is no share behind a password, and
+	 * isValidToken() is what keeps an unknown token out.
 	 */
 	public function testATokenThatNamesNoShareIsNotTakenForOneBehindAPassword(): void {
 		$shareManager = $this->createMock(IManager::class);
