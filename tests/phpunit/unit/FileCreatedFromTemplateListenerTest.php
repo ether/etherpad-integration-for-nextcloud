@@ -330,7 +330,10 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		}
 	}
 
-	/** The removal is handed to the writer, with a claim on the file's id that expects it empty. */
+	/**
+	 * The removal is handed to the writer, with a claim on the file's id that
+	 * expects it empty, and the refusal is named in the log.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatGoStraightToInitialisation')]
 	public function testRemovesTheFileWhenNoPadTypeIsEnabled(?string $templateName, ?string $mode): void {
 		$target = $this->file('Notes.pad');
@@ -341,9 +344,14 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Blank pad create refused: no pad type is enabled.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 42, PadTypeDisabledException::class]),
+		);
 
 		$this->expectException(PadTypeDisabledException::class);
-		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $this->tilesOffering($mode))
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $this->tilesOffering($mode), logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent($templateName === null ? null : $this->file($templateName), $target, []));
 	}
 

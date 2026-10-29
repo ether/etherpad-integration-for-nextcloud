@@ -61,8 +61,6 @@
       <code><![CDATA[$field]]></code>
     </MixedAssignment>
     <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$target->getId()]]></code>
-      <code><![CDATA[(int)$target->getId()]]></code>
       <code><![CDATA[(int)$template->getId()]]></code>
       <code><![CDATA[(string)($seeded['pad_url'] ?? '')]]></code>
     </RedundantCastGivenDocblockType>

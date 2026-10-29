@@ -68,7 +68,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// make a file or empty another, so it stays - holding what
 			// Nextcloud copied in, so the create is reported as failed.
 			try {
-				$fileId = (int)$target->getId();
+				$fileId = $target->getId();
 			} catch (\Throwable $e) {
 				$this->logger->warning('Template event fired without an active user; left the target as it is, as its id cannot be read.', [
 					'app' => 'etherpad_nextcloud',
@@ -175,7 +175,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	 */
 	private function initializeNewFile(string $uid, File $target, ?string $preferredAccessMode = null): void {
 		try {
-			$fileId = (int)$target->getId();
+			$fileId = $target->getId();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.', [
 				'app' => 'etherpad_nextcloud',
