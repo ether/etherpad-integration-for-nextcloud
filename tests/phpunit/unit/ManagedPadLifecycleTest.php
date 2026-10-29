@@ -383,6 +383,42 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * What a failed create leaves over and Etherpad does not confirm
+	 * removing is named by the line of every new pad left over, with the
+	 * caller's fields; the create's failure goes on.
+	 *
+	 * @return iterable<string, array{string, string, string}> the access mode, the removal that fails, and the pad the line names
+	 */
+	public static function createsThatLeaveSomethingOver(): iterable {
+		yield 'a public pad' => [BindingService::ACCESS_PUBLIC, 'deletePad', 'nc-pad'];
+		// Named as Etherpad would have named its pad.
+		yield 'a group' => [BindingService::ACCESS_PROTECTED, 'deleteGroup', 'g.ABCDEFGHIJKLMNOP$p-new'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatLeaveSomethingOver')]
+	public function testWhatAFailedCreateLeavesOverIsNamedAsAFailedSeedsIs(string $accessMode, string $removal, string $named): void {
+		$failure = new EtherpadClientException('Etherpad API request failed: create');
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('createPad')->willThrowException($failure);
+		$client->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$client->method('createGroupPad')->willThrowException($failure);
+		$client->expects($this->once())->method($removal)->willThrowException(new \RuntimeException('Etherpad gone'));
+		$client->expects($this->never())->method('setText');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Could not confirm removal of a new Etherpad pad.', $this->callback(
+			static fn (array $context): bool => [$context['app'], $context['padId'], $context['fileId'], $context['operation'], $context['error']]
+				=== ['etherpad_nextcloud', $named, 7, 'restore from snapshot', \RuntimeException::class],
+		));
+
+		try {
+			(new ManagedPadLifecycle($client, $logger))->provisionSeeded($accessMode, static fn (): string => 'nc-pad', static fn (): string => 'p-new', 'text', '', ['fileId' => 7, 'operation' => 'restore from snapshot']);
+			$this->fail('the create\'s failure goes on');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame($failure, $e);
+		}
+	}
+
+	/**
 	 * The ownership question `discardIfPresent` asks Etherpad is already
 	 * answered here, by control flow: the group was made by
 	 * `provisionGroupPad` in the same call. Asking again would not make it

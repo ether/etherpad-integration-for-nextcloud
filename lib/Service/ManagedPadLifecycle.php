@@ -40,34 +40,30 @@ class ManagedPadLifecycle {
 
 	/**
 	 * Create a group holding exactly one pad. If the pad cannot be created,
-	 * the group is taken down again, as far as Etherpad lets it, before the
+	 * the group is taken down again (discardProvisioned()) before the
 	 * failure is thrown on.
 	 *
 	 * The two steps are separate calls, so a failure between them strands a
 	 * group that nothing will ever look at again — invisible from Nextcloud
 	 * and never collected.
+	 *
+	 * @param array<string,mixed> $context as for discardProvisioned()
 	 */
-	private function provisionGroupPad(string $padName): string {
+	private function provisionGroupPad(string $padName, array $context): string {
 		$groupId = $this->etherpadClient->createGroup();
 		try {
 			return $this->etherpadClient->createGroupPad($groupId, $padName);
 		} catch (\Throwable $e) {
-			try {
-				$this->etherpadClient->deleteGroup($groupId);
-			} catch (\Throwable $cleanupError) {
-				$this->logger->warning('Could not remove the Etherpad group after its pad failed to be created.', [
-					'app' => 'etherpad_nextcloud',
-					'groupId' => $groupId,
-					...SafeError::context($cleanupError),
-				]);
-			}
+			// The id Etherpad gives a pad in a group, whether or not it made
+			// this one: discardProvisioned() takes the group either way.
+			$this->discardProvisioned($groupId . '$' . $padName, $context);
 			throw $e;
 		}
 	}
 
 	/**
 	 * Create a pad that stands on its own. If the call fails after Etherpad
-	 * has made it, the pad is taken down again, as far as Etherpad lets it.
+	 * has made it, the pad is taken down again (discardProvisioned()).
 	 *
 	 * The id is chosen here rather than by Etherpad, so unlike the group
 	 * case there is always something to clean up with — which is what makes
@@ -79,8 +75,10 @@ class ManagedPadLifecycle {
 	 * live pad, so it is worth the check. Nor is a rejected key followed by a
 	 * delete: Etherpad checks the key before it runs a call, so it made
 	 * nothing.
+	 *
+	 * @param array<string,mixed> $context as for discardProvisioned()
 	 */
-	private function provisionPad(string $padId): void {
+	private function provisionPad(string $padId, array $context): void {
 		// createPad refuses $ / ? & # before it makes anything, and
 		// deletePad takes / ? & # - and $ for a group pad: the delete after
 		// that refusal could take down a pad already under the id.
@@ -91,17 +89,7 @@ class ManagedPadLifecycle {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
 			if (!$e instanceof EtherpadKeyRejectedException && !EtherpadErrorClassifier::isPadAlreadyPresent($e)) {
-				try {
-					$this->etherpadClient->deletePad($padId);
-				} catch (\Throwable $cleanupError) {
-					// Against the rule everywhere else: no binding row was
-					// written, so nothing else can name the pad left behind.
-					$this->logger->warning('Could not remove the Etherpad pad after its creation failed.', [
-						'app' => 'etherpad_nextcloud',
-						'padId' => $padId,
-						...SafeError::context($cleanupError),
-					]);
-				}
+				$this->discardProvisioned($padId, $context);
 			}
 			throw $e;
 		}
@@ -116,10 +104,12 @@ class ManagedPadLifecycle {
 	 *
 	 * @param callable():string $padId the id a public pad is created under
 	 * @param callable():string $groupPadName the name a protected pad carries
+	 * @param array<string,mixed> $context as for discardProvisioned(), for
+	 *   the line of a pad a failed create leaves over
 	 * @throws \InvalidArgumentException when $accessMode is not a known mode,
 	 *   or a public pad's id holds one of $ / ? & #
 	 */
-	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
+	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName, array $context = []): string {
 		$mode = PadAccessMode::tryFrom($accessMode);
 		if ($mode === null) {
 			throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.');
@@ -128,8 +118,8 @@ class ManagedPadLifecycle {
 		// Exhaustive over the enum on purpose: a case added without an arm
 		// here is a Psalm error rather than a pad quietly made the wrong way.
 		return match ($mode) {
-			PadAccessMode::Public => $this->provisionPublicPadId($padId()),
-			PadAccessMode::Protected => $this->provisionGroupPad($groupPadName()),
+			PadAccessMode::Public => $this->provisionPublicPadId($padId(), $context),
+			PadAccessMode::Protected => $this->provisionGroupPad($groupPadName(), $context),
 		};
 	}
 
@@ -138,9 +128,11 @@ class ManagedPadLifecycle {
 	 *
 	 * Two steps rather than one, which is the asymmetry with the group case:
 	 * there Etherpad picks the id and the call is the only way to learn it.
+	 *
+	 * @param array<string,mixed> $context as for discardProvisioned()
 	 */
-	private function provisionPublicPadId(string $padId): string {
-		$this->provisionPad($padId);
+	private function provisionPublicPadId(string $padId, array $context): string {
+		$this->provisionPad($padId, $context);
 		return $padId;
 	}
 
@@ -197,7 +189,7 @@ class ManagedPadLifecycle {
 	 * @throws \InvalidArgumentException as provisionFor()
 	 */
 	public function provisionSeeded(string $accessMode, callable $padId, callable $groupPadName, string $text, string $html, array $context = []): array {
-		$madeId = $this->provisionFor($accessMode, $padId, $groupPadName);
+		$madeId = $this->provisionFor($accessMode, $padId, $groupPadName, $context);
 		try {
 			return [$madeId, $this->seed($madeId, $text, $html, $context)];
 		} catch (\Throwable $e) {
@@ -217,8 +209,8 @@ class ManagedPadLifecycle {
 	/**
 	 * Remove a pad this request has just provisioned, without asking what
 	 * its group holds: `provisionGroupPad` made the group earlier in the same
-	 * call, with the one pad that call put in it, so control flow has
-	 * answered the ownership question `discardIfPresent` asks Etherpad.
+	 * call, with at most the one pad that call put in it, so control flow
+	 * has answered the ownership question `discardIfPresent` asks Etherpad.
 	 * Asking would only make it breakable: these are rollbacks, nothing
 	 * retries them, and a `listPads` that timed out would give up the group
 	 * and its sessions for good.
