@@ -44,7 +44,8 @@ export const isPadMissingError = (error) => Boolean(error) && error.code === 'pa
 /**
  * Whether the same open may work later, so a client offers to try it
  * again: the server said so (`retryable`), the file changed while it was
- * being initialised (the server undid its part), no answer came, or
+ * being initialised (what the server made is taken back, or kept for the
+ * file's next open), no answer came, or
  * Nextcloud refused it as one too many (429). Never by itself: a person
  * presses the button, so a throttled client does not keep asking.
  *
