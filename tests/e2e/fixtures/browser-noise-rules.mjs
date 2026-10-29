@@ -178,6 +178,12 @@ export const KNOWN_ELSEWHERE = [
 		reason: 'The Viewer registers every handler in `_oca_viewer_handlers` twice: viewer-init when it starts, viewer-main again on DOMContentLoaded. The line names the handler, this app\'s among them; it is registered once all the same.',
 	},
 	{
+		id: 'viewer-close-sidebar-fullscreen',
+		kind: 'console',
+		pattern: /^TypeError: OCA\.Files\.Sidebar\.setFullScreenMode is not a function[\s\S]*\/apps\/viewer\//,
+		reason: 'Nextcloud 35: the Viewer\'s `close()` calls `OCA.Files.Sidebar.setFullScreenMode(false)` once it finds `OCA.Files.Sidebar`, and the Files app of 35 has that object without the method. Every file the Viewer closes logs it, a pad among them.',
+	},
+	{
 		id: 'service-worker-stack-certificate',
 		kind: 'console',
 		pattern: /^An SSL certificate error occurred when fetching the script\.(?: \([^)]*\))?$/,
