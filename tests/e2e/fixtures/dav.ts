@@ -730,10 +730,8 @@ export const deleteShareById = async (id: string): Promise<void> => {
 	}
 }
 
-export const deletePublicShare = async (token: string): Promise<void> => {
-	if (token === '') {
-		return
-	}
+/** The id of the link share with this token, or '' when there is none. */
+const publicShareId = async (token: string): Promise<string> => {
 	const lookup = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
 		headers: {
 			Authorization: basicAuthHeader(),
@@ -745,18 +743,35 @@ export const deletePublicShare = async (token: string): Promise<void> => {
 		ocs?: { data?: Array<{ id?: string | number, token?: string }> }
 	}
 	const share = (payload?.ocs?.data || []).find((item) => String(item.token || '') === token)
-	if (!share || share.id === undefined || share.id === null) {
+	return share?.id === undefined || share.id === null ? '' : String(share.id)
+}
+
+export const deletePublicShare = async (token: string): Promise<void> => {
+	if (token === '') {
 		return
 	}
-	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares/${encodeURIComponent(String(share.id))}?format=json`, {
-		method: 'DELETE',
+	await deleteShareById(await publicShareId(token))
+}
+
+/** Give the link share with this token another password, as its owner does in Files. */
+export const setPublicSharePassword = async (token: string, password: string): Promise<void> => {
+	const id = await publicShareId(token)
+	if (id === '') {
+		throw new Error(`No link share has the token ${token}`)
+	}
+	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares/${encodeURIComponent(id)}?format=json`, {
+		method: 'PUT',
 		headers: {
 			Authorization: basicAuthHeader(),
 			'OCS-APIRequest': 'true',
+			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
 			Accept: 'application/json',
 		},
+		body: new URLSearchParams({ password }),
 	})
-	if (!res.ok && res.status !== 404) {
-		throw new Error(`OCS share delete failed with HTTP ${res.status}`)
+	const payload = await parseJsonResponse(res) as { ocs?: { meta?: { statuscode?: number, message?: string } } }
+	const statusCode = Number(payload?.ocs?.meta?.statuscode ?? 0)
+	if (!res.ok || statusCode < 100 || statusCode >= 300) {
+		throw new Error(`OCS share update failed with HTTP ${res.status} / OCS ${statusCode}: ${payload?.ocs?.meta?.message || 'unknown error'}`)
 	}
 }

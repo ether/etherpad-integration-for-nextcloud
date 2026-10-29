@@ -31,6 +31,7 @@ import {
 	mkcolViaDav,
 	propfindFileId,
 	putFileViaDav,
+	setPublicSharePassword,
 } from '../fixtures/dav'
 
 /**
@@ -110,17 +111,24 @@ test.describe('public share access without login', () => {
 
 	/**
 	 * The app's old address for a share with a password hands on to the
-	 * share page, which asks for it. Nextcloud answered 404 while that
-	 * address was served behind its own check of the share.
+	 * share page, which asks for it - Nextcloud answered 404 while that
+	 * address was served behind its own check of the share. The pad opens
+	 * once the visitor gives it, and the app's own route answers that
+	 * session. A changed password ends it: the route answers as for a share
+	 * the session has not passed, and the share asks again, until the new
+	 * password opens it. One share for all of it: Nextcloud lets a user make
+	 * 20 in ten minutes.
 	 */
-	test('hands the old address of a share with a password on to its password page', async ({ browser, browserNoise }) => {
+	test('hands a share with a password to its password page, opens it once given, and asks again once it changes', async ({ browser, browserNoise }) => {
 		const name = uniquePadName('public-share-password')
-		await putFileViaDav(name, 'A pad behind a password.')
+		const first = `E2e-${Math.random().toString(36).slice(2)}-Share!`
+		const second = `E2e-${Math.random().toString(36).slice(2)}-Again!`
 		// Nextcloud keeps a link share whose file is deleted, and its token
 		// would lead on to the password page until a job sweeps it.
 		let token = ''
 		try {
-			token = (await createPublicShare(name, SHARE_PERMISSION_READ, `E2e-${Math.random().toString(36).slice(2)}-Share!`)).token
+			await createPadAtPath(`/${name}`)
+			token = (await createPublicShare(name, SHARE_PERMISSION_READ, first)).token
 			const publicContext = await browser.newContext(SIGNED_OUT)
 			browserNoise.watch(publicContext)
 			try {
@@ -130,17 +138,31 @@ test.describe('public share access without login', () => {
 				expect(answer?.status()).toBe(200)
 				await expect(publicPage).toHaveURL(new RegExp(`/s/${token}/authenticate`))
 				await expect(publicPage.locator('input[type="password"]')).toBeVisible()
+
+				const open = `${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(token)}`
+				const givePassword = async (password: string): Promise<void> => {
+					await publicPage.goto(`${E2E.baseURL}/s/${encodeURIComponent(token)}`)
+					const field = publicPage.locator('input[type="password"]')
+					await expect(field).toBeVisible({ timeout: 30_000 })
+					await field.fill(password)
+					await field.press('Enter')
+					await expect(publicPage.locator('iframe').first()).toBeVisible({ timeout: 30_000 })
+				}
+				await givePassword(first)
+				expect((await publicPage.request.get(open)).status()).toBe(200)
+
+				await setPublicSharePassword(token, second)
+				expect((await publicPage.request.get(open)).status()).toBe(404)
+				await givePassword(second)
+				expect((await publicPage.request.get(open)).status()).toBe(200)
 			} finally {
 				await publicContext.close()
 			}
 		} finally {
-			try {
-				if (token !== '') {
-					await deletePublicShare(token)
-				}
-			} finally {
-				await deleteViaDav(name, { pastTrash: true })
-			}
+			await eachInTurn(
+				() => deletePublicShare(token),
+				() => deleteViaDav(name, { pastTrash: true }),
+			)
 		}
 	})
 

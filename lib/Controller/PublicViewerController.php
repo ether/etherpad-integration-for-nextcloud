@@ -53,8 +53,16 @@ class PublicViewerController extends PublicShareController {
 		return true;
 	}
 
+	/**
+	 * As Nextcloud's own share page asks it: from 35 a share says itself
+	 * whether anything protects it, a password or what may follow; before
+	 * 35 a password is the only protection. The method is found at runtime,
+	 * so only a `true` from it counts.
+	 */
 	protected function isPasswordProtected(): bool {
-		return $this->share !== null && $this->share->getPassword() !== null;
+		return $this->share !== null && (method_exists($this->share, 'isPasswordProtected')
+			? $this->share->isPasswordProtected() === true
+			: $this->share->getPassword() !== null);
 	}
 
 	protected function getPasswordHash(): ?string {
