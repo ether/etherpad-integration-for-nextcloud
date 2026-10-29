@@ -70,6 +70,20 @@ class PublicViewerController extends PublicShareController {
 	}
 
 	/**
+	 * A share protected without a password has no hash a session could have
+	 * passed, and nothing here checks what protects it instead, so it is
+	 * refused. Nextcloud's own check takes the hash as a string.
+	 *
+	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/public/AppFramework/PublicShareController.php validateTokenSession()
+	 */
+	public function isAuthenticated(): bool {
+		if ($this->isPasswordProtected() && $this->getPasswordHash() === null) {
+			return false;
+		}
+		return parent::isAuthenticated();
+	}
+
+	/**
 	 * @see PadSessionController::contentById() for why this is its own endpoint.
 	 *
 	 * Throttled because each call makes this server fetch something on

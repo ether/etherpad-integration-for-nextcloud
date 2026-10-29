@@ -366,8 +366,8 @@ class PublicViewerControllerTest extends TestCase {
 
 	/**
 	 * From Nextcloud 35 a share says itself whether it is protected: one
-	 * that is, without a password - by what may follow one -, still asks for
-	 * a session that passed its check, and one that says it is not opens
+	 * that is, without a password - by what may follow one -, is refused,
+	 * as no session holds a hash of it, and one that says it is not opens
 	 * without, whatever its password field holds.
 	 *
 	 * @return iterable<string, array{bool, ?string, bool}> what the share says, its password, and whether it opens without a session
