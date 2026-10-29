@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
@@ -20,6 +21,7 @@ use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\NotFoundException;
+use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -260,20 +262,21 @@ class PadLegacyMigrationService {
 
 	/**
 	 * The document written over the shortcut the row was made for - by
-	 * this migration, or by an earlier one of the same file. A refused
-	 * write takes the row back where the file names another pad by now:
-	 * the row would keep the next open from binding that one. Elsewhere it
+	 * this migration, or by an earlier one of the same file. A write
+	 * refused - the file changed, or another write held its lock - takes
+	 * the row back where the file names another pad by now: the row would
+	 * keep the next open from taking the pad the file names. Elsewhere it
 	 * stays - a file naming this pad, or an emptied one, is bound by it on
-	 * its next open, and one naming none, or that cannot be read, may have
-	 * nothing else. Only the row: the pad was there before, and is never
-	 * the migration's to take down.
+	 * its next open, and for one that does not parse, or cannot be looked
+	 * up or read, the row may be all that names its pad. Only the row: the
+	 * pad was there before, and is never the migration's to take down.
 	 *
 	 * @param array<string,int|string> $context the same-origin fields
 	 */
 	private function writeOrTakeBackTheRow(CreatedFileClaim $claim, string $document, string $padId, array $context): void {
 		try {
 			$this->claimedFileWriter->write($claim, $document);
-		} catch (PadFileChangedException $e) {
+		} catch (PadFileChangedException|LockedException $e) {
 			$this->takeBackTheRowIfTheFileNamesAnotherPad($claim, $padId, $context);
 			throw $e;
 		}
@@ -290,7 +293,7 @@ class PadLegacyMigrationService {
 		try {
 			$content = $this->lockRetry->readContentWithOpenLockRetry($this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId));
 		} catch (\Throwable $e) {
-			$this->logger->warning('Kept the row of a legacy Ownpad migration whose write was refused: the file cannot be read.', [
+			$this->logger->warning('Kept the row of a legacy Ownpad migration whose write was refused: the file could not be looked up or read.', [
 				...$context,
 				...SafeError::context($e),
 			]);
@@ -313,19 +316,20 @@ class PadLegacyMigrationService {
 
 	/**
 	 * Whether $content names a pad other than $padId: a document naming
-	 * another, or a shortcut to another pad or server. Content naming none
-	 * - an emptied file - or that does not parse does not.
+	 * another, or a shortcut to another pad or server. The document first,
+	 * as an open reads it: its text may quote a shortcut. An empty file, and
+	 * content that does not parse, do not.
 	 */
 	private function namesAnotherPad(string $content, string $padId): bool {
-		$shortcut = $this->padFileService->parseLegacyOwnpadShortcut($content);
-		if ($shortcut !== null) {
-			return $shortcut['pad_id'] !== $padId || !$this->isSameOrigin($shortcut['url']);
-		}
 		try {
 			return $this->padFileService->readPad($content)->padId !== $padId;
+		} catch (MissingFrontmatterException) {
+			// No document: perhaps a shortcut.
 		} catch (\Throwable) {
 			return false;
 		}
+		$shortcut = $this->padFileService->parseLegacyOwnpadShortcut($content);
+		return $shortcut !== null && ($shortcut['pad_id'] !== $padId || !$this->isSameOrigin($shortcut['url']));
 	}
 
 	/** Whether $url is on the Etherpad server this instance is set up for. */

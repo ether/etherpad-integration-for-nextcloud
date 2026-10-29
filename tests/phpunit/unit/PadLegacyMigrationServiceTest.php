@@ -602,8 +602,13 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			'a shortcut to another pad' => ["[InternetShortcut]\nURL=https://pad.our-server.test/p/other-pad\n", true],
 			'a shortcut to that name on another server' => ["[InternetShortcut]\nURL=https://legacy.example.test/p/team-pad\n", true],
 			'a document naming another pad' => [$documentNaming('other-pad'), true],
+			// The document decides, not a shortcut its text quotes.
+			'a document naming another pad, quoting this shortcut' => [$documentNaming('other-pad') . self::SHORTCUT, true],
 			// Another open of the same file migrated it meanwhile: the row is its.
 			'the document another open wrote' => [$documentNaming('team-pad'), false],
+			'this pad\'s document, quoting a shortcut to another pad' => [$documentNaming('team-pad') . "[InternetShortcut]\nURL=https://pad.our-server.test/p/other-pad\n", false],
+			// Frontmatter that names no pad leaves it open which one the file is for.
+			'a document that does not parse, quoting a shortcut to another pad' => ["---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 612\n---\n[InternetShortcut]\nURL=https://pad.our-server.test/p/other-pad\n", false],
 			// Saved again by a sync client: the next open finishes it by the row.
 			'the shortcut with other line ends' => [str_replace("\n", "\r\n", self::SHORTCUT), false],
 			// The next open writes the document of the pad the row names.
@@ -714,6 +719,44 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
 	}
 
+	/**
+	 * A write refused for another write's lock - on the guard's read, or on
+	 * the write itself - takes the row back as a changed file does, by what
+	 * the file names once the lock passed; the lock's failure goes on.
+	 *
+	 * @return iterable<string, array{bool, string, bool}> whether the write itself hit the lock, what the file holds after it, and whether the row goes
+	 */
+	public static function writesRefusedForALock(): iterable {
+		$shortcutToAnotherPad = "[InternetShortcut]\nURL=https://pad.our-server.test/p/other-pad\n";
+		yield 'the guard\'s read, the file naming another pad after it' => [false, $shortcutToAnotherPad, true];
+		yield 'the write, the file naming another pad after it' => [true, $shortcutToAnotherPad, true];
+		yield 'the guard\'s read, the file holding the shortcut still' => [false, self::SHORTCUT, false];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('writesRefusedForALock')]
+	public function testTakesBackTheRowOfAWriteRefusedForALock(bool $onTheWrite, string $holdsAfter, bool $goes): void {
+		$claimed = $this->createMock(File::class);
+		if ($onTheWrite) {
+			$claimed->method('getContent')->willReturn(self::SHORTCUT);
+			$claimed->expects($this->once())->method('putContent')->willThrowException(new \OCP\Lock\LockedException('/Team.pad'));
+		} else {
+			$claimed->method('getContent')->willThrowException(new \OCP\Lock\LockedException('/Team.pad'));
+			$claimed->expects($this->never())->method('putContent');
+		}
+		$this->claimedFile = $claimed;
+		$after = $this->createMock(File::class);
+		$after->method('getContent')->willReturn($holdsAfter);
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->with('alice', 612)->willReturn($after);
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		$binding->expects($goes ? $this->once() : $this->never())->method('deleteActiveBinding')->with(612, 'team-pad')->willReturn(true);
+
+		$this->expectException(\OCP\Lock\LockedException::class);
+		$this->buildService(binding: $binding, padFileService: new PadFileService(new FixedClock()), etherpadClient: $this->sameOriginClient(), resolver: $resolver)
+			->migrate(new CreatedFileClaim('alice', 612, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
+	}
+
 	/** A file another write holds locked is read once the lock passes. */
 	public function testReadsTheFileForTheTakeBackOnceItsLockPasses(): void {
 		$claimed = $this->createMock(File::class);
@@ -747,7 +790,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	 * @return iterable<string, array{bool, bool|\Throwable, list<array{string, string, ?string}>}> whether the file can be read, what removing the row answers, and the lines as level, message and error
 	 */
 	public static function takeBacksTheLogNames(): iterable {
-		yield 'a file that stays locked' => [false, true, [['warning', 'Kept the row of a legacy Ownpad migration whose write was refused: the file cannot be read.', \OCP\Lock\LockedException::class]]];
+		yield 'a file that stays locked' => [false, true, [['warning', 'Kept the row of a legacy Ownpad migration whose write was refused: the file could not be looked up or read.', \OCP\Lock\LockedException::class]]];
 		yield 'a row that cannot be removed' => [true, new \RuntimeException('database gone'), [['warning', 'Could not take back the row of a legacy Ownpad migration whose write was refused.', \RuntimeException::class]]];
 		yield 'a row gone already' => [true, false, []];
 	}
@@ -812,6 +855,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		}
 		return $logger;
 	}
+
 	/**
 	 * A pad on another server is that server's to judge: the migration
 	 * hands it to the external route, not refusing it for its id.
