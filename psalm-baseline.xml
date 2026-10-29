@@ -61,7 +61,7 @@
       <code><![CDATA[$field]]></code>
     </MixedAssignment>
     <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$target->getId()]]></code>
       <code><![CDATA[(int)$target->getId()]]></code>
       <code><![CDATA[(int)$template->getId()]]></code>
       <code><![CDATA[(string)($seeded['pad_url'] ?? '')]]></code>
@@ -248,11 +248,6 @@
 			self::SETTING_PROTECTED_IMPORT,
 			self::DEFAULT_PROTECTED_IMPORT,
 		)]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
-  <file src="lib/Service/PadBootstrapService.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$file->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadContentService.php">

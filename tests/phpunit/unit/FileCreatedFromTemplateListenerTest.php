@@ -142,7 +142,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
 			->method('initializeMissingFrontmatter')
-			->with('alice', $target, '', $mode);
+			->with('alice', 42, '', $mode);
 
 		$this->buildListener($creation, $bootstrap, true, $this->tilesOffering($mode))->handle(new FileCreatedFromTemplateEvent(
 			$templateName === null ? null : $this->file($templateName),
@@ -182,7 +182,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
 			->method('initializeMissingFrontmatter')
-			->with('alice', $this->identicalTo($byId), '');
+			->with('alice', 4242, '');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('error')->with(
 			'Pad template materialization failed — falling back to blank-pad init.',
@@ -347,22 +347,26 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($templateName === null ? null : $this->file($templateName), $target, []));
 	}
 
-	/** Without its id nothing tells the file from one written meanwhile: it stays, and the refusal goes on. */
+	/**
+	 * Without its id the file can neither be initialised nor told from one
+	 * written meanwhile: it stays for its first open, and the warning names
+	 * the error.
+	 */
 	public function testLeavesABlankFileWhoseIdCannotBeRead(): void {
 		$target = $this->createMock(File::class);
 		$target->method('getName')->willReturn('Notes.pad');
 		$target->method('getId')->willThrowException(new \OCP\Files\NotFoundException('gone'));
+		$target->expects($this->never())->method('putContent');
 		$target->expects($this->never())->method('delete');
 		$this->writer->expects($this->never())->method('deleteIfUnchanged');
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
-			'Blank pad create refused: no pad type is enabled.',
-			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === null),
+			'Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['error'], isset($context['fileId'])] === ['etherpad_nextcloud', \OCP\Files\NotFoundException::class, false]),
 		);
 
-		$this->expectException(PadTypeDisabledException::class);
 		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
 	}

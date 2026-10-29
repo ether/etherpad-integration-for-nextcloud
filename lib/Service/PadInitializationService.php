@@ -74,7 +74,7 @@ class PadInitializationService {
 			// unhandled and reaches the caller.
 		}
 
-		$wasLegacyMigration = $this->padBootstrapService->initializeMissingFrontmatter($uid, $file, $content);
+		$wasLegacyMigration = $this->padBootstrapService->initializeMissingFrontmatter($uid, $fileId, $content);
 		$pad = $this->padFileService->readPad((string)$file->getContent());
 
 		return new PadInitializationResult(

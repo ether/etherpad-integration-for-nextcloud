@@ -92,7 +92,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 
 		$template = $event->getTemplate();
 		if (!$template instanceof File) {
-			$this->initializeBlankPad($user->getUID(), $target, $this->idOrNull($target));
+			$this->initializeNewFile($user->getUID(), $target);
 			return;
 		}
 
@@ -107,7 +107,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// instead of copying an empty marker over the new file.
 		$templateAccessMode = $this->templateStorage->accessModeForTemplateFile($template);
 		if ($templateAccessMode !== null) {
-			$this->initializeBlankPad($user->getUID(), $target, $this->idOrNull($target), $templateAccessMode);
+			$this->initializeNewFile($user->getUID(), $target, $templateAccessMode);
 			return;
 		}
 
@@ -164,31 +164,42 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// from here as well. Only once the reset returned: otherwise the
 			// init could make a pad and a row before the guard refused its
 			// write on the template's copy.
-			$this->initializeBlankPad($user->getUID(), $unchanged, $claim->fileId);
+			$this->initializeBlankPad($user->getUID(), $claim->fileId);
 		}
 	}
 
 	/**
-	 * $fileId is read before anything here can fail, as resetTargetToEmpty()
-	 * says; null where it could not be read.
+	 * Nextcloud's blank entry and a type tile. The id is read once, here,
+	 * as resetTargetToEmpty() says; a file whose id cannot be read is left
+	 * to its first open, as one whose init fails.
 	 */
-	private function initializeBlankPad(string $uid, File $target, ?int $fileId, ?string $preferredAccessMode = null): void {
+	private function initializeNewFile(string $uid, File $target, ?string $preferredAccessMode = null): void {
 		try {
-			$this->padBootstrapService->initializeMissingFrontmatter($uid, $target, '', $preferredAccessMode);
+			$fileId = (int)$target->getId();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			]);
+			return;
+		}
+		$this->initializeBlankPad($uid, $fileId, $preferredAccessMode);
+	}
+
+	private function initializeBlankPad(string $uid, int $fileId, ?string $preferredAccessMode = null): void {
+		try {
+			$this->padBootstrapService->initializeMissingFrontmatter($uid, $fileId, '', $preferredAccessMode);
 		} catch (PadTypeDisabledException $e) {
 			// Same as above, for Nextcloud's blank entry — and an instance
 			// offering only external pads reaches this on every one of them,
 			// so leaving the file behind would hand out empty .pad files.
-			// Removed while it still reads as empty: one written since stays,
-			// and so does one whose id could not be read.
+			// Removed while it still reads as empty: one written since stays.
 			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
-			if ($fileId !== null) {
-				$this->claimedFileWriter->deleteIfUnchanged(new CreatedFileClaim($uid, $fileId));
-			}
+			$this->claimedFileWriter->deleteIfUnchanged(new CreatedFileClaim($uid, $fileId));
 			throw $e;
 		} catch (\Throwable $e) {
 			// The viewer's first open finds no frontmatter and initialises the
@@ -257,14 +268,6 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			return trim((string)($field['content'] ?? ''));
 		}
 		return is_string($field) ? trim($field) : '';
-	}
-
-	private function idOrNull(File $file): ?int {
-		try {
-			return (int)$file->getId();
-		} catch (\Throwable) {
-			return null;
-		}
 	}
 
 	/**
