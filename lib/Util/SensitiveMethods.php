@@ -186,9 +186,9 @@ final class SensitiveMethods {
 			'perform', 'parsePublicPadUrl',
 		],
 		\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class => [
-			'migrate', 'unlinkable', 'sameOriginContext', 'refuseProtectedImportIfSwitchedOff',
-			// The managed document it writes, as a string.
-			'writeOrTakeBackTheRow',
+			'migrate', 'unlinkable', 'sameOriginContext', 'refuseProtectedImportIfSwitchedOff', 'isSameOrigin',
+			// The managed document it writes, and what the file holds, as strings.
+			'writeOrTakeBackTheRow', 'namesAnotherPad',
 		],
 		\OCA\EtherpadNextcloud\Service\PadMetadataService::class => ['resolvePublicOpenUrl', 'resolveReadOnlyOpenUrl'],
 		\OCA\EtherpadNextcloud\Service\PadMeta::class => ['__construct'],
