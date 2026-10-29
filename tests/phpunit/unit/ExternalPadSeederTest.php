@@ -9,7 +9,6 @@ use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
-use OCP\Files\File;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -58,16 +57,6 @@ class ExternalPadSeederTest extends TestCase {
 				'pad_url' => self::PAD_URL,
 			] + $warning,
 		], (new ExternalPadSeeder($padFileService, $this->fetcherAnswering($export)))->prepare(999, self::PAD_URL));
-	}
-
-	public function testSeedWritesWhatPrepareBuiltIntoTheNodeItIsHanded(): void {
-		$fileNode = $this->createMock(File::class);
-		$fileNode->expects($this->once())->method('putContent')->with('seeded-frontmatter');
-		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('buildInitialDocument')->with(999)->willReturn('seeded-frontmatter');
-
-		(new ExternalPadSeeder($padFileService, $this->fetcherAnswering(['text' => 'snapshot-body'])))
-			->seed($fileNode, 999, self::PAD_URL);
 	}
 
 	/** @param array<string,mixed> $export */

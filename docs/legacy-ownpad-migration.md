@@ -6,7 +6,7 @@ The detection lives in `PadFileService::parseLegacyOwnpadShortcut`; the migratio
 
 ## What happens on first open
 
-The migration service compares the shortcut URL's origin (scheme + host + port, normalized) against the configured `etherpad_host` and branches accordingly:
+The migration service compares the shortcut URL's origin (scheme + host + port, normalized) against the configured `etherpad_host` and branches accordingly. On every branch the document goes in last, after the row lookups, a group's listing or the remote export, and only into the file as the open read it: the migration finds the file again by its id and leaves one that no longer holds the shortcut, with `The .pad file changed before its document was written.` A row made for the shortcut - by this migration, or by an earlier one of the same file that it now finishes - goes again when the write is refused, for a changed file or another write's lock, and the file names another pad by then, in its document or a shortcut: the row would keep the next open from taking the pad the file names. Otherwise it stays: a file naming this pad, or an emptied one, is bound by it on its next open, and for one that does not parse, or cannot be looked up or read, the row may be all that names its pad. After any other failed write the row stays for the next open to finish. The pad is never removed.
 
 ### Different origin — external public pad
 
@@ -53,7 +53,7 @@ Refused imports surface as HTTP 403 with `code: "legacy_protected_import_disable
 
 ## Audit log
 
-Every branch emits one log line at `info` level (or `warning` for a refusal); a migration that lost a race for the pad id writes a second, `info`, before the collision's. Where the migration stops on something else, the error mapper writes the line instead. A pad on another server takes the path of `POST /api/v1/pads/from-url`, whose own refusals - external pads switched off, say - it logs at `debug`. A group listing Etherpad refuses for another reason than not knowing the group is a warning once a minute for each file, an Etherpad that does not answer a warning once a minute, a key Etherpad rejects an error once a minute for the instance, and a race lost without a winner an error (`Could not create pad binding.`). Fields:
+Every branch emits one log line at `info` level (or `warning` for a refusal); a migration that lost a race for the pad id writes a second, `info`, before the collision's. Where the migration stops on something else, the error mapper writes the line instead. A refused write adds a line of its own where it takes its row back (`info`), and where it keeps the row because the file could not be looked up or read, or could not remove it (both `warning`). A pad on another server takes the path of `POST /api/v1/pads/from-url`, whose own refusals - external pads switched off, say - it logs at `debug`. A group listing Etherpad refuses for another reason than not knowing the group is a warning once a minute for each file, an Etherpad that does not answer a warning once a minute, a key Etherpad rejects an error once a minute for the instance, and a race lost without a winner an error (`Could not create pad binding.`). Fields:
 
 | Field | Meaning |
 |---|---|

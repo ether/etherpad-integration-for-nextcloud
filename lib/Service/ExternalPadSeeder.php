@@ -8,8 +8,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCP\Files\File;
-
 /**
  * The `ext.<remote-id>` document for a `.pad` file: frontmatter with a
  * snapshot of the remote pad's text.
@@ -69,10 +67,5 @@ class ExternalPadSeeder {
 		}
 
 		return ['content' => $content, 'result' => $result];
-	}
-
-	/** Prepare and write through the supplied node without re-resolving or checking it. */
-	public function seed(File $file, int $fileId, string $padUrl): void {
-		$file->putContent($this->prepare($fileId, $padUrl)['content']);
 	}
 }

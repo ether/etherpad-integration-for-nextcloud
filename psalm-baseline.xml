@@ -61,10 +61,6 @@
       <code><![CDATA[$field]]></code>
     </MixedAssignment>
     <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$file->getId()]]></code>
-      <code><![CDATA[(int)$target->getId()]]></code>
-      <code><![CDATA[(int)$target->getId()]]></code>
-      <code><![CDATA[(int)$target->getId()]]></code>
       <code><![CDATA[(int)$template->getId()]]></code>
       <code><![CDATA[(string)($seeded['pad_url'] ?? '')]]></code>
     </RedundantCastGivenDocblockType>
@@ -252,11 +248,6 @@
 		)]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PadBootstrapService.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$file->getId()]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/PadContentService.php">
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$node->getId()]]></code>
@@ -298,11 +289,6 @@
       <code><![CDATA[(int)$file->getId()]]></code>
       <code><![CDATA[(string)$file->getContent()]]></code>
       <code><![CDATA[(string)$file->getContent()]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
-  <file src="lib/Service/PadLegacyMigrationService.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$file->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadMetadataService.php">

@@ -12,13 +12,16 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
-use OCP\Files\File;
 use OCP\Files\NotFoundException;
+use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -26,6 +29,9 @@ use Psr\Log\LoggerInterface;
  * `[InternetShortcut]` block instead of YAML frontmatter) into the current
  * binding-and-`.pad` model, called from `PadBootstrapService`. The branches
  * and what each leaves behind are in docs/legacy-ownpad-migration.md.
+ *
+ * The document goes in through ClaimedFileWriter, which checks the file
+ * against the shortcut as the caller read it before writing.
  */
 class PadLegacyMigrationService {
 	public function __construct(
@@ -36,6 +42,8 @@ class PadLegacyMigrationService {
 		private ExternalPadSeeder $externalPadSeeder,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
+		private ClaimedFileWriter $claimedFileWriter,
+		private PadFileLockRetryService $lockRetry,
 	) {
 	}
 
@@ -132,6 +140,7 @@ class PadLegacyMigrationService {
 	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
+	 * @param CreatedFileClaim $claim the file, and the shortcut as it was read
 	 * @param array{url:string,pad_id:string} $legacyShortcut output of
 	 *   `PadFileService::parseLegacyOwnpadShortcut`
 	 *
@@ -141,18 +150,17 @@ class PadLegacyMigrationService {
 	 *   group pad and this instance does not import those.
 	 * @throws LegacyPadNotFoundException when the file names a pad it cannot
 	 *   be linked to.
+	 * @throws \OCA\EtherpadNextcloud\Exception\PadFileChangedException
+	 *   when the file no longer holds the shortcut as it was read.
 	 */
-	public function migrate(string $uid, File $file, array $legacyShortcut): void {
-		$fileId = (int)$file->getId();
+	public function migrate(CreatedFileClaim $claim, array $legacyShortcut): void {
+		$uid = $claim->uid;
+		$fileId = $claim->fileId;
 		$sourceUrl = $legacyShortcut['url'];
 		$sourcePadId = $legacyShortcut['pad_id'];
 
-		$configuredOrigin = $this->etherpadClient->getConfiguredOrigin();
-		$sourceOrigin = $this->etherpadClient->normalizeOrigin($sourceUrl);
-		$isSameOrigin = $configuredOrigin !== '' && $configuredOrigin === $sourceOrigin;
-
-		if (!$isSameOrigin) {
-			$this->externalPadSeeder->seed($file, $fileId, $sourceUrl);
+		if (!$this->isSameOrigin($sourceUrl)) {
+			$this->claimedFileWriter->write($claim, $this->externalPadSeeder->prepare($fileId, $sourceUrl)['content']);
 			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
@@ -211,8 +219,9 @@ class PadLegacyMigrationService {
 				// Fall through to the collision-with-access handling below.
 			}
 			if ($existingBinding === null) {
-				$file->putContent($document);
-				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none'));
+				$context = $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none');
+				$this->writeOrTakeBackTheRow($claim, $document, $sourcePadId, $context);
+				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', $context);
 				return;
 			}
 		}
@@ -221,10 +230,11 @@ class PadLegacyMigrationService {
 		if ($boundFileId === $fileId) {
 			// Self-collision: an earlier migration attempt for this file
 			// succeeded in creating the binding but failed before the file
-			// write. Just finish the file-side work; the binding already
-			// covers us.
-			$file->putContent($document);
-			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'self'));
+			// write - or this one's insert landed and still threw. Just finish
+			// the file-side work; the binding already covers us.
+			$context = $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'self');
+			$this->writeOrTakeBackTheRow($claim, $document, $sourcePadId, $context);
+			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', $context);
 			return;
 		}
 
@@ -243,11 +253,89 @@ class PadLegacyMigrationService {
 		// Collision-with-access: write managed frontmatter but do NOT create
 		// a second binding row. The file becomes a "copy of a pad" in our
 		// model and the existing copy-handling flow takes over.
-		$file->putContent($document);
+		$this->claimedFileWriter->write($claim, $document);
 		$this->logger->info('Migrated legacy Ownpad .pad as copy of an already-bound pad.', [
 			...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'with_access'),
 			'boundFileId' => $boundFileId,
 		]);
+	}
+
+	/**
+	 * The document written over the shortcut the row was made for - by
+	 * this migration, or by an earlier one of the same file. A write
+	 * refused - the file changed, or another write held its lock - takes
+	 * the row back where the file names another pad by now: the row would
+	 * keep the next open from taking the pad the file names. Elsewhere it
+	 * stays - a file naming this pad, or an emptied one, is bound by it on
+	 * its next open, and for one that does not parse, or cannot be looked
+	 * up or read, the row may be all that names its pad. Only the row: the
+	 * pad was there before, and is never the migration's to take down.
+	 *
+	 * @param array<string,int|string> $context the same-origin fields
+	 */
+	private function writeOrTakeBackTheRow(CreatedFileClaim $claim, string $document, string $padId, array $context): void {
+		try {
+			$this->claimedFileWriter->write($claim, $document);
+		} catch (PadFileChangedException|LockedException $e) {
+			$this->takeBackTheRowIfTheFileNamesAnotherPad($claim, $padId, $context);
+			throw $e;
+		}
+	}
+
+	/**
+	 * Read under its lock, after a short wait for one to pass, as
+	 * RestoreService::fileNames() reads: what a file holds while another
+	 * write runs is no answer.
+	 *
+	 * @param array<string,int|string> $context
+	 */
+	private function takeBackTheRowIfTheFileNamesAnotherPad(CreatedFileClaim $claim, string $padId, array $context): void {
+		try {
+			$content = $this->lockRetry->readContentWithOpenLockRetry($this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId));
+		} catch (\Throwable $e) {
+			$this->logger->warning('Kept the row of a legacy Ownpad migration whose write was refused: the file could not be looked up or read.', [
+				...$context,
+				...SafeError::context($e),
+			]);
+			return;
+		}
+		if (!$this->namesAnotherPad($content, $padId)) {
+			return;
+		}
+		try {
+			if ($this->bindingService->deleteActiveBinding($claim->fileId, $padId)) {
+				$this->logger->info('Took back the row of a legacy Ownpad migration whose write was refused: the file names another pad by now.', $context);
+			}
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not take back the row of a legacy Ownpad migration whose write was refused.', [
+				...$context,
+				...SafeError::context($e),
+			]);
+		}
+	}
+
+	/**
+	 * Whether $content names a pad other than $padId: a document naming
+	 * another, or a shortcut to another pad or server. The document first,
+	 * as an open reads it: its text may quote a shortcut. An empty file, and
+	 * content that does not parse, do not.
+	 */
+	private function namesAnotherPad(string $content, string $padId): bool {
+		try {
+			return $this->padFileService->readPad($content)->padId !== $padId;
+		} catch (MissingFrontmatterException) {
+			// No document: perhaps a shortcut.
+		} catch (\Throwable) {
+			return false;
+		}
+		$shortcut = $this->padFileService->parseLegacyOwnpadShortcut($content);
+		return $shortcut !== null && ($shortcut['pad_id'] !== $padId || !$this->isSameOrigin($shortcut['url']));
+	}
+
+	/** Whether $url is on the Etherpad server this instance is set up for. */
+	private function isSameOrigin(string $url): bool {
+		$configuredOrigin = $this->etherpadClient->getConfiguredOrigin();
+		return $configuredOrigin !== '' && $configuredOrigin === $this->etherpadClient->normalizeOrigin($url);
 	}
 
 	/** The managed `.pad` document naming the pad, or null where the format cannot hold its id. */

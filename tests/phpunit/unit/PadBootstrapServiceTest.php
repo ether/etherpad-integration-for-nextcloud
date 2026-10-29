@@ -68,11 +68,10 @@ class PadBootstrapServiceTest extends TestCase {
 			->willReturn('abcdefghijklmnopqrst');
 
 		$file = $this->writableFile();
-		$file->expects($this->once())->method('getId')->willReturn($fileId);
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, secureRandom: $secureRandom, file: $file);
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', $fileId, '');
 	}
 
 	/**
@@ -115,12 +114,11 @@ class PadBootstrapServiceTest extends TestCase {
 		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrst');
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn($fileId);
 		$file->expects($this->never())->method('putContent');
 
 		$this->expectExceptionMessage('binding write failed');
 		$this->bootstrap($bindingService, $padFileService, $etherpadClient, secureRandom: $secureRandom, file: $file)
-			->initializeMissingFrontmatter('alice', $file, '');
+			->initializeMissingFrontmatter('alice', $fileId, '');
 	}
 
 	/**
@@ -147,13 +145,12 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->expects($this->never())->method('deleteGroup');
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn($fileId);
 		$file->method('putContent')->willThrowException(new \RuntimeException('file is locked'));
 
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, file: $file);
 
 		$this->expectException(\RuntimeException::class);
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', $fileId, '');
 	}
 
 	/**
@@ -202,7 +199,6 @@ class PadBootstrapServiceTest extends TestCase {
 			->willReturn('abcdefghijklmnopqrst');
 
 		$file = $this->writableFile();
-		$file->expects($this->once())->method('getId')->willReturn($fileId);
 		$file->expects($this->once())
 			->method('putContent')
 			->with('doc-that-fails-to-write')
@@ -212,7 +208,7 @@ class PadBootstrapServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$this->expectExceptionMessage('write failed');
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', $fileId, '');
 	}
 
 	public function testBlankInitialisationIsRefusedWhenNoPadTypeIsEnabled(): void {
@@ -232,14 +228,13 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->expects($this->never())->method('createPad');
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn(4321);
 		$file->expects($this->never())->method('putContent');
 
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, policy: $this->buildPadTypePolicy(false, false), file: $file);
 
 		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadTypeDisabledException::class);
 
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', 4321, '');
 	}
 
 	public function testBlankInitialisationFallsBackToPublicWhenProtectedPadsAreDisabled(): void {
@@ -270,12 +265,11 @@ class PadBootstrapServiceTest extends TestCase {
 			->willReturn('abcdefghijklmnopqrstuvwx');
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn(4321);
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, secureRandom: $secureRandom, policy: $this->buildPadTypePolicy(false, true), file: $file);
 
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', 4321, '');
 	}
 
 	/**
@@ -320,12 +314,11 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/existing');
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn($fileId);
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, policy: $this->buildPadTypePolicy(false), file: $file);
 
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', $fileId, '');
 	}
 
 	public function testLegacyMigrationStillRunsWhenProtectedPadsAreDisabled(): void {
@@ -340,16 +333,15 @@ class PadBootstrapServiceTest extends TestCase {
 		$padFileService->expects($this->once())->method('parseLegacyOwnpadShortcut')->willReturn($legacy);
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn(4321);
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$migration->expects($this->once())->method('migrate')->with('alice', $file, $legacy);
+		$migration->expects($this->once())->method('migrate')->with(new \OCA\EtherpadNextcloud\Service\CreatedFileClaim('alice', 4321, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n"), $legacy);
 
 		$service = $this->bootstrap($bindingService, $padFileService, migration: $migration, policy: $this->buildPadTypePolicy(false), file: $file);
 
 		self::assertTrue($service->initializeMissingFrontmatter(
 			'alice',
-			$file,
+			4321,
 			"[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n"
 		));
 	}
@@ -373,12 +365,11 @@ class PadBootstrapServiceTest extends TestCase {
 		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
 
 		$file = $this->writableFile();
-		$file->method('getId')->willReturn(99);
 
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, secureRandom: $secureRandom, policy: $this->buildPadTypePolicy(false), file: $file);
 
 		$this->expectException(\RuntimeException::class);
-		$service->initializeMissingFrontmatter('alice', $file, '');
+		$service->initializeMissingFrontmatter('alice', 99, '');
 	}
 
 	/** A `.pad` file the user may change, holding $content as the write's guard reads it. */
@@ -413,11 +404,8 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->expects($this->never())->method($this->anything());
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
 		$migration->expects($this->never())->method('migrate');
-		// The node the request named answers yes; the one the write would go
-		// through, the file by id, answers no - and that one is asked.
-		$file = $this->writableFile();
-		$file->method('getId')->willReturn(4711);
-		$file->expects($this->never())->method('putContent');
+		// The file by its id answers no, whatever a path the request named
+		// would answer.
 		$byId = $this->createMock(File::class);
 		$byId->method('isUpdateable')->willReturn(false);
 		$byId->expects($this->never())->method('putContent');
@@ -426,29 +414,29 @@ class PadBootstrapServiceTest extends TestCase {
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, migration: $migration, nodes: $resolver);
 
 		$this->expectException(PadFileNotWritableException::class);
-		$service->initializeMissingFrontmatter('bob', $file, $content);
+		$service->initializeMissingFrontmatter('bob', 4711, $content);
 	}
 
 	/**
-	 * A reader by the path a request named may be a writer by another -
-	 * a share of the file, and the owner's own folder. The migration writes
-	 * through the node that was asked, not the one the request named.
+	 * The migration is asked once the file by its id may be written, and
+	 * is handed the claim on that id with the shortcut as it was read.
 	 */
-	public function testALegacyShortcutIsMigratedThroughTheWritableNode(): void {
+	public function testALegacyShortcutIsMigratedOnceTheFileByItsIdMayBeWritten(): void {
 		$legacy = ['url' => 'https://pad.example.test/p/public-pad', 'pad_id' => 'public-pad'];
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn($legacy);
-		$named = $this->createMock(File::class);
-		$named->method('getId')->willReturn(4711);
-		$named->method('isUpdateable')->willReturn(false);
 		$writable = $this->writableFile();
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$migration->expects($this->once())->method('migrate')->with('bob', $this->identicalTo($writable), $legacy);
+		$migration->expects($this->once())->method('migrate')->with(
+			$this->callback(static fn (\OCA\EtherpadNextcloud\Service\CreatedFileClaim $claim): bool => $claim->uid === 'bob' && $claim->fileId === 4711
+				&& $claim->holds("[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n") && $claim->writtenHash === null),
+			$legacy,
+		);
 		$bindingService = $this->createMock(BindingService::class);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$service = $this->bootstrap($bindingService, $padFileService, $etherpadClient, migration: $migration, file: $writable);
 
-		$this->assertTrue($service->initializeMissingFrontmatter('bob', $named, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n"));
+		$this->assertTrue($service->initializeMissingFrontmatter('bob', 4711, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n"));
 	}
 
 	private function buildPadTypePolicy(bool $protectedEnabled, bool $publicEnabled = true): \OCA\EtherpadNextcloud\Service\PadTypePolicy {
@@ -498,7 +486,7 @@ class PadBootstrapServiceTest extends TestCase {
 		);
 	}
 
-	/** Stub the node resolved at write time, which may differ from the input node. */
+	/** Stub the file as it is found by its id, for the writability check and the write. */
 	private function resolverReturning(?File $file): UserNodeResolver {
 		$file ??= $this->writableFile();
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -518,13 +506,10 @@ class PadBootstrapServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('doc-content');
 
-		$file = $this->writableFile("\n");
-		$file->method('getId')->willReturn(4242);
-		$file->expects($this->never())->method('putContent');
 		$byId = $this->writableFile("\n");
 		$byId->expects($this->once())->method('putContent')->with('doc-content');
 
-		$this->assertFalse($this->bootstrap($bindingService, $padFileService, file: $byId)->initializeMissingFrontmatter('alice', $file, "\n"));
+		$this->assertFalse($this->bootstrap($bindingService, $padFileService, file: $byId)->initializeMissingFrontmatter('alice', 4242, "\n"));
 	}
 
 	/**
@@ -538,14 +523,11 @@ class PadBootstrapServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('doc-content');
 
-		$claimed = $this->writableFile();
-		$claimed->method('getId')->willReturn(4242);
-		$claimed->expects($this->never())->method('putContent');
 		$stranger = $this->writableFile('somebody else\'s notes');
 		$stranger->expects($this->never())->method('putContent');
 
 		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
-		$this->bootstrap($bindingService, $padFileService, file: $stranger)->initializeMissingFrontmatter('alice', $claimed, '');
+		$this->bootstrap($bindingService, $padFileService, file: $stranger)->initializeMissingFrontmatter('alice', 4242, '');
 	}
 
 	/**
@@ -557,12 +539,11 @@ class PadBootstrapServiceTest extends TestCase {
 	 */
 	public function testRefusesContentThatIsNeitherFrontmatterNorALegacyShortcut(): void {
 		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn(4321);
 		$file->method('isUpdateable')->willReturn(false);
 		$file->expects($this->never())->method('putContent');
 
 		$this->expectException(UnrecognisedPadContentException::class);
-		$this->bootstrap(file: $file)->initializeMissingFrontmatter('alice', $file, 'just some notes, not a pad');
+		$this->bootstrap(file: $file)->initializeMissingFrontmatter('alice', 4321, 'just some notes, not a pad');
 	}
 
 	/** And it is not the type the initialize flow treats as "carry on". */

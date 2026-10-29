@@ -178,7 +178,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener::class => ['seedExternalPad', 'padUrlField'],
 		\OCA\EtherpadNextcloud\Controller\PadCreateController::class => ['createFromUrl'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['createFromUrl'],
-		\OCA\EtherpadNextcloud\Service\ExternalPadSeeder::class => ['prepare', 'seed'],
+		\OCA\EtherpadNextcloud\Service\ExternalPadSeeder::class => ['prepare'],
 		\OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher::class => [
 			'normalizeAndFetchExternalPublicPadText', 'normalizeAndFetchExternalPublicPadTextOrEmpty',
 			'fetchExternalPublicPadHtml', 'normalizeAndValidateExternalPublicPadUrl', 'buildPublicExportUrl',
@@ -186,7 +186,9 @@ final class SensitiveMethods {
 			'perform', 'parsePublicPadUrl',
 		],
 		\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class => [
-			'migrate', 'unlinkable', 'sameOriginContext', 'refuseProtectedImportIfSwitchedOff',
+			'migrate', 'unlinkable', 'sameOriginContext', 'refuseProtectedImportIfSwitchedOff', 'isSameOrigin',
+			// The managed document it writes, and what the file holds, as strings.
+			'writeOrTakeBackTheRow', 'namesAnotherPad',
 		],
 		\OCA\EtherpadNextcloud\Service\PadMetadataService::class => ['resolvePublicOpenUrl', 'resolveReadOnlyOpenUrl'],
 		\OCA\EtherpadNextcloud\Service\PadMeta::class => ['__construct'],

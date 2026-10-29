@@ -252,7 +252,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
 			->method('initializeMissingFrontmatter')
-			->with('alice', $file, 'legacy-content')
+			->with('alice', 42, 'legacy-content')
 			->willReturn(false);
 
 		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))

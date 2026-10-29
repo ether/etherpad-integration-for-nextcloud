@@ -142,7 +142,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
 			->method('initializeMissingFrontmatter')
-			->with('alice', $target, '', $mode);
+			->with('alice', 42, '', $mode);
 
 		$this->buildListener($creation, $bootstrap, true, $this->tilesOffering($mode))->handle(new FileCreatedFromTemplateEvent(
 			$templateName === null ? null : $this->file($templateName),
@@ -182,7 +182,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
 			->method('initializeMissingFrontmatter')
-			->with('alice', $this->identicalTo($byId), '');
+			->with('alice', 4242, '');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('error')->with(
 			'Pad template materialization failed — falling back to blank-pad init.',
@@ -203,8 +203,13 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Template event fired without an active user — resetting target to empty.',
+			['app' => 'etherpad_nextcloud', 'fileId' => 42],
+		);
 
-		$listener = $this->buildListener($creation, $bootstrap, withUser: false);
+		$listener = $this->buildListener($creation, $bootstrap, withUser: false, logger: $logger);
 		$listener->handle(new FileCreatedFromTemplateEvent($template, $target, []));
 	}
 
@@ -325,39 +330,119 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The removal is handed to the writer, with a claim on the file's id that
+	 * expects it empty, and the refusal is named in the log.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatGoStraightToInitialisation')]
 	public function testRemovesTheFileWhenNoPadTypeIsEnabled(?string $templateName, ?string $mode): void {
 		$target = $this->file('Notes.pad');
-		$target->expects($this->once())->method('delete');
+		$target->expects($this->never())->method('delete');
+		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->callback(
+			static fn (CreatedFileClaim $claim): bool => [$claim->uid, $claim->fileId, $claim->writtenHash] === ['alice', 42, null] && $claim->holds('') && !$claim->holds('notes'),
+		));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Blank pad create refused: no pad type is enabled.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 42, PadTypeDisabledException::class]),
+		);
 
 		$this->expectException(PadTypeDisabledException::class);
-		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $this->tilesOffering($mode))
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $this->tilesOffering($mode), logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent($templateName === null ? null : $this->file($templateName), $target, []));
 	}
 
-	/** A removal that fails is named in the log, and the refusal goes on. */
-	public function testNamesTheBlankFileWhoseRemovalFails(): void {
-		$target = $this->file('Notes.pad');
-		$target->method('delete')->willThrowException(new \RuntimeException('storage gone'));
+	/**
+	 * Without its id the file can neither be initialised nor told from one
+	 * written meanwhile: it stays for its first open, and the warning names
+	 * the error.
+	 */
+	public function testLeavesABlankFileWhoseIdCannotBeRead(): void {
+		$target = $this->createMock(File::class);
+		$target->method('getName')->willReturn('Notes.pad');
+		$target->method('getId')->willThrowException(new \OCP\Files\NotFoundException('gone'));
+		$target->expects($this->never())->method('putContent');
+		$target->expects($this->never())->method('delete');
+		$this->writer->expects($this->never())->method('deleteIfUnchanged');
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['error'], isset($context['fileId'])] === ['etherpad_nextcloud', \OCP\Files\NotFoundException::class, false]),
+		);
+
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, logger: $logger)
+			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+	}
+
+	/**
+	 * A template's file the fallback could not empty is not initialised:
+	 * the init expects an empty file, and on the copy it would make a pad
+	 * and a row, then be refused the write.
+	 */
+	public function testDoesNotInitialiseATemplatesFileItCouldNotEmpty(): void {
+		$target = $this->untouchedTarget('New.pad');
+		$byId = $this->file('New.pad');
+		$byId->expects($this->once())->method('putContent')->with('')->willThrowException(new \OCP\Lock\LockedException('New.pad'));
+		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target, $byId);
+		$creation->method('materializeTemplateInto')->willThrowException(new \RuntimeException('etherpad unreachable'));
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not reset target file content after rejected template.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 4242, \OCP\Lock\LockedException::class]),
+		);
+
+		$this->buildListener($creation, $bootstrap, logger: $logger)->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
+	}
+
+	/**
+	 * After a reset that returned, a fallback that finds no pad type hands
+	 * the removal to the writer, with a claim on the file's id that expects
+	 * it empty.
+	 */
+	public function testRemovesATemplatesEmptiedFileWhenNoPadTypeIsEnabledAnyMore(): void {
+		$target = $this->untouchedTarget('New.pad');
+		$byId = $this->file('New.pad');
+		$byId->expects($this->once())->method('putContent')->with('');
+		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target, $byId);
+		$creation->method('materializeTemplateInto')->willThrowException(new \RuntimeException('etherpad unreachable'));
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
-		$logged = [];
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$logged): void {
-			$logged[$message] = [$context['app'] ?? null, $context['fileId'] ?? null];
-		});
+		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->callback(
+			static fn (CreatedFileClaim $claim): bool => [$claim->uid, $claim->fileId, $claim->writtenHash] === ['alice', 4242, null] && $claim->holds(''),
+		));
 
-		try {
-			$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, logger: $logger)
-				->handle(new FileCreatedFromTemplateEvent(null, $target, []));
-			$this->fail('the refusal goes on');
-		} catch (PadTypeDisabledException) {
-			// The refusal, for Nextcloud to report.
-		}
-		$this->assertSame(['etherpad_nextcloud', 42], $logged['Could not remove the .pad file of a failed create.'] ?? null);
+		$this->expectException(PadTypeDisabledException::class);
+		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
+	}
+
+	/**
+	 * Without a user and without a readable id, the node handed over is
+	 * left as it is, and the create fails: the file still holds what
+	 * Nextcloud copied in.
+	 */
+	public function testEmptiesNothingWithoutAUserWhenTheIdCannotBeRead(): void {
+		$target = $this->createMock(File::class);
+		$target->method('getName')->willReturn('New.pad');
+		$target->method('getId')->willThrowException(new \OCP\Files\NotFoundException('gone'));
+		$target->expects($this->never())->method('putContent');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Template event fired without an active user; left the target as it is, as its id cannot be read.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['error']] === ['etherpad_nextcloud', \OCP\Files\NotFoundException::class]),
+		);
+
+		$this->expectException(\OCP\Files\NotFoundException::class);
+		$this->buildListener($this->createMock(PadCreationService::class), $this->createMock(PadBootstrapService::class), withUser: false, logger: $logger)
+			->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
 	}
 
 	/**

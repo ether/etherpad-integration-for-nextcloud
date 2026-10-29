@@ -10,7 +10,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
-use OCP\Files\File;
 use OCP\Security\ISecureRandom;
 
 class PadBootstrapService {
@@ -51,15 +50,15 @@ class PadBootstrapService {
 	 * Either writes the file, so whoever may not change it - a reader of a
 	 * read-only share - is refused before a pad, group or row is made: the
 	 * write would fail after them, and leave them to the owner's next open.
-	 * Asked of the node the write goes through: the file by id, a writable
-	 * path to it first, as a reader by one path may be a writer by another.
-	 * The legacy migration is handed that node; ClaimedFileWriter asks for
-	 * it again.
+	 * Asked of the file by its id, as the write finds it - a writable path
+	 * to it first, as a reader by one path may be a writer by another. The
+	 * init and the legacy migration both write through ClaimedFileWriter,
+	 * which finds the file by its id again and holds it to what was read.
+	 * $fileId is the one the caller read and checked.
 	 *
 	 * @throws PadFileNotWritableException
 	 */
-	public function initializeMissingFrontmatter(string $uid, File $file, string $existingContent, ?string $preferredAccessMode = null): bool {
-		$fileId = (int)$file->getId();
+	public function initializeMissingFrontmatter(string $uid, int $fileId, string $existingContent, ?string $preferredAccessMode = null): bool {
 		$legacyShortcut = $this->padFileService->parseLegacyOwnpadShortcut($existingContent);
 		if (trim($existingContent) !== '' && $legacyShortcut === null) {
 			// Not the same thing as "has no frontmatter yet": this file has
@@ -71,7 +70,7 @@ class PadBootstrapService {
 		$writable = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		PadFileNotWritableException::unlessUpdateable($writable);
 		if ($legacyShortcut !== null) {
-			$this->legacyMigrationService->migrate($uid, $writable, $legacyShortcut);
+			$this->legacyMigrationService->migrate(new CreatedFileClaim($uid, $fileId, $existingContent), $legacyShortcut);
 			return true;
 		}
 
