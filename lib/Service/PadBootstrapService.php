@@ -54,8 +54,7 @@ class PadBootstrapService {
 	 * to it first, as a reader by one path may be a writer by another. The
 	 * init and the legacy migration both write through ClaimedFileWriter,
 	 * which finds the file by its id again and holds it to what was read.
-	 * $fileId comes from the caller, which read it once: read again by the
-	 * node's path, it can throw, or name whatever holds the path by then.
+	 * $fileId is the one the caller read and checked.
 	 *
 	 * @throws PadFileNotWritableException
 	 */

@@ -65,8 +65,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// Without a user the file cannot be found again by its id, so it
 			// is emptied as handed over. A node whose id cannot be read is of
 			// uncertain identity: written by its remembered path, it could
-			// make a file or empty another, so it stays - holding what
-			// Nextcloud copied in, so the create is reported as failed.
+			// make a file or empty another. It stays as it is, and its create
+			// fails, as nothing here could finish it.
 			try {
 				$fileId = $target->getId();
 			} catch (\Throwable $e) {
@@ -190,9 +190,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		try {
 			$this->padBootstrapService->initializeMissingFrontmatter($uid, $fileId, '', $preferredAccessMode);
 		} catch (PadTypeDisabledException $e) {
-			// Same as above, for Nextcloud's blank entry — and an instance
-			// offering only external pads reaches this on every one of them,
-			// so leaving the file behind would hand out empty .pad files.
+			// Same as above, for the blank entry, a type tile and the
+			// fallback — and an instance offering only external pads reaches
+			// this on every blank entry, so leaving the file behind would hand
+			// out empty .pad files.
 			// Removed while it still reads as empty: one written since stays.
 			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
@@ -273,9 +274,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	/**
 	 * Whether putContent('') returned without throwing; false does not say
 	 * whether the write landed. `$fileId` is read by the caller
-	 * before anything can fail rather than here: `Node::getId()` re-reads
-	 * through the node's path — it can throw, and on a replaced path it
-	 * answers for the wrong file.
+	 * before anything can fail rather than here: `Node::getId()` reads
+	 * through the node's path whenever the node holds no file info -
+	 * before its first read, and after each write - so it can throw, and
+	 * on a replaced path answer for the wrong file.
 	 */
 	private function resetTargetToEmpty(File $target, int $fileId): bool {
 		try {

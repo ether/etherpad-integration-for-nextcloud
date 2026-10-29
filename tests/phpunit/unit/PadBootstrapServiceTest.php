@@ -486,7 +486,7 @@ class PadBootstrapServiceTest extends TestCase {
 		);
 	}
 
-	/** Stub the node resolved at write time, which may differ from the input node. */
+	/** Stub the file as it is found by its id, for the writability check and the write. */
 	private function resolverReturning(?File $file): UserNodeResolver {
 		$file ??= $this->writableFile();
 		$resolver = $this->createMock(UserNodeResolver::class);
