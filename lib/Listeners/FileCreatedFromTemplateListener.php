@@ -65,13 +65,16 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// Without a user the file cannot be found again by its id, so it
 			// is emptied as handed over. A node whose id cannot be read is of
 			// uncertain identity: written by its remembered path, it could
-			// make a file or empty another, so it stays.
-			$fileId = $this->idOrNull($target);
-			if ($fileId === null) {
+			// make a file or empty another, so it stays - holding what
+			// Nextcloud copied in, so the create is reported as failed.
+			try {
+				$fileId = (int)$target->getId();
+			} catch (\Throwable $e) {
 				$this->logger->warning('Template event fired without an active user; left the target as it is, as its id cannot be read.', [
 					'app' => 'etherpad_nextcloud',
+					...SafeError::context($e),
 				]);
-				return;
+				throw $e;
 			}
 			$this->logger->warning('Template event fired without an active user — resetting target to empty.', [
 				'app' => 'etherpad_nextcloud',

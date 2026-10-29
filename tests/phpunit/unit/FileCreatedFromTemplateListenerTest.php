@@ -412,7 +412,11 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
 	}
 
-	/** Without a user and without a readable id, the node handed over is left as it is. */
+	/**
+	 * Without a user and without a readable id, the node handed over is
+	 * left as it is, and the create fails: the file still holds what
+	 * Nextcloud copied in.
+	 */
 	public function testEmptiesNothingWithoutAUserWhenTheIdCannotBeRead(): void {
 		$target = $this->createMock(File::class);
 		$target->method('getName')->willReturn('New.pad');
@@ -421,9 +425,10 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
 			'Template event fired without an active user; left the target as it is, as its id cannot be read.',
-			['app' => 'etherpad_nextcloud'],
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['error']] === ['etherpad_nextcloud', \OCP\Files\NotFoundException::class]),
 		);
 
+		$this->expectException(\OCP\Files\NotFoundException::class);
 		$this->buildListener($this->createMock(PadCreationService::class), $this->createMock(PadBootstrapService::class), withUser: false, logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent($this->file('Tpl.pad'), $target, []));
 	}
