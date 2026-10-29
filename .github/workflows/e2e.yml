@@ -66,13 +66,13 @@ jobs:
         # exactly what it is for.
         nextcloud: >-
           ${{ fromJSON(github.event_name == 'pull_request'
-          && '["32.0.9", "34"]' || '["32.0.9", "33", "34"]') }}
+          && '["32.0.9", "35"]' || '["32.0.9", "33", "34", "35"]') }}
         etherpad: ['2']
         include:
           # Neither key can be added to an existing combination without
           # overwriting it, so this is one extra job rather than a change to
           # the Etherpad 2 ones.
-          - nextcloud: '34'
+          - nextcloud: '35'
             etherpad: '3'
 
     name: Nextcloud ${{ matrix.nextcloud }} + Etherpad ${{ matrix.etherpad }}

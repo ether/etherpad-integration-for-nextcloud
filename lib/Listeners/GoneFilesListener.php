@@ -94,11 +94,11 @@ use Psr\Log\LoggerInterface;
  * process, and a process killed before loses it: those pads stay, and the
  * consistency check lists them.
  *
- * Nextcloud 34 reports a removed folder's descendants under the wrong
- * ids - their places in a block of a thousand - and again with each block
- * (fixed for 35.0.1 by Nextcloud server pull request 63998; the backport
- * to 34, pull request 64497, is in no 34 release yet, 34.0.5 came
- * without it). The
+ * Nextcloud 34, and 35.0.0, report a removed folder's descendants under
+ * the wrong ids - their places in a block of a thousand - and again with
+ * each block (fixed for 35.0.1 by Nextcloud server pull request 63998; the
+ * backport to 34, pull request 64497, is in no 34 release yet, 34.0.5
+ * came without it). The
  * block comes first (CacheEntriesRemovedEvent, from 34 on); one that holds
  * id 0, which no file has, is such a block, and none of its removals
  * counts. The block reaches this listener ahead of others

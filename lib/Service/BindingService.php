@@ -235,9 +235,9 @@ class BindingService {
 	/**
 	 * Of the files a removal from the file cache reported, marks the active
 	 * rows of those the file cache has nothing of by now (markGone). A
-	 * removal reported under an id that is not the file's - Nextcloud 34 up
-	 * to 34.0.4 misnumbers a folder's descendants - so never marks a file
-	 * that is still there. The rows are looked up first: most files removed
+	 * removal reported under an id that is not the file's - a Nextcloud
+	 * that misnumbers a folder's descendants (GoneFilesListener) - so never
+	 * marks a file that is still there. The rows are looked up first: most files removed
 	 * have none, and cost no look into the file cache.
 	 *
 	 * @param list<int> $fileIds

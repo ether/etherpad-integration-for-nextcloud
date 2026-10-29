@@ -80,20 +80,20 @@ const vanishedFiles = async (): Promise<number> => {
 }
 
 /**
- * Nextcloud 34 reports the files in a removed folder under the wrong ids,
- * so the app cannot tell which they were and leaves their pads
+ * Nextcloud 34, and 35.0.0, report the files in a removed folder under the
+ * wrong ids, so the app cannot tell which they were and leaves their pads
  * (docs/deleting-pads.md). The fix, Nextcloud server pull request 63998,
- * comes to 34 as pull request 64497, which 34.0.5 came without and which
- * is planned for 34.0.6: should 34.0.6 come without it too, these cases
- * fail there, and this check moves on.
+ * is in 35.0.1, and comes to 34 as pull request 64497, which 34.0.5 came
+ * without and which is planned for 34.0.6: should 34.0.6 come without it
+ * too, these cases fail there, and this check moves on.
  */
 const misnumbersFolderFiles = async (): Promise<boolean> => {
 	const res = await fetch(`${E2E.baseURL}/status.php`)
 	const { version } = await res.json() as { version?: string }
 	const [major, minor, patch] = String(version ?? '').split('.').map(Number)
-	return major === 34 && minor === 0 && patch < 6
+	return minor === 0 && ((major === 34 && patch < 6) || (major === 35 && patch === 0))
 }
-const misnumbered = 'Nextcloud 34 up to 34.0.5 reports the files in a removed folder under the wrong ids (Nextcloud server pull requests 63998 and 64497).'
+const misnumbered = 'Nextcloud 34 up to 34.0.5, and 35.0.0, report the files in a removed folder under the wrong ids (Nextcloud server pull requests 63998 and 64497).'
 
 test.describe('pads of files deleted for good', () => {
 	test.skip(E2E.etherpadApi === null, needsEtherpadApi)

@@ -64,7 +64,7 @@ jobs:
         # installs. The upper bound is kept at info.xml's max-version by hand:
         # a new major resolves only once it is released, and the step below
         # fails when the two part.
-        ocp: ['locked', '^34']
+        ocp: ['locked', '^35']
 
     name: Psalm static analysis (OCP ${{ matrix.ocp }})
 
@@ -111,11 +111,15 @@ jobs:
 
       # Only the upper bound is resolved fresh. Re-requiring the lower one
       # would step outside the lock and analyse whatever patch release happens
-      # to be newest that day, which no other job has installed.
+      # to be newest that day, which no other job has installed. It resolves
+      # for this runner's PHP rather than composer.json's platform (8.2.27),
+      # as a newer OCP may need a newer PHP: 35 needs 8.3.
       - name: Select the OCP version under test
         id: select
         if: matrix.ocp != 'locked'
-        run: composer require --dev --no-progress --no-interaction "nextcloud/ocp:${{ matrix.ocp }}"
+        run: |
+          composer config --unset platform.php
+          composer require --dev --no-progress --no-interaction "nextcloud/ocp:${{ matrix.ocp }}"
 
       - name: Run Psalm
         run: composer psalm

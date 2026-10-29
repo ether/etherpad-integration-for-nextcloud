@@ -81,6 +81,7 @@ class TrustedEmbedOriginsNormalizer {
 		return $origin;
 	}
 
+	/** @param non-empty-string $message */
 	private function invalid(bool $throwOnInvalid, string $message, string $origin): string {
 		if ($throwOnInvalid) {
 			throw new AdminValidationException(
