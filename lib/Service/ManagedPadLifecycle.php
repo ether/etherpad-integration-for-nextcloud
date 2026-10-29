@@ -24,9 +24,8 @@ use Psr\Log\LoggerInterface;
  *
  * A public pad is a pad. A protected pad is a pad inside a group, plus the
  * sessions that grant access to that group — and `deletePad` removes only
- * the first of those three. Every delete in the app used to call it, so a
- * protected pad left its group and every session ever issued for it behind,
- * and nothing collected them afterwards.
+ * the first of those three, leaving the group and every session issued for
+ * it behind with nothing to collect them.
  */
 class ManagedPadLifecycle {
 	/** How long whether a pad is lost may take to answer (howLost()). */
@@ -40,8 +39,8 @@ class ManagedPadLifecycle {
 
 	/**
 	 * Create a group holding exactly one pad. If the pad cannot be created,
-	 * the group is taken down again (discardProvisioned()) before the
-	 * failure is thrown on.
+	 * the group's removal is tried (discardProvisioned()) before the failure
+	 * is thrown on.
 	 *
 	 * The two steps are separate calls, so a failure between them strands a
 	 * group that nothing will ever look at again — invisible from Nextcloud
@@ -54,16 +53,17 @@ class ManagedPadLifecycle {
 		try {
 			return $this->etherpadClient->createGroupPad($groupId, $padName);
 		} catch (\Throwable $e) {
-			// The id Etherpad gives a pad in a group, whether or not it made
-			// this one: discardProvisioned() takes the group either way.
+			// The id Etherpad would give the pad leads discardProvisioned() to
+			// the group whether or not the pad was made, so a line naming it
+			// does not say it was.
 			$this->discardProvisioned($groupId . '$' . $padName, $context);
 			throw $e;
 		}
 	}
 
 	/**
-	 * Create a pad that stands on its own. If the call fails after Etherpad
-	 * has made it, the pad is taken down again (discardProvisioned()).
+	 * Create a pad that stands on its own. If the call fails, removing what
+	 * Etherpad may have made is tried (discardProvisioned()).
 	 *
 	 * The id is chosen here rather than by Etherpad, so unlike the group
 	 * case there is always something to clean up with — which is what makes
@@ -176,11 +176,11 @@ class ManagedPadLifecycle {
 
 	/**
 	 * A new pad (provisionFor()) seeded with a snapshot (seed()), the only
-	 * way to seed one. A seed that fails has the pad taken down, as no row
-	 * names it yet, and its failure goes on. Only what this call made goes -
-	 * a group pad with its own new group - never a pad that was there
-	 * before; one that cannot be taken down is named in the log
-	 * (discardProvisioned()).
+	 * way to seed one. A seed that fails has the pad's removal tried, as no
+	 * row names it yet, and its failure goes on. Only what this call made is
+	 * removed - a group pad with its own new group - never a pad that was
+	 * there before; one whose removal Etherpad does not confirm is named in
+	 * the log (discardProvisioned()).
 	 *
 	 * @param callable():string $padId as for provisionFor()
 	 * @param callable():string $groupPadName as for provisionFor()
@@ -207,29 +207,32 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Remove a pad this request has just provisioned, without asking what
-	 * its group holds: `provisionGroupPad` made the group earlier in the same
-	 * call, with at most the one pad that call put in it, so control flow
-	 * has answered the ownership question `discardIfPresent` asks Etherpad.
+	 * Remove a pad this request has just provisioned or tried to - a create
+	 * that failed may have made it - without asking what its group holds:
+	 * `provisionGroupPad` made the group earlier in the same call, with at
+	 * most the one pad that call put in it, so control flow has answered
+	 * the ownership question `discardIfPresent` asks Etherpad.
 	 * Asking would only make it breakable: these are rollbacks, nothing
 	 * retries them, and a `listPads` that timed out would give up the group
 	 * and its sessions for good.
 	 *
-	 * Only for a pad provisioned in the same call. Anything read back out of
-	 * a binding goes through `discardIfPresent`.
+	 * Only for a pad provisioned, or tried, in the same call. Anything read
+	 * back out of a binding goes through `discardIfPresent`.
 	 *
 	 * What that rule protects: a group pad id names a whole Etherpad group,
-	 * and this deletes the group, not the pad. For a pad this app made, the
-	 * group holds nothing else. For an adopted one - the legacy Ownpad
-	 * migration, and any import built on it - the group is Ownpad's and holds
-	 * other people's pads, so calling this on one destroys them. Nothing here
-	 * can tell the two apart; the caller has to know which it has.
+	 * and this deletes the group - every pad in it, and every session issued
+	 * for it - not the pad. For a pad this app made, the group holds nothing
+	 * else. For an adopted one - the legacy Ownpad migration, and any import
+	 * built on it - the group is Ownpad's and holds other people's pads, so
+	 * calling this on one destroys them. Nothing here can tell the two
+	 * apart; the caller has to know which it has.
 	 *
 	 * Best effort: those rollbacks go on whatever this does, and none has a
 	 * row naming the pad by then. So a pad whose removal Etherpad does not
 	 * confirm is named in the log by its id, against the rule elsewhere:
 	 * should it still be there, the line is the only handle left on it.
 	 *
+	 * @see https://github.com/ether/etherpad/blob/v3.3.11/src/node/db/GroupManager.ts deleteGroup()
 	 * @param array<string,mixed> $context the caller's keys for that line;
 	 *   `app`, `padId` and SafeError's keys are set here and win a collision
 	 */

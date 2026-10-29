@@ -383,20 +383,20 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * What a failed create leaves over and Etherpad does not confirm
-	 * removing is named by the line of every new pad left over, with the
-	 * caller's fields; the create's failure goes on.
+	 * A failed create whose cleanup Etherpad does not confirm logs the
+	 * warning a failed seed's does, with the pad id and the caller's
+	 * fields; the create's own failure goes on.
 	 *
-	 * @return iterable<string, array{string, string, string}> the access mode, the removal that fails, and the pad the line names
+	 * @return iterable<string, array{string, string, string}> the access mode, the removal that fails, and the pad id the warning names
 	 */
-	public static function createsThatLeaveSomethingOver(): iterable {
+	public static function failedCreates(): iterable {
 		yield 'a public pad' => [BindingService::ACCESS_PUBLIC, 'deletePad', 'nc-pad'];
-		// Named as Etherpad would have named its pad.
+		// By the id Etherpad would give its pad.
 		yield 'a group' => [BindingService::ACCESS_PROTECTED, 'deleteGroup', 'g.ABCDEFGHIJKLMNOP$p-new'];
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatLeaveSomethingOver')]
-	public function testWhatAFailedCreateLeavesOverIsNamedAsAFailedSeedsIs(string $accessMode, string $removal, string $named): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider('failedCreates')]
+	public function testAFailedCreateLogsAnUnconfirmedCleanupAsAFailedSeedDoes(string $accessMode, string $removal, string $named): void {
 		$failure = new EtherpadClientException('Etherpad API request failed: create');
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('createPad')->willThrowException($failure);
