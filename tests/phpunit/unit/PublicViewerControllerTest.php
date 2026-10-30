@@ -384,23 +384,8 @@ class PublicViewerControllerTest extends TestCase {
 		yield 'not protected, an empty password' => [false, '', '[]', true];
 	}
 
-	/**
-	 * Whether the token names a share and whether the session passed its
-	 * password are two checks: no share is no share behind a password, and
-	 * isValidToken() is what keeps an unknown token out.
-	 */
-	public function testATokenThatNamesNoShareIsNotTakenForOneBehindAPassword(): void {
-		$shareManager = $this->createMock(IManager::class);
-		$shareManager->method('getShareByToken')->with('gone-token')->willThrowException(new \OCP\Share\Exceptions\ShareNotFound());
-		$controller = $this->buildController($shareManager);
-		$controller->setToken('gone-token');
-
-		$this->assertFalse($controller->isValidToken());
-		$this->assertTrue($controller->isAuthenticated());
-	}
-
 	#[\PHPUnit\Framework\Attributes\DataProvider('sharesThatSayWhetherTheyAreProtected')]
-	public function testAShareThatSaysWhetherItIsProtectedOpensOnlyWithAPassedPassword(bool $protected, ?string $password, string $session, bool $opens): void {
+	public function testAuthenticatesAccordingToProtectionAndPassword(bool $protected, ?string $password, string $session, bool $opens): void {
 		$share = $this->createMock(ShareThatSaysWhetherItIsProtected::class);
 		$share->method('isPasswordProtected')->willReturn($protected);
 		$share->method('getPassword')->willReturn($password);
@@ -414,6 +399,21 @@ class PublicViewerControllerTest extends TestCase {
 
 		$this->assertTrue($controller->isValidToken());
 		$this->assertSame($opens, $controller->isAuthenticated());
+	}
+
+	/**
+	 * Whether the token names a share and whether the session passed its
+	 * password are two checks: no share is no share behind a password, and
+	 * isValidToken() is what keeps an unknown token out.
+	 */
+	public function testATokenThatNamesNoShareIsNotTakenForOneBehindAPassword(): void {
+		$shareManager = $this->createMock(IManager::class);
+		$shareManager->method('getShareByToken')->with('gone-token')->willThrowException(new \OCP\Share\Exceptions\ShareNotFound());
+		$controller = $this->buildController($shareManager);
+		$controller->setToken('gone-token');
+
+		$this->assertFalse($controller->isValidToken());
+		$this->assertTrue($controller->isAuthenticated());
 	}
 
 	/**

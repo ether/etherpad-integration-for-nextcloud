@@ -175,7 +175,12 @@ if ! read -r from_min from_max < <(sed -n 's/.*<nextcloud min-version="\([0-9.]*
 	exit 1
 fi
 if ! reaches "$nc_version" "$from_min" || (( ${nc_version%%.*} > from_max )); then
+	# A notice as well as the line: the job's check is green either way, and
+	# should not be taken for an upgrade that ran.
 	echo "$from_version runs on Nextcloud $from_min to $from_max, not on $nc_version: no upgrade to test there."
+	if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+		echo "::notice::Upgrade not run: $from_version runs on Nextcloud $from_min to $from_max, not on $nc_version."
+	fi
 	exit 0
 fi
 

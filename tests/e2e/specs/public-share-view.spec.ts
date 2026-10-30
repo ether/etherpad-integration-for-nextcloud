@@ -66,12 +66,14 @@ test.describe('public share access without login', () => {
 	let shareUrl = ''
 
 	test.afterAll(async () => {
-		await deletePublicShare(shareToken)
-		await deletePublicShare(nonPadShareToken)
-		await deletePublicShare(nonPadRouteShareToken)
-		await deleteViaDav(padName)
-		await deleteViaDav(textFileName)
-		await deleteViaDav(textRouteFileName)
+		await eachInTurn(
+			() => deletePublicShare(shareToken),
+			() => deletePublicShare(nonPadShareToken),
+			() => deletePublicShare(nonPadRouteShareToken),
+			() => deleteViaDav(padName),
+			() => deleteViaDav(textFileName),
+			() => deleteViaDav(textRouteFileName),
+		)
 	})
 
 	test('opens a shared public pad without authenticated storage state', async ({ page, browser, browserNoise }) => {
