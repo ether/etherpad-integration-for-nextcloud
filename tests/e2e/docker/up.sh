@@ -203,7 +203,7 @@ fi
 if [[ "$FULLTEXTSEARCH" == 1 ]]; then
 	echo "==> installing and configuring full-text search"
 	fulltextsearch_release() {
-		echo "https://github.com/nextcloud-releases/$1/releases/download/$2/$1-$2.tar.gz"
+		echo "https://github.com/nextcloud-releases/$1/releases/download/v$2/$1-v$2.tar.gz"
 	}
 	install_release_app fulltextsearch "$(fulltextsearch_release fulltextsearch "$FULLTEXTSEARCH_VERSION")" "$FULLTEXTSEARCH_SHA256"
 	install_release_app files_fulltextsearch "$(fulltextsearch_release files_fulltextsearch "$FILES_FULLTEXTSEARCH_VERSION")" "$FILES_FULLTEXTSEARCH_SHA256"
