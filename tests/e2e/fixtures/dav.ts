@@ -739,6 +739,9 @@ const publicShareId = async (token: string): Promise<string> => {
 			Accept: 'application/json',
 		},
 	})
+	if (!lookup.ok) {
+		throw new Error(`OCS share lookup failed with HTTP ${lookup.status}`)
+	}
 	const payload = await parseJsonResponse(lookup) as {
 		ocs?: { data?: Array<{ id?: string | number, token?: string }> }
 	}

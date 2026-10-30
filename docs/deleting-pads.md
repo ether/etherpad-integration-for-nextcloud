@@ -89,12 +89,11 @@ consistency check.
 On Nextcloud 34, and on 35.0.0, Nextcloud reports the files inside a
 folder deleted for good under the wrong ids - and a trash emptied as a
 whole, from the Files app or with `occ trashbin:cleanup`, is deleted as
-one folder. The fix (Nextcloud server pull request 63998) is in 35.0.1;
-its backport to 34 (pull request 64497) is in no 34 release yet, 34.0.5
-included. The app
-cannot tell which files they were, so the pads of the `.pad` files inside
-such a folder, or in a trash emptied as a whole, stay, and the consistency
-check lists them. A `.pad` file deleted on its own - past the trash, or
+one folder. The fix (Nextcloud server pull request 63998) is in 35.0.1,
+as its backport 64498; the backport to 34 (pull request 64497) is in no
+34 release yet, 34.0.5 included. The app cannot tell which files they
+were, so the pads of the `.pad` files inside such a folder, or in a trash
+emptied as a whole, stay, and the consistency check lists them. A `.pad` file deleted on its own - past the trash, or
 from the trash by itself or when it expires - and an account deleted, are
 not affected.
 
