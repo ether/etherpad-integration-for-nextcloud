@@ -357,8 +357,9 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * The marks are written in blocks, each file once: Nextcloud 34.0.4
-	 * reports a folder's descendants again with each block of a thousand.
+	 * The marks are written in blocks, each file once: a Nextcloud that
+	 * misnumbers a folder's descendants (docs/deleting-pads.md) reports them
+	 * again with each block of a thousand.
 	 * What is left is written when the request ends, once.
 	 */
 	public function testWritesInBlocksEachFileOnce(): void {
@@ -375,10 +376,10 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * Nextcloud 34 up to 34.0.4 reports a removed folder's descendants under
-	 * their places in a block of a thousand, the block first: one holding
-	 * id 0 marks none of its removals, while the folder's own removal and a
-	 * block with the files' ids do.
+	 * A Nextcloud that misnumbers (docs/deleting-pads.md) reports a removed
+	 * folder's descendants under their places in a block of a thousand, the
+	 * block first: one holding id 0 marks none of its removals, while the
+	 * folder's own removal and a block with the files' ids do.
 	 */
 	public function testAMisnumberedBlockDoesNotCount(): void {
 		$listener = $this->listener();

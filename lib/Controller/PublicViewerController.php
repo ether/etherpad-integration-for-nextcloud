@@ -53,12 +53,39 @@ class PublicViewerController extends PublicShareController {
 		return true;
 	}
 
+	/**
+	 * A share is protected while it holds a password or says it is, from
+	 * Nextcloud 35, so a wrong answer does not open a share that holds one.
+	 * IShare allows other protection, such as an OTP.
+	 *
+	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/public/Share/IShare.php isPasswordProtected()
+	 */
 	protected function isPasswordProtected(): bool {
-		return $this->share !== null && $this->share->getPassword() !== null;
+		return $this->holdsPassword() || (is_callable([$this->share, 'isPasswordProtected']) && $this->share->isPasswordProtected());
 	}
 
 	protected function getPasswordHash(): ?string {
 		return $this->share?->getPassword();
+	}
+
+	private function holdsPassword(): bool {
+		$hash = $this->getPasswordHash();
+		return $hash !== null && $hash !== '';
+	}
+
+	/**
+	 * A share protected without a password has no hash a session could have
+	 * passed, and nothing here checks what protects it instead, so it is
+	 * refused. Nextcloud's own check takes the hash as a string, so null
+	 * throws, and a session without an entry passes an empty one.
+	 *
+	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/public/AppFramework/PublicShareController.php validateTokenSession()
+	 */
+	public function isAuthenticated(): bool {
+		if ($this->isPasswordProtected() && !$this->holdsPassword()) {
+			return false;
+		}
+		return parent::isAuthenticated();
 	}
 
 	/**

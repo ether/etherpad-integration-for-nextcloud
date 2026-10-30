@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    name: Nextcloud 34 + Elasticsearch 8
+    name: Nextcloud 35 + Elasticsearch 8
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,10 +44,10 @@ jobs:
       - name: Resolve the stack hostnames
         run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
 
-      - name: Bring up Nextcloud 34 with full-text search
+      - name: Bring up Nextcloud 35 with full-text search
         env:
           FULLTEXTSEARCH: '1'
-          NC_VERSION: '34'
+          NC_VERSION: '35'
           EP_VERSION: '2'
         run: bash tests/e2e/docker/up.sh
 

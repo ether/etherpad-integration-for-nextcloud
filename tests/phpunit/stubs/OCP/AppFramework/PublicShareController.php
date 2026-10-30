@@ -40,12 +40,17 @@ if (!class_exists(PublicShareController::class)) {
 				return true;
 			}
 
+			return $this->validateTokenSession($this->getToken(), $this->getPasswordHash());
+		}
+
+		/** As upstream: the hash is a string, and a null one is a TypeError. */
+		protected function validateTokenSession(string $token, string $passwordHash): bool {
 			$allowedTokens = json_decode((string)($this->session->get(self::DAV_AUTHENTICATED_FRONTEND) ?? '[]'), true);
 			if (!is_array($allowedTokens)) {
 				$allowedTokens = [];
 			}
 
-			return ($allowedTokens[$this->getToken()] ?? '') === $this->getPasswordHash();
+			return ($allowedTokens[$token] ?? '') === $passwordHash;
 		}
 	}
 }

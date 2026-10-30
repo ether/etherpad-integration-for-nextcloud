@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 A self-contained Nextcloud + Etherpad stack for the Playwright suite, so
 a run does not depend on a long-lived instance and its unrelated apps.
 This is what the `e2e` workflow uses. A pull request there runs the two
-ends of the range `appinfo/info.xml` declares — 32.0.9 and 34 — and the
+ends of the range `appinfo/info.xml` declares — 32.0.9 and 35 — and the
 nightly run covers the majors in between. Those middle majors are worth
 a local run when you touch something version-sensitive, since nothing
 gates a merge on them:
@@ -28,7 +28,7 @@ printf '127.0.0.1 nc.pad.test ep.pad.test\n' | sudo tee -a /etc/hosts
 ## Run
 
 ```bash
-tests/e2e/docker/up.sh          # NC_VERSION=32.0.9|33|34, default 34
+tests/e2e/docker/up.sh          # NC_VERSION=32.0.9|33|34|35, default 35
                                 # EP_VERSION=2|3, default 2
 tests/e2e/docker/run-suite.sh   # the suite against that stack
 docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
@@ -146,11 +146,11 @@ next `up.sh` starts from an empty instance.
 
 ## Optional full-text search
 
-The NC 34 target can also install the three Nextcloud full-text-search apps
+The NC 35 target can also install the three Nextcloud full-text-search apps
 and run Elasticsearch 8 alongside the normal stack:
 
 ```bash
-FULLTEXTSEARCH=1 NC_VERSION=34 tests/e2e/docker/up.sh
+FULLTEXTSEARCH=1 NC_VERSION=35 tests/e2e/docker/up.sh
 tests/e2e/docker/index-fulltextsearch.sh
 ```
 
@@ -165,12 +165,12 @@ tests/e2e/docker/test-fulltextsearch.sh
 On GitHub, `e2e-fulltextsearch.yml` runs that check when the indexing
 integration changes — and, because its paths filter names `tests/e2e/docker/**`,
 whenever anything in this directory does. A change to `compose.yml`, the
-`Caddyfile` or `run-suite.sh` therefore starts a Nextcloud 34 stack with
+`Caddyfile` or `run-suite.sh` therefore starts a Nextcloud 35 stack with
 Elasticsearch even though it is not search-specific. It is also available
 through `workflow_dispatch`.
 
 This profile is deliberately not part of the regular Playwright matrix. It
-downloads the checksummed 34.0.1 releases of `fulltextsearch`,
+downloads the checksummed 35.0.1 releases of `fulltextsearch`,
 `files_fulltextsearch` and `fulltextsearch_elasticsearch` from their official
 GitHub release repositories while the stack is created, and gives
 Elasticsearch a 512 MiB Java heap. `ELASTICSEARCH_VERSION` can override the

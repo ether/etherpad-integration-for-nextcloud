@@ -195,9 +195,10 @@ describe('what is this app\'s', () => {
 })
 
 describe('the noise known elsewhere', () => {
-	// Lines as the runs against Nextcloud 32 and 34 logged them.
+	// Lines as the runs against Nextcloud 32, 34 and 35 logged them.
 	it.each([
 		['viewer-registers-handlers-twice', '[ERROR] viewer: Could not register handler {app: viewer, uid: admin, level: 2, error: The handler is already registered, handler: Object} (https://nc.pad.test/apps/viewer/js/previewUtils-Dvsw19M-.chunk.mjs)'],
+		['viewer-close-sidebar-fullscreen', 'TypeError: OCA.Files.Sidebar.setFullScreenMode is not a function\n    at o.close (https://nc.pad.test/apps/viewer/js/viewer-main.mjs?v=f8e9349c-0:8:22007)\n    at hs (https://nc.pad.test/apps/viewer/js/previewUtils-BN_ed942.chunk.mjs:6:33578) (https://nc.pad.test/apps/viewer/js/previewUtils-BN_ed942.chunk.mjs)'],
 		['service-worker-stack-certificate', 'An SSL certificate error occurred when fetching the script.'],
 		['service-worker-stack-certificate', 'An SSL certificate error occurred when fetching the script. (https://nc.pad.test/index.php/apps/files/preview-service-worker.js)'],
 		['service-worker-not-registered', '[ERROR] files: SW registration failed:  {app: files, level: 2, error: SecurityError: Failed to register a ServiceWorker: The provided scriptURL (\'https://nc.pad.test/ind…} (https://nc.pad.test/dist/core-common.js)'],
@@ -213,6 +214,8 @@ describe('the noise known elsewhere', () => {
 		// rich workspace.
 		expect(matching(KNOWN_ELSEWHERE, { kind: 'console', text: 'Error: [tiptap error]: The editor view is not available.\n    at x (https://nc.pad.test/apps/other/js/a.mjs:1:1)' })).toBeUndefined()
 		expect(matching(KNOWN_ELSEWHERE, { kind: 'pageerror', text: 'An SSL certificate error occurred when fetching the script.' })).toBeUndefined()
+		// The Viewer's call, not this app's: from its own code only.
+		expect(matching(KNOWN_ELSEWHERE, { kind: 'console', text: 'TypeError: OCA.Files.Sidebar.setFullScreenMode is not a function\n    at x (https://nc.pad.test/apps/etherpad_nextcloud/js/viewer-main.mjs:1:1)' })).toBeUndefined()
 	})
 
 	it('has one id per entry', () => {

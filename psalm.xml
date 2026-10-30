@@ -53,8 +53,11 @@
                 <referencedClass name="OCA\Viewer\Event\LoadViewer" />
             </errorLevel>
         </UndefinedClass>
+        <!-- Info rather than suppressed: up to OCP 34, ISchemaWrapper names
+             Doctrine's Table in its docblocks; from 35 it returns OCP's own
+             ITable, and a suppression unused there would fail that end. -->
         <UndefinedDocblockClass>
-            <errorLevel type="suppress">
+            <errorLevel type="info">
                 <referencedClass name="Doctrine\DBAL\Schema\Table" />
             </errorLevel>
         </UndefinedDocblockClass>

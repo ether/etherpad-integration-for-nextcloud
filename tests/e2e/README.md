@@ -126,7 +126,8 @@ leave one of these behind.
   turn runs red with every release.
 - What of that is known and explained (on Nextcloud 34: the Files service
   worker, the Viewer registering each handler twice, Text's rich
-  workspace, a modal's focus trap) is on `KNOWN_ELSEWHERE` in
+  workspace, a modal's focus trap; on 35 the Viewer's call into the Files
+  sidebar as it closes) is on `KNOWN_ELSEWHERE` in
   `fixtures/browser-noise-rules.mjs`, each entry with why, and only
   counted, per entry, folded away in the summary. One that stays at 0
   can be struck.

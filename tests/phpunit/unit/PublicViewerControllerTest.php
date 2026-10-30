@@ -364,6 +364,85 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertTrue($controller->isAuthenticated());
 	}
 
+	/**
+	 * A share on Nextcloud 35 is protected while it says so or holds a
+	 * password, and only a session that passed that password opens it.
+	 * Protected without one, nothing does.
+	 *
+	 * @return iterable<string, array{bool, ?string, string, bool}> what the share says, its password, the session's entries, and whether it opens
+	 */
+	public static function sharesThatSayWhetherTheyAreProtected(): iterable {
+		$passed = '{"share-token":"stored-password-hash"}';
+		yield 'protected, a password, no session' => [true, 'stored-password-hash', '[]', false];
+		yield 'protected, a password, the session passed it' => [true, 'stored-password-hash', $passed, true];
+		yield 'protected, a password, the session passed an old one' => [true, 'stored-password-hash', '{"share-token":"old-hash"}', false];
+		yield 'protected without a password' => [true, null, '[]', false];
+		yield 'protected with an empty password' => [true, '', '[]', false];
+		yield 'not protected, yet a password, no session' => [false, 'stored-password-hash', '[]', false];
+		yield 'not protected, yet a password, the session passed it' => [false, 'stored-password-hash', $passed, true];
+		yield 'not protected, no password' => [false, null, '[]', true];
+		yield 'not protected, an empty password' => [false, '', '[]', true];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('sharesThatSayWhetherTheyAreProtected')]
+	public function testAuthenticatesAccordingToProtectionAndPassword(bool $protected, ?string $password, string $session, bool $opens): void {
+		$share = $this->createMock(ShareThatSaysWhetherItIsProtected::class);
+		$share->method('isPasswordProtected')->willReturn($protected);
+		$share->method('getPassword')->willReturn($password);
+		$shareManager = $this->createMock(IManager::class);
+		$shareManager->method('getShareByToken')->with('share-token')->willReturn($share);
+		$sessionMock = $this->createMock(ISession::class);
+		$sessionMock->method('get')->with('public_link_authenticated_frontend')->willReturn($session);
+
+		$controller = $this->buildController($shareManager, session: $sessionMock);
+		$controller->setToken('share-token');
+
+		$this->assertTrue($controller->isValidToken());
+		$this->assertSame($opens, $controller->isAuthenticated());
+	}
+
+	/**
+	 * Whether the token names a share and whether the session passed its
+	 * password are two checks: no share is no share behind a password, and
+	 * isValidToken() is what keeps an unknown token out.
+	 */
+	public function testATokenThatNamesNoShareIsNotTakenForOneBehindAPassword(): void {
+		$shareManager = $this->createMock(IManager::class);
+		$shareManager->method('getShareByToken')->with('gone-token')->willThrowException(new \OCP\Share\Exceptions\ShareNotFound());
+		$controller = $this->buildController($shareManager);
+		$controller->setToken('gone-token');
+
+		$this->assertFalse($controller->isValidToken());
+		$this->assertTrue($controller->isAuthenticated());
+	}
+
+	/**
+	 * Before Nextcloud 35 a share has no word of its own: without a password
+	 * nothing protects it, and no session is asked for.
+	 *
+	 * @return iterable<string, array{?string}>
+	 */
+	public static function passwordsThatProtectNothing(): iterable {
+		yield 'none' => [null];
+		yield 'empty' => [''];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('passwordsThatProtectNothing')]
+	public function testAShareBeforeNextcloud35WithoutAPasswordOpens(?string $password): void {
+		$share = $this->createMock(IShare::class);
+		$share->method('getPassword')->willReturn($password);
+		$shareManager = $this->createMock(IManager::class);
+		$shareManager->method('getShareByToken')->with('share-token')->willReturn($share);
+		$session = $this->createMock(ISession::class);
+		$session->expects($this->never())->method('get');
+
+		$controller = $this->buildController($shareManager, session: $session);
+		$controller->setToken('share-token');
+
+		$this->assertTrue($controller->isValidToken());
+		$this->assertTrue($controller->isAuthenticated());
+	}
+
 	public function testOpenPadDataRejectsShareWithoutReadPermission(): void {
 		$share = $this->createMock(IShare::class);
 		$share->method('getPermissions')->willReturn(Constants::PERMISSION_UPDATE);
@@ -486,4 +565,9 @@ class PublicViewerControllerTest extends TestCase {
 		$visitors->method('openerFor')->willReturnCallback(static fn (string $token): \OCA\EtherpadNextcloud\Service\PublicLinkOpener => new \OCA\EtherpadNextcloud\Service\PublicLinkOpener('public-share:' . $token . ':0123456789abcdef0123456789abcdef', '', ''));
 		return $visitors;
 	}
+}
+
+/** A share as OCP 35 has it, saying itself whether anything protects it. */
+interface ShareThatSaysWhetherItIsProtected extends IShare {
+	public function isPasswordProtected(): bool;
 }

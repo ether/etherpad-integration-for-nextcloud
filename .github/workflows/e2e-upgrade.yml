@@ -89,7 +89,7 @@ jobs:
       matrix:
         # Every major the app supports; one the last release does not run on
         # skips itself.
-        nextcloud: ['32.0.9', '33', '34']
+        nextcloud: ['32.0.9', '33', '34', '35']
 
     name: ${{ needs.decide.outputs.from }} on Nextcloud ${{ matrix.nextcloud }}
 
