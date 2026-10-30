@@ -86,13 +86,20 @@ in Etherpad, as deleting it could take down another pad. A group pad's
 group stays with it. The same holds for such a pad deleted from the
 consistency check.
 
-So is a public pad imported from an Ownpad file, under a name this app
-does not give (`nc-…`, or `r-…` for a restored one): a pad's address is all
-the import asked for, and the pad may be another installation's on the same
-Etherpad. The job removes the row and leaves the pad, which stays reachable
-by its address; to remove it, delete it in Etherpad. A protected pad imported
-past `allow_legacy_protected_import` goes with its file, as the admin vouched
-for the server by switching that on.
+So is a public pad imported from an Ownpad file. This app names its own
+public pads `nc-…`, and `r-…` when restored; a public pad under any other
+name came in by an import, which asked for nothing but its address, and it
+may be another installation's on the same Etherpad. The job removes the row
+and leaves the pad, which stays reachable by its address; to remove it,
+delete it in Etherpad. A protected pad imported past
+`allow_legacy_protected_import` goes with its file, as the admin vouched for
+the server by switching that on.
+
+The name is all that tells them apart, as no version recorded where a pad
+came from. A row an earlier version made by importing a pad named like this
+app's own, another Nextcloud's on the same Etherpad, cannot be told from
+this app's own pads, and its pad goes with its file. New imports of such a
+pad are refused.
 
 On Nextcloud 34, and on 35.0.0, Nextcloud reports the files inside a
 folder deleted for good under the wrong ids - and a trash emptied as a
