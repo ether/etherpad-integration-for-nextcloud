@@ -116,17 +116,69 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
-	 * A public pad that came in by an Ownpad import may be another
-	 * installation's on the same Etherpad: its file loses the row, the pad
-	 * stays where it was.
+	 * Files anyone can write: neither a shortcut, in whichever spelling, nor
+	 * metadata naming a pad of the app's form makes that pad the file's, so
+	 * it stays when they go.
+	 */
+	test('a pad of the app\'s form named by hand-written files stays', async () => {
+		const shortcutName = uniquePadName('gone-handmade-shortcut')
+		const metadataName = uniquePadName('gone-handmade-metadata')
+		const originName = uniquePadName('gone-handmade-origin')
+		const padName = Date.now().toString(36).padEnd(24, '0')
+		const padId = `nc-${padName}`
+		try {
+			const origin = new URL((await createPadAtPath(`/${originName}`)).padUrl).origin
+			await etherpadApiPost('createPad', { padID: padId })
+
+			await putFileViaDav(shortcutName, `[InternetShortcut]\nURL=${origin}/p/nc%2D${padName}\n`)
+			const refused = await padApiPost(`pads/initialize-by-id/${await propfindFileId(shortcutName)}`)
+			expect(refused.status, JSON.stringify(refused.body)).toBe(400)
+
+			await putFileViaDav(metadataName, [
+				'---',
+				'format: "etherpad-nextcloud/1"',
+				'file_id: 1',
+				`pad_id: "${padId}"`,
+				'access_mode: "public"',
+				'state: "active"',
+				'deleted_at: null',
+				'created_at: "2026-01-01T00:00:00+00:00"',
+				'updated_at: "2026-01-01T00:00:00+00:00"',
+				'snapshot_rev: 0',
+				'---',
+				'[TEXT]',
+				'',
+			].join('\n'))
+			const metadataFileId = await propfindFileId(metadataName)
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(metadataFileId) })
+			expect(opened.status, JSON.stringify(opened.body)).not.toBe(200)
+
+			await deleteViaDav(shortcutName, { pastTrash: true })
+			await deleteViaDav(metadataName, { pastTrash: true })
+			await settle()
+
+			expect(await padExists(padId), 'the pad should stay in Etherpad').toBe(true)
+		} finally {
+			await Promise.allSettled([
+				etherpadApiPost('deletePad', { padID: padId }),
+				deleteViaDav(shortcutName, { pastTrash: true }),
+				deleteViaDav(metadataName, { pastTrash: true }),
+				deleteViaDav(originName, { pastTrash: true }),
+			])
+		}
+	})
+
+	/**
+	 * Importing a public pad's address does not make the pad this file's,
+	 * so deleting the file for good leaves the pad where it was.
 	 */
 	test('an imported public pad stays with its file deleted past the trash', async () => {
 		const name = uniquePadName('gone-imported')
 		const originName = uniquePadName('gone-imported-origin')
 		const padId = `e2e-imported-${Date.now()}`
-		const origin = new URL((await createPadAtPath(`/${originName}`)).padUrl).origin
-		await etherpadApiPost('createPad', { padID: padId })
 		try {
+			const origin = new URL((await createPadAtPath(`/${originName}`)).padUrl).origin
+			await etherpadApiPost('createPad', { padID: padId })
 			await putFileViaDav(name, `[InternetShortcut]\nURL=${origin}/p/${padId}\n`)
 			const fileId = await propfindFileId(name)
 			const opened = await padApiPost(`pads/initialize-by-id/${fileId}`)
@@ -138,8 +190,13 @@ test.describe('pads of files deleted for good', () => {
 
 			expect(await padExists(padId), 'the pad should stay in Etherpad').toBe(true)
 		} finally {
-			await etherpadApiPost('deletePad', { padID: padId })
-			await deleteViaDav(originName, { pastTrash: true })
+			// Each on its own: what a failure left out of a test's run is not
+			// there to clean up, and the rest still has to go.
+			await Promise.allSettled([
+				etherpadApiPost('deletePad', { padID: padId }),
+				deleteViaDav(name, { pastTrash: true }),
+				deleteViaDav(originName, { pastTrash: true }),
+			])
 		}
 	})
 

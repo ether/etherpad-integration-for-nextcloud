@@ -155,7 +155,7 @@ class AdminSettings implements ISettings {
 				'allow_legacy_protected_import' => $this->l10n->t('Allow importing protected pads from legacy Ownpad files'),
 				'allow_legacy_protected_import_hint' => $this->l10n->t('Safe only where this Nextcloud alone creates group pads on your Etherpad server. Anywhere else, a hand-written .pad file can reach another group while this is on.'),
 				'delete_pad_with_file' => $this->l10n->t('Delete the Etherpad pad when its .pad file is deleted permanently'),
-				'delete_pad_with_file_hint' => $this->l10n->t('The trash keeps a pad. If enabled, the pad is deleted once its file is deleted permanently: from the trash, past it, or with its account. A public pad imported from Ownpad stays in Etherpad.'),
+				'delete_pad_with_file_hint' => $this->l10n->t('The trash keeps a pad. If enabled, the pad is deleted once its file is deleted permanently: from the trash, past it, or with its account. A public pad imported from a .pad file in Ownpad\'s format stays in Etherpad.'),
 				'allow_external_pads' => $this->l10n->t('Allow linking external public pads'),
 				'external_allowlist' => $this->l10n->t('External Etherpad host allowlist (optional)'),
 				'external_allowlist_hint' => $this->l10n->t('Add trusted Etherpad hostnames or HTTPS origins. Leave empty only if all public HTTPS hosts should be trusted.'),

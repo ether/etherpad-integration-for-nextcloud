@@ -86,10 +86,11 @@ in Etherpad, as deleting it could take down another pad. A group pad's
 group stays with it. The same holds for such a pad deleted from the
 consistency check.
 
-So is a public pad imported from an Ownpad file. This app names its own
-public pads `nc-…`, and `r-…` when restored; a public pad under any other
-name came in by an import, which asked for nothing but its address, and it
-may be another installation's on the same Etherpad. The job removes the row
+So is a public pad imported from a `.pad` file in Ownpad's format, whether
+Ownpad or someone else wrote it. This app names its own public pads `nc-…`,
+and `r-…` when restored; a public pad under any other name came in by an
+import, which asked for nothing but its address, and it may be another
+installation's on the same Etherpad. The job removes the row
 and leaves the pad, which stays reachable by its address; to remove it,
 delete it in Etherpad. A protected pad imported past
 `allow_legacy_protected_import` goes with its file, as the admin vouched for

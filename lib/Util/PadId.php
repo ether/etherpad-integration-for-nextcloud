@@ -57,7 +57,7 @@ final class PadId {
 		return self::groupIdOf($padId) !== null;
 	}
 
-	/** Whether this is a public id of the kind this app gives its own pads. */
+	/** Whether this has the form of a public id this app gives; which installation made the pad it cannot say. */
 	public static function isAppPublicId(string $padId): bool {
 		return preg_match(self::APP_PUBLIC_PATTERN, $padId) === 1;
 	}

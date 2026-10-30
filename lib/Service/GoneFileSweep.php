@@ -174,9 +174,10 @@ class GoneFileSweep {
 	 * The pad and row of a file gone for good, once the file cache confirms
 	 * it. Left when the file is there after all, the row changed, or
 	 * Etherpad refused - then tried again an hour later, with a warning the
-	 * first time. Under an id PadId::isValid() refuses, only the row goes.
+	 * first time. Under an id PadId::isValid() refuses, and for a public id
+	 * not of the app's form, only the row goes, with no call to Etherpad.
 	 *
-	 * @return bool whether pad and row went
+	 * @return bool whether pad and row went; false where only the row did
 	 * @throws RunBudgetSpentException
 	 * @throws EtherpadClientException Etherpad did not answer, or rejected the key
 	 */
@@ -197,10 +198,11 @@ class GoneFileSweep {
 			return false;
 		}
 		if (!PadId::isGroupPad($binding->padId) && !PadId::isAppPublicId($binding->padId)) {
-			// A public pad this app did not make came in by an Ownpad import,
-			// and a pad's address is all the import asked for: it may be
-			// another installation's on the same Etherpad. The id stays out
-			// of the line, as with the host it is a link to the pad.
+			// A public pad this app did not make came in by a shortcut file,
+			// Ownpad's or written by anyone else, and a pad's address is all
+			// that file showed: it may be another installation's on the same
+			// Etherpad. The id stays out of the line, as with the host it is
+			// a link to the pad.
 			if ($this->removeRowOnly($binding, $budget)) {
 				$this->logger->info('The file of an imported public pad is gone for good; its row goes, and the pad stays in Etherpad.', [
 					'app' => 'etherpad_nextcloud',
