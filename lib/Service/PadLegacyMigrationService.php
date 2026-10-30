@@ -184,6 +184,11 @@ class PadLegacyMigrationService {
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
+			// Ownpad gives no pad such an id, so with no row here it is another
+			// Nextcloud's on the same Etherpad.
+			if (PadId::isAppPublicId($sourcePadId)) {
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'own_name', 'The legacy .pad file names a pad with the id of a pad this app makes.');
+			}
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);

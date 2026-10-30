@@ -70,13 +70,13 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testAFileSeenDeletedForGoodTakesItsPad(): void {
 		$this->table(
-			[self::row(1, 11, 'pad-gone', seenAt: 100), self::row(2, 12, 'pad-still-there', seenAt: FixedClock::NOW - 3000), self::row(3, 13, 'pad-unseen')],
+			[self::row(1, 11, 'r-gone-000000000000', seenAt: 100), self::row(2, 12, 'r-still-there-000000000000', seenAt: FixedClock::NOW - 3000), self::row(3, 13, 'r-unseen-000000000000')],
 			[self::cached(12, 'files/Notes.pad')],
 		);
 
 		$this->assertSame(['checked' => 1, 'deleted' => 1], $this->sweep());
 
-		$this->assertSame(['pad-gone'], $this->deletedPads);
+		$this->assertSame(['r-gone-000000000000'], $this->deletedPads);
 		$this->assertSame([12 => BindingService::STATE_PENDING_DELETE, 13 => BindingService::STATE_ACTIVE], $this->states());
 		$this->assertSame([['info', 'The file of a pad is gone for good; the pad is deleted.', 11]], $this->lines);
 	}
@@ -86,7 +86,7 @@ class GoneFileSweepTest extends TestCase {
 	 * switching it on finds them in place.
 	 */
 	public function testWithDeletingOffNothingGoesButTheRowsWait(): void {
-		$this->table([self::row(1, 11, 'pad-gone', seenAt: 100)], []);
+		$this->table([self::row(1, 11, 'r-gone-000000000000', seenAt: 100)], []);
 		$this->config['delete_pad_with_file'] = false;
 
 		$this->sweep();
@@ -96,7 +96,7 @@ class GoneFileSweepTest extends TestCase {
 
 		$this->config['delete_pad_with_file'] = true;
 		$this->sweep();
-		$this->assertSame(['pad-gone'], $this->deletedPads);
+		$this->assertSame(['r-gone-000000000000'], $this->deletedPads);
 	}
 
 	/**
@@ -106,18 +106,18 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testAPadAlreadyGoneCountsAndARefusalIsTriedAgain(): void {
 		$this->table([
-			self::row(1, 11, 'pad-already-gone', seenAt: 100),
-			self::row(2, 12, 'pad-refused', seenAt: 101),
-			self::row(3, 13, 'pad-fine', seenAt: 102),
+			self::row(1, 11, 'r-already-gone-000000000000', seenAt: 100),
+			self::row(2, 12, 'r-refused-000000000000', seenAt: 101),
+			self::row(3, 13, 'r-fine-000000000000', seenAt: 102),
 		], []);
 		$this->padErrors = [
-			'pad-already-gone' => new EtherpadRefusedException('padID does not exist'),
-			'pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy'),
+			'r-already-gone-000000000000' => new EtherpadRefusedException('padID does not exist'),
+			'r-refused-000000000000' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy'),
 		];
 
 		$this->sweep();
 
-		$this->assertSame(['pad-fine'], $this->deletedPads);
+		$this->assertSame(['r-fine-000000000000'], $this->deletedPads);
 		$this->assertSame([12], $this->fileIds());
 		$this->assertSame([
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 11],
@@ -138,8 +138,8 @@ class GoneFileSweepTest extends TestCase {
 
 	/** Etherpad not answering ends the run, with an info line; the rows wait for the next. */
 	public function testEtherpadNotAnsweringEndsTheRun(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 600), self::row(2, 12, 'pad-b', seenAt: FixedClock::NOW - 599)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: FixedClock::NOW - 600), self::row(2, 12, 'r-b-000000000000', seenAt: FixedClock::NOW - 599)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
 		$this->sweep();
@@ -158,8 +158,8 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testAPadWaitingAnHourOnEtherpadIsAWarningAtMostHourly(): void {
 		// Due 300 s after it was seen.
-		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 600)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: FixedClock::NOW - 600)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 		$info = ['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null];
 		$warning = ['warning', 'Etherpad did not answer the sweep of files gone for good, and the pad it was deleting has waited an hour or more; it tries again next run.', 11];
@@ -190,13 +190,13 @@ class GoneFileSweepTest extends TestCase {
 	 * due five minutes ago, is an info line.
 	 */
 	public function testOnlyThePadEtherpadDidNotAnswerAtCounts(): void {
-		$this->table([self::row(1, 11, 'pad-old', seenAt: 100), self::row(2, 12, 'pad-new', seenAt: FixedClock::NOW - 600)], []);
-		$this->padErrors = ['pad-new' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-old-000000000000', seenAt: 100), self::row(2, 12, 'r-new-000000000000', seenAt: FixedClock::NOW - 600)], []);
+		$this->padErrors = ['r-new-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
 		$this->sweep();
 
-		$this->assertSame(['pad-old'], $this->deletedPads);
+		$this->assertSame(['r-old-000000000000'], $this->deletedPads);
 		$this->assertSame([
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 11],
 			['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null],
@@ -208,8 +208,8 @@ class GoneFileSweepTest extends TestCase {
 	 * not since the refusal.
 	 */
 	public function testAPadPutBackAfterARefusalHasWaitedSinceItsDue(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 7200, triedAt: FixedClock::NOW - 3600)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: FixedClock::NOW - 7200, triedAt: FixedClock::NOW - 3600)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
 		$this->sweep();
@@ -224,13 +224,13 @@ class GoneFileSweepTest extends TestCase {
 	 * of: Etherpad not answering at its pad is an info line.
 	 */
 	public function testAPadWithoutAKnownWaitIsAnInfoLine(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: 100)], []);
 		$bindings = new class($this->db, $this->clock) extends BindingService {
 			public function findGone(int $limit, int $graceBy, int $retryBy): array {
-				return [new Binding(11, 'pad-a', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE)];
+				return [new Binding(11, 'r-a-000000000000', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE)];
 			}
 		};
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
 		$this->sweep($bindings);
@@ -246,8 +246,8 @@ class GoneFileSweepTest extends TestCase {
 	public function testWhenItLastWarnedIsReadOnlyAtAPadAnHourPastDue(): void {
 		$this->table([], []);
 		$this->sweep();
-		$this->table([self::row(1, 11, 'pad-a', seenAt: FixedClock::NOW - 60)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: FixedClock::NOW - 60)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 		$this->build()->run(atOnce: true);
 
@@ -262,8 +262,8 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('lastWarnings')]
 	public function testOnlyALastWarningUpToNowSilencesTheSweep(int $last, string $level): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: 100)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 		$this->config['sweep_warned_at'] = $last;
 
@@ -285,8 +285,8 @@ class GoneFileSweepTest extends TestCase {
 	 * pad keeps its row, and the run's line says it waits.
 	 */
 	public function testNoTimeLeftToAskCountsAsEtherpadNotAnswering(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: 100)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		// Leaves a second of the run's twenty, less than a call is given.
 		$this->padErrorTakes = 19;
 
@@ -298,8 +298,8 @@ class GoneFileSweepTest extends TestCase {
 
 	/** An app config that cannot say when the sweep last warned does not keep it from warning. */
 	public function testAWarningDoesNotWaitOnTheAppConfig(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
-		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: 100)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 		$this->config['sweep_warned_at'] = -1;
 
@@ -316,8 +316,8 @@ class GoneFileSweepTest extends TestCase {
 	 * and no row is set aside - with the key fixed, the next run takes them.
 	 */
 	public function testARejectedKeyEndsTheRunWithTheLineThatNamesTheKey(): void {
-		$this->table([self::row(1, 11, 'pad-a', seenAt: 100), self::row(2, 12, 'pad-b', seenAt: 101)], []);
-		$this->padErrors = ['pad-a' => new EtherpadKeyRejectedException('Etherpad API request failed: deletePad')];
+		$this->table([self::row(1, 11, 'r-a-000000000000', seenAt: 100), self::row(2, 12, 'r-b-000000000000', seenAt: 101)], []);
+		$this->padErrors = ['r-a-000000000000' => new EtherpadKeyRejectedException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
 
 		$this->sweep();
@@ -332,7 +332,7 @@ class GoneFileSweepTest extends TestCase {
 		$this->padErrors = [];
 		$this->answering = true;
 		$this->sweep();
-		$this->assertSame(['pad-a', 'pad-b'], $this->deletedPads);
+		$this->assertSame(['r-a-000000000000', 'r-b-000000000000'], $this->deletedPads);
 	}
 
 	/**
@@ -341,12 +341,12 @@ class GoneFileSweepTest extends TestCase {
 	 * warning, and the run goes on rather than stop at it every time.
 	 */
 	public function testAPadEtherpadFailsOnWaitsAndTheRunGoesOn(): void {
-		$this->table([self::row(1, 11, 'pad-broken', seenAt: 100), self::row(2, 12, 'pad-fine', seenAt: 101)], []);
-		$this->padErrors = ['pad-broken' => new EtherpadClientException('Etherpad API HTTP error (500)')];
+		$this->table([self::row(1, 11, 'r-broken-000000000000', seenAt: 100), self::row(2, 12, 'r-fine-000000000000', seenAt: 101)], []);
+		$this->padErrors = ['r-broken-000000000000' => new EtherpadClientException('Etherpad API HTTP error (500)')];
 
 		$this->sweep();
 
-		$this->assertSame(['pad-fine'], $this->deletedPads);
+		$this->assertSame(['r-fine-000000000000'], $this->deletedPads);
 		$this->assertSame([11], $this->fileIds());
 		$this->assertSame([
 			['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 11],
@@ -363,14 +363,14 @@ class GoneFileSweepTest extends TestCase {
 	 * the next run, quietly.
 	 */
 	public function testARunStopsAtItsTimeBudget(): void {
-		$this->table([self::row(1, 11, 'pad-1', seenAt: 100), self::row(2, 12, 'pad-2', seenAt: 101)], []);
+		$this->table([self::row(1, 11, 'r-1-000000000000', seenAt: 100), self::row(2, 12, 'r-2-000000000000', seenAt: 101)], []);
 		$this->onDelete = function (): void {
 			$this->clock->advance(19);
 		};
 
 		$this->sweep();
 
-		$this->assertSame(['pad-1'], $this->deletedPads);
+		$this->assertSame(['r-1-000000000000'], $this->deletedPads);
 		$this->assertSame([12], $this->fileIds());
 		$this->assertSame([['info', 'The file of a pad is gone for good; the pad is deleted.', 11]], $this->lines);
 	}
@@ -384,12 +384,12 @@ class GoneFileSweepTest extends TestCase {
 	public function testARowUnderAnIdEtherpadDoesNotTakeAsItIsGoesWithoutItsPad(): void {
 		$this->table([
 			self::row(1, 11, 'victim pad', seenAt: 100),
-			self::row(2, 13, 'pad-fine', seenAt: 102),
+			self::row(2, 13, 'r-fine-000000000000', seenAt: 102),
 		], []);
 
 		$this->assertSame(['checked' => 2, 'deleted' => 1], $this->sweep());
 
-		$this->assertSame(['pad-fine' => 1], $this->attempts);
+		$this->assertSame(['r-fine-000000000000' => 1], $this->attempts);
 		$this->assertSame([], $this->fileIds());
 		$line = 'The file of a pad is gone for good; its row goes, but the pad stays: Etherpad\'s API may not act on its id as it is.';
 		$this->assertSame([
@@ -397,6 +397,43 @@ class GoneFileSweepTest extends TestCase {
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 13],
 		], $this->lines);
 		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 11], $this->contexts[0]);
+	}
+
+	/**
+	 * A public pad under a name this app does not give came in by an Ownpad
+	 * import and may be another installation's: it loses only its row,
+	 * Etherpad is not asked, and the line names the file, not the pad. A
+	 * group pad under such a name came in past the admin's switch, and goes.
+	 */
+	public function testAnImportedPublicPadGoesWithoutItsPad(): void {
+		$this->table([
+			self::row(1, 11, 'team-notes', seenAt: 100),
+			self::row(2, 12, 'nc-' . str_repeat('a', 24), seenAt: 101),
+			self::row(3, 13, 'g.abcdefghijklmnop$team-notes', seenAt: 102),
+		], []);
+
+		$this->assertSame(['checked' => 3, 'deleted' => 2], $this->sweep());
+
+		$this->assertSame(['nc-' . str_repeat('a', 24) => 1], $this->attempts);
+		$this->assertSame([], $this->fileIds());
+		$this->assertSame([
+			['info', 'The file of an imported public pad is gone for good; its row goes, and the pad stays in Etherpad.', 11],
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 12],
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 13],
+		], $this->lines);
+		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 11], $this->contexts[0]);
+	}
+
+	/** Out of time, an imported pad's row waits for the next run, as any row. */
+	public function testAnImportedPublicPadWaitsOutARunThatHasSpentItsTime(): void {
+		$this->table([self::row(1, 11, 'r-1-000000000000', seenAt: 100), self::row(2, 12, 'team-notes', seenAt: 101)], []);
+		$this->onDelete = function (): void {
+			$this->clock->advance(19);
+		};
+
+		$this->sweep();
+
+		$this->assertSame([12], $this->fileIds());
 	}
 
 	/**
@@ -425,7 +462,7 @@ class GoneFileSweepTest extends TestCase {
 
 	/** A run that has spent its time ends at such a row, leaving it and the rest for the next, as at any other. */
 	public function testARowUnderSuchAnIdWaitsOutARunThatHasSpentItsTime(): void {
-		$this->table([self::row(1, 11, 'pad-1', seenAt: 100), self::row(2, 12, 'a:b', seenAt: 101), self::row(3, 13, 'pad-3', seenAt: 102)], []);
+		$this->table([self::row(1, 11, 'r-1-000000000000', seenAt: 100), self::row(2, 12, 'a:b', seenAt: 101), self::row(3, 13, 'r-3-000000000000', seenAt: 102)], []);
 		$this->onDelete = function (): void {
 			$this->clock->advance(19);
 		};
@@ -440,7 +477,7 @@ class GoneFileSweepTest extends TestCase {
 	 * A file the file cache has again by the time its pad would go keeps it.
 	 */
 	public function testTheFileCacheIsAskedOnceMoreBeforeAPadGoes(): void {
-		$this->table([self::row(1, 11, 'pad-1', seenAt: 100)], []);
+		$this->table([self::row(1, 11, 'r-1-000000000000', seenAt: 100)], []);
 		$bindings = new class($this->db, $this->clock) extends BindingService {
 			public function isFileGone(int $fileId): bool {
 				return false;
@@ -460,15 +497,15 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testAFreshRowWaitsForTheJobButNotForAnAdmin(): void {
 		$this->table([
-			self::row(1, 11, 'pad-fresh', seenAt: FixedClock::NOW - BindingService::GONE_GRACE_SECONDS + 1),
-			self::row(2, 12, 'pad-refused', seenAt: 100, triedAt: FixedClock::NOW - 10),
+			self::row(1, 11, 'r-fresh-000000000000', seenAt: FixedClock::NOW - BindingService::GONE_GRACE_SECONDS + 1),
+			self::row(2, 12, 'r-refused-000000000000', seenAt: 100, triedAt: FixedClock::NOW - 10),
 		], []);
 
 		$this->sweep();
 		$this->assertSame([], $this->deletedPads);
 
 		$this->build()->run(atOnce: true);
-		$this->assertSame(['pad-fresh', 'pad-refused'], $this->deletedPads);
+		$this->assertSame(['r-fresh-000000000000', 'r-refused-000000000000'], $this->deletedPads);
 	}
 
 	/**
@@ -477,14 +514,14 @@ class GoneFileSweepTest extends TestCase {
 	 * hour, and its warning is not given twice.
 	 */
 	public function testARefusalInTheSecondOfTheMarkCountsAsTried(): void {
-		$this->table([self::row(1, 11, 'pad-refused', seenAt: FixedClock::NOW)], []);
-		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
+		$this->table([self::row(1, 11, 'r-refused-000000000000', seenAt: FixedClock::NOW)], []);
+		$this->padErrors = ['r-refused-000000000000' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
 
 		$this->build()->run(atOnce: true);
 		$this->clock->advance(300);
 		$this->sweep();
 
-		$this->assertSame(1, $this->attempts['pad-refused']);
+		$this->assertSame(1, $this->attempts['r-refused-000000000000']);
 		$this->assertSame([['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 11]], $this->lines);
 	}
 
@@ -494,16 +531,16 @@ class GoneFileSweepTest extends TestCase {
 	 * with every batch.
 	 */
 	public function testASettleAsksForARefusedPadOnceARun(): void {
-		$rows = [self::row(1, 11, 'pad-refused', seenAt: 100, triedAt: 50)];
+		$rows = [self::row(1, 11, 'r-refused-000000000000', seenAt: 100, triedAt: 50)];
 		foreach (range(2, 201) as $i) {
-			$rows[] = self::row($i, 1000 + $i, 'pad-' . $i, seenAt: 100);
+			$rows[] = self::row($i, 1000 + $i, 'r-' . $i . '-000000000000', seenAt: 100);
 		}
 		$this->table($rows, []);
-		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
+		$this->padErrors = ['r-refused-000000000000' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
 
 		$this->build()->run(atOnce: true);
 
-		$this->assertSame(1, $this->attempts['pad-refused']);
+		$this->assertSame(1, $this->attempts['r-refused-000000000000']);
 		$this->assertCount(200, $this->deletedPads);
 		$this->assertSame([11], $this->fileIds());
 	}
@@ -516,8 +553,8 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testADeletionThatDidNotHappenLeavesTheRowActive(): void {
 		$this->table([
-			self::row(1, 11, 'pad-left', seenAt: FixedClock::NOW - 3600),
-			self::row(2, 12, 'pad-recent', seenAt: FixedClock::NOW - 3599),
+			self::row(1, 11, 'r-left-000000000000', seenAt: FixedClock::NOW - 3600),
+			self::row(2, 12, 'r-recent-000000000000', seenAt: FixedClock::NOW - 3599),
 		], [self::cached(11, 'files/Left.pad'), self::cached(12, 'files/Recent.pad')]);
 		$this->config['delete_pad_with_file'] = false;
 
@@ -533,7 +570,7 @@ class GoneFileSweepTest extends TestCase {
 	 * folder of thousands of pads deleted for good goes within a few runs.
 	 */
 	public function testARunTakesTenBatchesAtMost(): void {
-		$this->table(array_map(static fn (int $i): array => self::row($i, 1000 + $i, 'pad-' . $i, seenAt: 100), range(1, 2001)), []);
+		$this->table(array_map(static fn (int $i): array => self::row($i, 1000 + $i, 'r-' . $i . '-000000000000', seenAt: 100), range(1, 2001)), []);
 
 		$this->assertSame(['checked' => 2000, 'deleted' => 2000], $this->sweep());
 

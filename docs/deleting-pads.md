@@ -86,6 +86,14 @@ in Etherpad, as deleting it could take down another pad. A group pad's
 group stays with it. The same holds for such a pad deleted from the
 consistency check.
 
+So is a public pad imported from an Ownpad file, under a name this app
+does not give (`nc-…`, or `r-…` for a restored one): a pad's address is all
+the import asked for, and the pad may be another installation's on the same
+Etherpad. The job removes the row and leaves the pad, which stays reachable
+by its address; to remove it, delete it in Etherpad. A protected pad imported
+past `allow_legacy_protected_import` goes with its file, as the admin vouched
+for the server by switching that on.
+
 On Nextcloud 34, and on 35.0.0, Nextcloud reports the files inside a
 folder deleted for good under the wrong ids - and a trash emptied as a
 whole, from the Files app or with `occ trashbin:cleanup`, is deleted as

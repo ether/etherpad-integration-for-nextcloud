@@ -39,6 +39,12 @@ final class PadId {
 	 */
 	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:\t\n\x{0B}\f\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+)$/uD';
 
+	/**
+	 * The public ids this app gives its pads, the same since 1.0.0
+	 * (PadBootstrapService::newPadId(), RestoreService::buildPublicRestorePadId()).
+	 */
+	private const APP_PUBLIC_PATTERN = '/^(?:nc-[a-z0-9]{24}|r-.*-[a-z0-9]{12})$/D';
+
 	/** The longest name Etherpad takes, in UTF-16 code units, as JavaScript counts a string. */
 	public const MAX_NAME_UNITS = 50;
 
@@ -49,6 +55,11 @@ final class PadId {
 
 	public static function isGroupPad(string $padId): bool {
 		return self::groupIdOf($padId) !== null;
+	}
+
+	/** Whether this is a public id of the kind this app gives its own pads. */
+	public static function isAppPublicId(string $padId): bool {
+		return preg_match(self::APP_PUBLIC_PATTERN, $padId) === 1;
 	}
 
 	/**

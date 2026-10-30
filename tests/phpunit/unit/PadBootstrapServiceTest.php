@@ -288,6 +288,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$service = $this->bootstrap(etherpad: $etherpadClient, secureRandom: $secureRandom);
 
 		$this->assertSame('nc-' . str_repeat('x', 24), $service->newPadId());
+		$this->assertTrue(\OCA\EtherpadNextcloud\Util\PadId::isAppPublicId($service->newPadId()));
 		$this->assertSame('p-' . str_repeat('x', 20), $service->newGroupPadName());
 		$this->assertSame('nc-' . str_repeat('x', 24), $service->provisionPadId(BindingService::ACCESS_PUBLIC));
 		$this->assertSame('g.ABCDEFGHIJKLMNOP$p-' . str_repeat('x', 20), $service->provisionPadId(BindingService::ACCESS_PROTECTED));

@@ -443,6 +443,50 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/** @return iterable<string, array{string, string}> */
+	public static function idsOfAnotherNextcloud(): iterable {
+		yield 'a new pad' => ['nc-' . str_repeat('a', 24)];
+		yield 'a restored pad' => ['r-old-pad-abc123def456'];
+	}
+
+	/**
+	 * Ownpad names no pad as this app does, so such an id with no row here
+	 * is another Nextcloud's on the same Etherpad: refused before the row,
+	 * with the file left as it is.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('idsOfAnotherNextcloud')]
+	public function testRefusesThePadOfAnotherNextcloud(string $padId): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(508);
+		$file->expects($this->never())->method('putContent');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->with($padId, BindingService::STATE_ACTIVE)->willReturn(null);
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(LegacyPadNotFoundException::class);
+		$this->expectExceptionMessage('The legacy .pad file names a pad with the id of a pad this app makes.');
+		$this->buildService(
+			binding: $binding,
+			padFileService: new PadFileService(new FixedClock()),
+			etherpadClient: $this->sameOriginClient(),
+			logger: $this->refusalLine('the pad it names cannot be linked.', 508, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'own_name']),
+		)->migrate($this->claimOn('mallory', $file), ['url' => 'https://pad.our-server.test/p/' . $padId, 'pad_id' => $padId]);
+	}
+
+	/** With its row here, such an id is this file's own, and its migration finishes. */
+	public function testFinishesItsOwnFileUnderAnIdThisAppGives(): void {
+		$padId = 'nc-' . str_repeat('a', 24);
+		$file = $this->createMock(File::class);
+		$file->method('getContent')->willReturn(self::SHORTCUT);
+		$file->expects($this->once())->method('putContent');
+		$this->claimedFile = $file;
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 509, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->buildService(binding: $binding, padFileService: new PadFileService(new FixedClock()), etherpadClient: $this->sameOriginClient())
+			->migrate(new CreatedFileClaim('alice', 509, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/' . $padId, 'pad_id' => $padId]);
+	}
+
 	public static function idsNotToLink(): iterable {
 		yield 'a group of fifteen' => ['g.VICTIMGROUPID12$notes', BindingService::ACCESS_PROTECTED];
 		// Bob's file binds `victim_pad`. No row names `victim pad`, so the

@@ -16,6 +16,7 @@ import {
 	padOfFile,
 	propfindFileId,
 	purgeTrashbinEntry,
+	putFileViaDav,
 	restoreAppConfig,
 	restoreFromTrashViaDav,
 	setAppConfig,
@@ -112,6 +113,34 @@ test.describe('pads of files deleted for good', () => {
 
 		expect(await padExists(padId), 'the job should have deleted the pad').toBe(false)
 		expect(await groupExists(groupIdOfPadUrl(pad.padUrl)), 'and its group with it').toBe(false)
+	})
+
+	/**
+	 * A public pad that came in by an Ownpad import may be another
+	 * installation's on the same Etherpad: its file loses the row, the pad
+	 * stays where it was.
+	 */
+	test('an imported public pad stays with its file deleted past the trash', async () => {
+		const name = uniquePadName('gone-imported')
+		const originName = uniquePadName('gone-imported-origin')
+		const padId = `e2e-imported-${Date.now()}`
+		const origin = new URL((await createPadAtPath(`/${originName}`)).padUrl).origin
+		await etherpadApiPost('createPad', { padID: padId })
+		try {
+			await putFileViaDav(name, `[InternetShortcut]\nURL=${origin}/p/${padId}\n`)
+			const fileId = await propfindFileId(name)
+			const opened = await padApiPost(`pads/initialize-by-id/${fileId}`)
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			expect(await padOfFile(fileId), 'the import should have bound the pad').toBe(padId)
+
+			await deleteViaDav(name, { pastTrash: true })
+			await settle()
+
+			expect(await padExists(padId), 'the pad should stay in Etherpad').toBe(true)
+		} finally {
+			await etherpadApiPost('deletePad', { padID: padId })
+			await deleteViaDav(originName, { pastTrash: true })
+		}
 	})
 
 	/**

@@ -174,6 +174,8 @@ class RestoreServiceTest extends TestCase {
 		$file = $this->padFile($fileId, 'Restored.pad');
 		$file->expects($this->never())->method('putContent');
 
+		// A restored pad is the app's: its file takes it along when deleted.
+		$this->assertTrue(\OCA\EtherpadNextcloud\Util\PadId::isAppPublicId($newPadId));
 		$this->expectException(LifecycleException::class);
 		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
 	}
