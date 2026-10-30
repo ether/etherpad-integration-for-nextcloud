@@ -54,32 +54,39 @@ class PublicViewerController extends PublicShareController {
 	}
 
 	/**
-	 * As Nextcloud's own share page asks it: from 35 a share says itself
-	 * whether anything protects it, a password or another way such as an
-	 * OTP; before 35 it counts as protected while it holds a password. The
+	 * A share is protected while it holds a password, whatever it says of
+	 * itself, and where it says so itself, as Nextcloud's own share page
+	 * asks it from 35. IShare leaves room for another way such as an OTP;
+	 * as of 35.0.2 Nextcloud's shares answer by their password alone. The
 	 * method is found at runtime, so only a `true` from it counts.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/public/Share/IShare.php isPasswordProtected()
 	 */
 	protected function isPasswordProtected(): bool {
-		return $this->share !== null && (method_exists($this->share, 'isPasswordProtected')
+		return $this->holdsPassword() || ($this->share !== null && (method_exists($this->share, 'isPasswordProtected')
 			? $this->share->isPasswordProtected() === true
-			: $this->share->getPassword() !== null);
+			: false));
 	}
 
 	protected function getPasswordHash(): ?string {
 		return $this->share?->getPassword();
 	}
 
+	private function holdsPassword(): bool {
+		$hash = $this->getPasswordHash();
+		return $hash !== null && $hash !== '';
+	}
+
 	/**
 	 * A share protected without a password has no hash a session could have
 	 * passed, and nothing here checks what protects it instead, so it is
-	 * refused. Nextcloud's own check takes the hash as a string.
+	 * refused. Nextcloud's own check takes the hash as a string, and reads
+	 * an empty one as a session without an entry.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/public/AppFramework/PublicShareController.php validateTokenSession()
 	 */
 	public function isAuthenticated(): bool {
-		if ($this->isPasswordProtected() && $this->getPasswordHash() === null) {
+		if ($this->isPasswordProtected() && !$this->holdsPassword()) {
 			return false;
 		}
 		return parent::isAuthenticated();
