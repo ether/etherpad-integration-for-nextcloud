@@ -149,7 +149,8 @@ runs keeps it, but switching it back on deletes it.
 A public pad the app would leave in Etherpad, imported as above, is listed
 with no Delete, only Forget. Deleting them all takes its row as forgetting
 would, without its id in the log, and the confirmation says so; the pad
-stays. A listed public pad can be forgotten: it leaves the list and stays in
+stays. Where every pad is listed and all are such pads, that button is not
+offered. A listed public pad can be forgotten: it leaves the list and stays in
 Etherpad, reachable by its link, and the app never cleans it up after
 that. That suits a public pad still used by its link. A protected pad
 cannot be forgotten: without its row, the sessions made for it would stay

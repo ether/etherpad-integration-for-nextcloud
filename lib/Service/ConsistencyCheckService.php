@@ -125,11 +125,11 @@ class ConsistencyCheckService {
 	 * @return string MARKED, NOT_VANISHED, or PAD_STAYS for a pad the sweep leaves
 	 */
 	public function markVanishedFile(int $fileId): string {
-		if (!$this->bindingService->isFileGone($fileId)) {
+		$binding = $this->bindingService->findByFileId($fileId);
+		if ($binding === null || $binding->state !== BindingService::STATE_ACTIVE || !$this->bindingService->isFileGone($fileId)) {
 			return self::NOT_VANISHED;
 		}
-		$binding = $this->bindingService->findByFileId($fileId);
-		if ($binding !== null && $binding->state === BindingService::STATE_ACTIVE && PadId::isOtherPublicId($binding->padId)) {
+		if (PadId::isOtherPublicId($binding->padId)) {
 			return self::PAD_STAYS;
 		}
 		if ($this->bindingService->markGone([$fileId]) === 0) {

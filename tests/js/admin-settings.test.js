@@ -302,6 +302,36 @@ describe('admin settings status areas', () => {
 		expect(document.querySelector('#etherpad-nextcloud-vanished-list li:last-child button').getAttribute('aria-label')).toContain('imported')
 	})
 
+	it('offers no Delete for all where the whole list stays in Etherpad', async () => {
+		let answer = { vanished_file_count: 1, samples: { vanished_files: [{ file_id: 9, pad_id: 'imported', access_mode: 'public', can_delete: false }] } }
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Issues.', pending_delete_count: 0, ...answer }))))
+		await import(MODULE)
+		const deleteAll = document.getElementById('etherpad-nextcloud-delete-vanished')
+		const check = document.getElementById('etherpad-nextcloud-consistency-check')
+
+		check.click()
+		await flushAsyncWork()
+		expect(deleteAll.style.display).toBe('none')
+
+		// Of a longer list, the rows not shown may be pads it can delete.
+		answer = { ...answer, vanished_file_count: 30 }
+		check.click()
+		await flushAsyncWork()
+		expect(deleteAll.style.display).toBe('')
+
+		// Back to nothing to delete, for the next answer to change.
+		answer = { ...answer, vanished_file_count: 1 }
+		check.click()
+		await flushAsyncWork()
+		expect(deleteAll.style.display).toBe('none')
+
+		// A pad it can delete among the whole list brings it back.
+		answer = { vanished_file_count: 2, samples: { vanished_files: [answer.samples.vanished_files[0], { file_id: 7, pad_id: 'nc-own', access_mode: 'public', can_delete: true }] } }
+		check.click()
+		await flushAsyncWork()
+		expect(deleteAll.style.display).toBe('')
+	})
+
 	it('deletes the pads of all vanished files, as many as confirmed', async () => {
 		let answer = { message: 'Marked.', marked: 30, vanished_file_count: 0, pending_delete_count: 30, samples: { vanished_files: [] } }
 		const fetchMock = vi.fn((url) => Promise.resolve(okResponse(url === '/delete-all-vanished'

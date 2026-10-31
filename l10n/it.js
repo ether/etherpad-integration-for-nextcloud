@@ -188,7 +188,7 @@ OC.L10N.register(
     "This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.": "Questo file è un collegamento Ownpad legacy a un pad protetto e l'importazione di questi pad è disattivata su questo server. Contatta l'amministrazione.",
     "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Questo file sembra una copia di un file .pad già esistente nel tuo account. Apri l'originale per continuare a modificare il pad collegato, oppure crea un nuovo pad per creare una copia indipendente del contenuto memorizzato in questo file.",
     "This file may have been moved or replaced since the list was loaded. Reload the page and open it again.": "Questo file potrebbe essere stato spostato o sostituito da quando l’elenco è stato caricato. Ricarica la pagina e riapri il file.",
-    "This legacy Ownpad file names a pad that does not exist in Etherpad.": "Questo file Ownpad legacy indica un pad che non esiste in Etherpad.",
+    "This .pad file names a pad that cannot be linked to it.": "Questo file .pad indica un pad che non può essere collegato ad esso.",
     "This link does not point to a valid file.": "Questo link non punta a un file valido.",
     "This pad is already linked to another file you do not have access to.": "Questo pad è già collegato a un altro file a cui non hai accesso.",
     "This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.": "Questo pad non è più sul server Etherpad. Si può creare un nuovo pad dal contenuto salvato in questo file.",

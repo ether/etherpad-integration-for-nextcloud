@@ -81,7 +81,11 @@ class PadIdTest extends TestCase {
 		yield 'a new pad' => ['nc-' . str_repeat('a', 12) . str_repeat('0', 12), true];
 		yield 'a restored pad' => ['r-old-pad-abc123def456', true];
 		yield 'restored, of an id with nothing left of it' => ['r--abc123def456', true];
+		yield 'restored, of an id with dots, underscores and capitals' => ['r-Old.pad_1-abc123def456', true];
 		yield 'a name of its own' => ['team-notes', false];
+		yield 'restored in form, with a character no restore keeps' => ['r-Réunion-abc123def456', false];
+		yield 'restored in form, with a space' => ['r-old pad-abc123def456', false];
+		yield 'restored in form, with the `$` an earlier restore kept' => ['r-old$pad-abc123def456', false];
 		yield 'one too short' => ['nc-' . str_repeat('a', 23), false];
 		yield 'one too long' => ['nc-' . str_repeat('a', 25), false];
 		yield 'capitals' => ['nc-' . str_repeat('A', 24), false];

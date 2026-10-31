@@ -446,6 +446,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	public static function idsOfTheAppsForm(): iterable {
 		yield 'a new pad' => ['nc-' . str_repeat('a', 24)];
 		yield 'a restored pad' => ['r-old-pad-abc123def456'];
+		yield 'a new pad in capitals' => ['Nc-' . str_repeat('A', 24)];
+		yield 'a restored pad in capitals' => ['R-OLD-PAD-ABC123DEF456'];
 	}
 
 	/**

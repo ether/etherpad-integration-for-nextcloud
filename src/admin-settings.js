@@ -551,10 +551,15 @@ import { handFocusTo } from './lib/hand-focus.js'
 		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
 			return
 		}
-		const items = (Array.isArray(rows) ? rows : [])
+		const listed = (Array.isArray(rows) ? rows : [])
 			.filter((row) => row && typeof row.pad_id === 'string')
-			.map(vanishedItem)
+		const items = listed.map(vanishedItem)
 		vanishedTotal = Math.max(Number.isFinite(Number(total)) ? Number(total) : 0, items.length)
+		// As with a row's own button; of a list shown in part only the rest could say.
+		if (deleteVanishedButton instanceof HTMLElement) {
+			const noneToDelete = vanishedTotal === items.length && listed.every((row) => row.can_delete === false)
+			deleteVanishedButton.style.display = noneToDelete ? 'none' : ''
+		}
 		vanishedList.replaceChildren(...items)
 		if (vanishedShownNode instanceof HTMLElement) {
 			vanishedShownNode.textContent = l10n.vanishedShown

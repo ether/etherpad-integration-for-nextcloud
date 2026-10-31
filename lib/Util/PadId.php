@@ -41,9 +41,10 @@ final class PadId {
 
 	/**
 	 * The public ids this app gives its pads, the same since 1.0.0
-	 * (PadBootstrapService::newPadId(), RestoreService::buildPublicRestorePadId()).
+	 * (PadBootstrapService::newPadId(), RestoreService::buildPublicRestorePadId()),
+	 * but for a `$` a restore kept before 1.1.0-beta.2: isValid() refuses that.
 	 */
-	private const APP_PUBLIC_PATTERN = '/^(?:nc-[a-z0-9]{24}|r-.*-[a-z0-9]{12})$/D';
+	private const APP_PUBLIC_PATTERN = '/^(?:nc-[a-z0-9]{24}|r-[a-zA-Z0-9._-]*-[a-z0-9]{12})$/D';
 
 	/** The longest name Etherpad takes, in UTF-16 code units, as JavaScript counts a string. */
 	public const MAX_NAME_UNITS = 50;
