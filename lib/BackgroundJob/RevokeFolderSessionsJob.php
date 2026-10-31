@@ -19,9 +19,9 @@ use Psr\Log\LoggerInterface;
 /**
  * Finds the protected pads a delete of their folder did not reach
  * (FolderSessionRevoker), under the folder's id and the last row dealt
- * with. Back at once while there are rows left; backed off when something
- * failed, and stopped after three delayed retries without progress: then
- * the rest expires on its own.
+ * with. Back at once while it gets further; backed off when something
+ * failed or a run got nowhere, and stopped after three delayed retries
+ * without progress: then the rest expires on its own.
  */
 class RevokeFolderSessionsJob extends QueuedJob {
 	/** Retry delays without cursor progress; progress restarts the backoff. */
@@ -59,11 +59,12 @@ class RevokeFolderSessionsJob extends QueuedJob {
 
 		$next = ['folderId' => $folderId, 'after' => $pass['after']];
 		try {
-			if (!$pass['failed']) {
+			$progress = $pass['after'] > $after;
+			if ($progress && !$pass['failed']) {
 				$this->jobList->add(self::class, $next);
 				return;
 			}
-			$attempt = $pass['after'] > $after ? 0 : $attempt;
+			$attempt = $progress ? 0 : $attempt;
 			if (!isset(self::RETRY_DELAYS[$attempt])) {
 				$this->logger->warning('Gave up looking for a deleted folder\'s protected pads after three retries without progress; their sessions expire on their own.', $context);
 				return;

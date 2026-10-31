@@ -52,6 +52,25 @@ class RevokeFolderSessionsJobTest extends TestCase {
 		$this->start(['after' => 8, 'ended' => false, 'failed' => true], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 2], 7);
 	}
 
+	/** A run its budget ended before it got further: back off, or the next would do the same at once, without end. */
+	public function testARunThatGotNowhereBacksOff(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects($this->never())->method('add');
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 300, ['folderId' => 10, 'after' => 7, 'attempt' => 2]);
+
+		$this->start(['after' => 7, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 1], 7);
+	}
+
+	public function testGivesUpOnRunsThatGetNowhere(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects($this->never())->method('add');
+		$jobList->expects($this->never())->method('scheduleAfter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'));
+
+		$this->start(['after' => 7, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 3], 7, $logger);
+	}
+
 	public function testGivesUpAfterThreeRetriesWithoutProgress(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->never())->method('scheduleAfter');
