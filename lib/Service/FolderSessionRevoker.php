@@ -30,6 +30,9 @@ class FolderSessionRevoker {
 	/** Rows a query takes at a time. */
 	private const PAGE = 500;
 
+	/** Groups a pass queues at most: each is a job's row and its passes, and a folder can hold thousands. */
+	private const MAX_GROUPS_PER_PASS = 250;
+
 	public function __construct(
 		private BindingService $bindingService,
 		private GroupSessionRevoker $groupSessions,
@@ -53,9 +56,9 @@ class FolderSessionRevoker {
 	}
 
 	/**
-	 * Scans the active protected rows past $after; never throws. The time
-	 * budget is checked between pages and before queueing a group; running
-	 * queries are not interrupted.
+	 * Scans the active protected rows past $after, up to a limit of groups;
+	 * never throws. The time budget is checked between pages and before
+	 * queueing a group; running queries are not interrupted.
 	 *
 	 * `after` is the last row processed; a failed queueing leaves its row for
 	 * the next pass. `ended` stops this scan, not the group jobs it queued.
@@ -90,8 +93,8 @@ class FolderSessionRevoker {
 				foreach ($pads as $fileId => $padId) {
 					$groupId = PadId::groupIdOf($padId);
 					if ($groupId !== null && !isset($queued[$groupId]) && self::isUnder($places[$fileId] ?? null, $folder)) {
-						if ($budget->exhausted()) {
-							break;
+						if (count($queued) >= self::MAX_GROUPS_PER_PASS || $budget->exhausted()) {
+							break 2;
 						}
 						if (!$this->groupSessions->queue($groupId)) {
 							$result['failed'] = true;

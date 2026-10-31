@@ -77,15 +77,45 @@ class FolderSessionRevokerTest extends TestCase {
 		$this->assertSame(2199, $pass['after']);
 	}
 
-	/** Through every page, full ones too. */
+	/** Through every page, full ones too, each group once. */
 	public function testGoesThroughSeveralFullPages(): void {
-		[$rows, $cached] = $this->folderOfRows(1000, 1200);
+		[$rows, $cached] = $this->folderOfRows(1000, 1200, 200);
 		$queued = [];
 
 		$pass = $this->revoker(new InMemoryBindingTable($rows, $cached), $queued)->pass(self::FOLDER, 0);
 
-		$this->assertCount(1200, $queued);
+		$this->assertCount(200, $queued);
 		$this->assertSame(['after' => 2199, 'ended' => true, 'failed' => false], $pass);
+	}
+
+	/** Each group is a job: a pass queues so many, and the next goes on from the row it left. */
+	public function testQueuesAtMostSoManyGroupsAPass(): void {
+		[$rows, $cached] = $this->folderOfRows(1000, 300);
+		$table = new InMemoryBindingTable($rows, $cached);
+		$queued = [];
+
+		$first = $this->revoker($table, $queued)->pass(self::FOLDER, 0);
+
+		$this->assertCount(250, $queued);
+		$this->assertSame(['after' => 1249, 'ended' => false, 'failed' => false], $first);
+
+		$queued = [];
+		$second = $this->revoker($table, $queued)->pass(self::FOLDER, $first['after']);
+
+		$this->assertCount(50, $queued);
+		$this->assertSame('g.g1250', $queued[0]);
+		$this->assertSame(['after' => 1299, 'ended' => true, 'failed' => false], $second);
+	}
+
+	/** Exactly as many groups as a pass may queue end it, with no further pass. */
+	public function testAPassEndsAtExactlyItsLimitOfGroups(): void {
+		[$rows, $cached] = $this->folderOfRows(1000, 250);
+		$queued = [];
+
+		$pass = $this->revoker(new InMemoryBindingTable($rows, $cached), $queued)->pass(self::FOLDER, 0);
+
+		$this->assertCount(250, $queued);
+		$this->assertTrue($pass['ended']);
 	}
 
 	/**
@@ -169,12 +199,14 @@ class FolderSessionRevokerTest extends TestCase {
 	 * group's job to leave be, a file back in Files (GroupSessionRevokerTest).
 	 */
 	public function testARestoreDuringARunQueuesNoMoreGroups(): void {
-		[$rows, $cached] = $this->folderOfRows(1000, 600);
-		$table = new InMemoryBindingTable($rows, $cached);
+		// A page's rows in a hundred groups; the next page's each in its own.
+		[$rows, $cached] = $this->folderOfRows(1000, 500, 100);
+		[$moreRows, $moreCached] = $this->folderOfRows(1500, 100);
+		$table = new InMemoryBindingTable([...$rows, ...$moreRows], [...$cached, ...$moreCached]);
 		$queued = [];
 		$restored = false;
 		$restore = static function () use ($table, &$queued, &$restored): void {
-			if (!$restored && count($queued) === 500) {
+			if (!$restored && count($queued) === 100) {
 				$restored = true;
 				foreach ($table->fileCache as &$row) {
 					$row['path'] = str_replace(self::TRASHED, 'files/big', (string)$row['path']);
@@ -184,7 +216,7 @@ class FolderSessionRevokerTest extends TestCase {
 
 		$pass = $this->revoker($table, $queued, onQueue: $restore)->pass(self::FOLDER, 0);
 
-		$this->assertCount(500, $queued);
+		$this->assertCount(100, $queued);
 		$this->assertTrue($pass['ended']);
 	}
 
@@ -302,12 +334,15 @@ class FolderSessionRevokerTest extends TestCase {
 		return new FolderSessionRevoker(new BindingService(new InMemoryBindingTable([], []), $clock), $this->createMock(GroupSessionRevoker::class), $jobList, $logger ?? $this->createMock(LoggerInterface::class), $clock);
 	}
 
-	/** @return array{list<array<string,mixed>>,list<array<string,mixed>>} rows and file cache: $count pads in the folder */
-	private function folderOfRows(int $first, int $count): array {
+	/**
+	 * @param ?positive-int $groups how many groups the pads share; each its own without
+	 * @return array{list<array<string,mixed>>,list<array<string,mixed>>} rows and file cache: $count pads in the folder
+	 */
+	private function folderOfRows(int $first, int $count, ?int $groups = null): array {
 		$rows = [];
 		$cached = [$this->cached(self::FOLDER, self::TRASHED)];
 		for ($fileId = $first; $fileId < $first + $count; $fileId++) {
-			$rows[] = $this->row($fileId, 'g' . $fileId);
+			$rows[] = $this->row($fileId, 'g' . ($groups === null ? $fileId : $fileId % $groups));
 			$cached[] = $this->cached($fileId, self::TRASHED . '/' . $fileId . '.pad');
 		}
 		return [$rows, $cached];

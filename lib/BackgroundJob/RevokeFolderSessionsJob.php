@@ -19,11 +19,14 @@ use Psr\Log\LoggerInterface;
 /**
  * Finds the protected pads a delete of their folder did not reach
  * (FolderSessionRevoker), under the folder's id and the last row dealt
- * with. Back at once while it gets further; backed off when something
- * failed or a run got nowhere, and stopped after three delayed retries
- * without progress: then the rest expires on its own.
+ * with. Back after a minute while it gets further; backed off when
+ * something failed or a run got nowhere, and stopped after three delayed
+ * retries without progress: then the rest expires on its own.
  */
 class RevokeFolderSessionsJob extends QueuedJob {
+	/** Seconds to the next run of a scan that got further: what paces its groups. */
+	private const CONTINUE_DELAY_SECONDS = 60;
+
 	/** Retry delays without cursor progress; progress restarts the backoff. */
 	private const RETRY_DELAYS = [60, 300, 900];
 
@@ -40,16 +43,14 @@ class RevokeFolderSessionsJob extends QueuedJob {
 	 * @param mixed $argument
 	 */
 	protected function run($argument): void {
-		if (!is_array($argument)) {
-			return;
-		}
-		$folderId = (int)($argument['folderId'] ?? 0);
+		$argument = is_array($argument) ? $argument : [];
+		$folderId = (int)($argument['folderId'] ?? null);
 		if ($folderId <= 0) {
 			return;
 		}
 		// Stored job arguments may be malformed; negative values start at zero.
-		$after = max(0, (int)($argument['after'] ?? 0));
-		$attempt = max(0, (int)($argument['attempt'] ?? 0));
+		$after = max(0, (int)($argument['after'] ?? null));
+		$attempt = max(0, (int)($argument['attempt'] ?? null));
 		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $folderId];
 
 		$pass = $this->revoker->pass($folderId, $after);
@@ -61,7 +62,7 @@ class RevokeFolderSessionsJob extends QueuedJob {
 		try {
 			$progress = $pass['after'] > $after;
 			if ($progress && !$pass['failed']) {
-				$this->jobList->add(self::class, $next);
+				$this->jobList->scheduleAfter(self::class, $this->time->getTime() + self::CONTINUE_DELAY_SECONDS, $next);
 				return;
 			}
 			$attempt = $progress ? 0 : $attempt;

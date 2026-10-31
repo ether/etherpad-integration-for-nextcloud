@@ -11,22 +11,20 @@ use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-/** Whether one run was enough: back at once with the rows left, backed off after a failure, and then given up. */
+/** Whether one run was enough: back after a minute with the rows left, backed off after a failure, and then given up. */
 class RevokeFolderSessionsJobTest extends TestCase {
 	private const NOW = 1_000_000;
 
 	public function testEndsWhenThePassEnds(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->never())->method('add');
 		$jobList->expects($this->never())->method('scheduleAfter');
 
 		$this->start(['after' => 9, 'ended' => true, 'failed' => false], $jobList, ['folderId' => 10], 0);
 	}
 
-	public function testComesBackAtOnceForTheRowsLeft(): void {
+	public function testComesBackAfterAMinuteForTheRowsLeft(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('add')->with(RevokeFolderSessionsJob::class, ['folderId' => 10, 'after' => 500]);
-		$jobList->expects($this->never())->method('scheduleAfter');
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 60, ['folderId' => 10, 'after' => 500]);
 
 		$this->start(['after' => 500, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 0], 0);
 	}
@@ -57,7 +55,7 @@ class RevokeFolderSessionsJobTest extends TestCase {
 	/** Stored as text, the folder and the row still name what they name. */
 	public function testAnArgumentAsTextCounts(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('add')->with(RevokeFolderSessionsJob::class, ['folderId' => 10, 'after' => 8]);
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 60, ['folderId' => 10, 'after' => 8]);
 
 		$this->start(['after' => 8, 'ended' => false, 'failed' => false], $jobList, ['folderId' => '10', 'after' => '7'], 7);
 	}
@@ -72,7 +70,6 @@ class RevokeFolderSessionsJobTest extends TestCase {
 	/** A run its budget ended before it got further: back off, or the next would do the same at once, without end. */
 	public function testARunThatGotNowhereBacksOff(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->never())->method('add');
 		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 300, ['folderId' => 10, 'after' => 7, 'attempt' => 2]);
 
 		$this->start(['after' => 7, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 1], 7);
@@ -80,7 +77,6 @@ class RevokeFolderSessionsJobTest extends TestCase {
 
 	public function testGivesUpOnRunsThatGetNowhere(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->never())->method('add');
 		$jobList->expects($this->never())->method('scheduleAfter');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'));
@@ -99,7 +95,7 @@ class RevokeFolderSessionsJobTest extends TestCase {
 
 	public function testANextRunThatCannotBeQueuedSaysSo(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->method('add')->willThrowException(new \RuntimeException('database went away'));
+		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('database went away'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not queue'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 10 && isset($context['error'])));
 

@@ -421,8 +421,9 @@ times stand for that machine, the ratios for any:
   rest goes to a job per group, up to 100 groups a delete; past those, a
   job finds the other groups by the rows
   (`BindingService::activeProtectedPadsAfter()`), 500 a page by file id,
-  then their places in one query. So what it costs grows with the
-  instance's protected pads, not the folder's entries. The page, measured
+  then their places in one query, and queues 250 groups a minute at most.
+  So what it costs grows with the instance's protected pads, not the
+  folder's entries. The page, measured
   on Postgres 16 with generated data, statistics taken on it: under 0.5 ms
   with 100,000 protected rows, alone or among 500,000, and under 3 ms with
   2,000 among 400,000, where it reads all of them through the index on
@@ -453,7 +454,7 @@ times stand for that machine, the ratios for any:
 | `GoneFileSweepJob` | every 4 min, on a 5-minute cron tick | 10 batches of 200 rows, 20 s of Etherpad calls | two queries on the table |
 | `CollectExpiredSessionsJob` | one per author with sessions, at their expiry plus 5 min, or a minute later while a backlog lasts | one listing of at most 4 MiB and 15 s, 250 deletions, 20 s | does not run: it is queued by an open |
 | `CollectExpiredGroupSessionsJob` | one per group opened through a link, at most hourly while sessions live | as above | as above |
-| `RevokeFolderSessionsJob` | one per folder deleted past what its walk reached, at once, back at once while rows are left | pages of 500 rows, one query for their places, and each group's queueing, 20 s | does not run |
+| `RevokeFolderSessionsJob` | one per folder deleted past what its walk reached, at once, a minute later while rows are left | pages of 500 rows, one query for their places, 250 groups queued, 20 s | does not run |
 | `RevokeGroupSessionsJob` | one per protected group deleted, at +60 s and +600 s | one listing, 250 deletions, 20 s; a file cache query before each deletion | as above |
 
 A listing past 4 MiB, or one that keeps timing out while Etherpad answers
