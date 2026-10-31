@@ -255,21 +255,24 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
-	 * A folder of more protected pads than a delete's walk takes: the delete
-	 * leaves some with their sessions, and background jobs take those too.
-	 * Etherpad is asked directly, so the setup makes no user open each pad
-	 * in a browser; the jobs run through Nextcloud's cron.php, as on an
-	 * instance left on its default of a job per page.
+	 * A folder of more protected pads than a delete's walk takes: a hundred
+	 * in it and one further down, which a walk going level by level does not
+	 * reach. The delete leaves that one its sessions, and background jobs
+	 * take them. Etherpad is asked directly, so the setup makes no user open
+	 * each pad in a browser; the jobs run through Nextcloud's cron.php, as on
+	 * an instance left on its default of a job per page.
 	 */
 	test('a folder past what a delete reaches loses its sessions in the background', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.setTimeout(15 * 60_000)
 		const folder = uniqueName('gone-sessions-past')
+		const deep = `${folder}/deep`
 		await mkcolViaDav(folder)
+		await mkcolViaDav(deep)
 		try {
 			const groups: string[] = []
-			for (let index = 0; index < 101; index++) {
-				const pad = await createPadAtPath(`/${folder}/${uniquePadName(`past-${index}`)}`, 'protected')
+			for (let index = 0; index <= 100; index++) {
+				const pad = await createPadAtPath(`/${index < 100 ? folder : deep}/${uniquePadName(`past-${index}`)}`, 'protected')
 				const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
 				expect(opened.status, JSON.stringify(opened.body)).toBe(200)
 				groups.push(groupIdOfPadUrl(pad.padUrl))
@@ -282,7 +285,7 @@ test.describe('pads of files deleted for good', () => {
 
 			await deleteViaDav(folder)
 			let left = await withSessions(groups)
-			expect(left.length, 'a delete should leave some groups with their sessions').toBeGreaterThan(0)
+			expect(left, 'a delete should not reach the pad further down').toContain(groups[100])
 
 			await expect.poll(async () => {
 				// A job a request; a burst, as Etherpad is the slower to ask.

@@ -27,7 +27,8 @@ use Psr\Log\LoggerInterface;
  * holds one, as the deleted file no longer does. A public pad has no
  * sessions, and stays reachable by its address.
  *
- * The pads are found before the delete (BeforeNodeDeletedEvent), while
+ * A folder's delete need not raise an event for every file in it, so the
+ * pads are looked for: before the delete (BeforeNodeDeletedEvent), while
  * the folder's tree is there to walk, and their sessions go once it is
  * done (NodeDeletedEvent). A delete that fails - a file locked by a sync -
  * raises no NodeDeletedEvent and takes nothing: whoever edits the file,
