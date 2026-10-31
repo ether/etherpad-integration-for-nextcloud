@@ -290,12 +290,13 @@ E2E_IGNORE_HTTPS_ERRORS=1
 ENV
 
 # Guard against that drifting: a variable added to env.ts but not here
-# would silently fall back to the shell's value.
+# would silently fall back to the shell's value. E2E_REAL_JOB_WAIT is the
+# one meant to come from there: the nightly run sets it, this stack does not.
 expected=()
 while IFS= read -r var; do
 	expected+=("$var")
 done < <(grep -hoE 'E2E_[A-Z_0-9]+' "$here/../fixtures/env.ts" "$here/../playwright.config.ts" \
-	| grep -v '^E2E_ENV_FILE$' | sort -u)
+	| grep -vE '^(E2E_ENV_FILE|E2E_REAL_JOB_WAIT)$' | sort -u)
 
 # Fail closed: an empty list would mean the sources moved or were
 # refactored, and an empty loop would report success while every variable
