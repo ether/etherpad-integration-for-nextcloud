@@ -17,19 +17,15 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Queues the groups of the protected pads whose files were seen deleted for
- * good (GoneFilesListener), for what no delete's request reached: a file or
- * folder purged from a trash, a folder past the trash, an account's home.
- * They go to a job in batches, to keep a delete's request from queueing
- * thousands; it queues each group's own job (GroupSessionRevoker), which
- * decides whether its sessions go.
+ * Queues protected groups after GoneFilesListener observes permanent file
+ * removal. Batch jobs queue the group jobs that decide whether session
+ * revocation is safe.
  *
- * Whatever delete_pad_with_file says: that decides whether a pad stays, not
- * whether what gave access to it still does. A pad the sweep is to take may
- * be refused, and wait.
+ * Session revocation is independent of delete_pad_with_file: sessions may
+ * need revocation even when pad deletion is disabled or fails.
  *
- * The listener builds this on a process's first file event, so it does not
- * depend on what talks to Etherpad.
+ * This service has no Etherpad client dependency because the listener is
+ * constructed for file events.
  */
 class GoneFileSessionRevoker {
 	/**
@@ -39,8 +35,8 @@ class GoneFileSessionRevoker {
 	private const BATCH = 100;
 
 	/**
-	 * Due-time offset per group handed over in this process, 30 seconds per
-	 * batch, which runs out as time passes. Overdue jobs may run together.
+	 * Adds 300 ms per group to the next batch's earliest due time. Elapsed
+	 * time consumes the accumulated delay; overdue jobs may run together.
 	 */
 	private const MILLISECONDS_A_GROUP = 300;
 
@@ -56,9 +52,8 @@ class GoneFileSessionRevoker {
 	}
 
 	/**
-	 * Queue the jobs for the groups of the protected ones of $fileIds. Never
-	 * fails what called it: what could not be queued goes to no job, and says
-	 * so, and a batch that fails leaves the next to try.
+	 * Queues protected groups for $fileIds in batches. Lookup and enqueue
+	 * failures are logged; a failed batch does not stop later batches.
 	 *
 	 * @param list<int> $fileIds
 	 */

@@ -76,7 +76,7 @@ class GroupSessionRevokerTest extends TestCase {
 		self::assertTrue($this->revoker(jobList: $jobList)->queueUnlessWaiting(self::GROUP));
 	}
 
-	/** The job that found the group tries again, so nothing has expired yet. */
+	/** Enqueue failure returns false and logs that the discovering job handles retries. */
 	public function testAPassThatCouldNotBeQueuedForAJobSaysItIsTriedAgain(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('database gone'));
