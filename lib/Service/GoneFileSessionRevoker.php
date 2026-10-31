@@ -58,8 +58,8 @@ class GoneFileSessionRevoker {
 	 * @param list<int> $fileIds
 	 */
 	public function queue(array $fileIds): void {
+		$groups = [];
 		try {
-			$groups = [];
 			foreach ($this->bindingService->protectedPadsOfFiles($fileIds) as $padId) {
 				$groupId = PadId::groupIdOf($padId);
 				if ($groupId !== null) {
@@ -72,7 +72,6 @@ class GoneFileSessionRevoker {
 				'files' => count($fileIds),
 				...SafeError::context($e),
 			]);
-			return;
 		}
 		foreach (array_chunk($groups, self::BATCH) as $batch) {
 			$runAfter = max($this->timeFactory->getTime() * 1000, $this->nextDue);
