@@ -21,11 +21,11 @@ use Psr\Log\LoggerInterface;
  * without progress stop the job.
  */
 abstract class ResumingJob extends QueuedJob {
-	/** Seconds to the next run of a job that got further. */
-	private const CONTINUE_DELAY_SECONDS = 60;
+	/** Seconds to the next run of a job that got further; SessionSweepJob's too. */
+	public const CONTINUE_DELAY_SECONDS = 60;
 
-	/** Retry delays without progress; progress restarts the backoff. */
-	private const RETRY_DELAYS = [60, 300, 900];
+	/** Retry delays without progress, SessionSweepJob's too; progress restarts the backoff. */
+	public const RETRY_DELAYS = [60, 300, 900];
 
 	public function __construct(
 		ITimeFactory $time,
