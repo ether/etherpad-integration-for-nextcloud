@@ -55,6 +55,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$this->assertSame(['pad-41'], $pads->of($this->file(41))->pads);
 		$this->assertSame([], $pads->of($this->file(12))->pads, 'a public pad');
 		$this->assertSame([], $pads->of($this->file(99))->pads, 'a file without a row');
+		$this->assertSame(1, end($table->limits), 'a file has one row at most');
 	}
 
 	/**
@@ -80,7 +81,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$table = $this->folderOfPads(150);
 		$logger = $this->createMock(LoggerInterface::class);
 		// The line counts the pads found, one past those taken.
-		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; a background job looks for the rest.', $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 1));
+		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; a background job looks for the rest.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['pads'] === 101 && $context['folders'] === 1));
 
 		$found = $this->walk($table, $logger)->of($this->folder(10));
 		$pads = $found->pads;
