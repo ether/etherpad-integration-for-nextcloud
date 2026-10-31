@@ -85,10 +85,10 @@ deleted for good once five minutes have passed, so the pad goes within
 about ten minutes; the admin page's "Check pending pads" does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
-However the file goes, a protected pad's sessions go too, by a background
-job of their own, usually within minutes: everyone's, so an account deleted
-also takes those of the people its pads were shared with. A group with a
-file still in Files, or a pad of no file, keeps them.
+Once a file is seen deleted for good, its protected pad's sessions go too,
+by a background job of their own, usually within minutes: everyone's, so an
+account deleted also takes those of the people its pads were shared with. A
+group with a file still in Files, or a pad of no file, keeps them.
 
 A pad an earlier version bound from a legacy Ownpad file under an id
 Etherpad's API may not act on as it is - with whitespace or a `:` in it,
@@ -123,7 +123,8 @@ one folder. The fix (Nextcloud server pull request 63998) is in 35.0.1,
 as its backport 64498; the backport to 34 (pull request 64497) is in no
 34 release yet, 34.0.5 included. The app cannot tell which files they
 were, so the pads of the `.pad` files inside such a folder, or in a trash
-emptied as a whole, stay, and the consistency check lists them. A `.pad`
+emptied as a whole, stay, and the consistency check lists them; what is
+left of their sessions expires on its own, within six hours. A `.pad`
 file deleted on its own - past the trash, or from the trash by itself or
 when it expires - and an account deleted, are not affected.
 

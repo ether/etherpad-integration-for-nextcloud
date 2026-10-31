@@ -40,6 +40,7 @@ class ResumingJobTest extends TestCase {
 		yield 'the second' => [['attempt' => 1], true, 300, 2];
 		yield 'the third' => [['attempt' => 2], false, 900, 3];
 		yield 'a negative attempt counts as none' => [['attempt' => -4], true, 60, 1];
+		yield 'an attempt that is no number counts as none' => [['attempt' => 'x'], true, 60, 1];
 	}
 
 	/** @param array<string,mixed> $argument */
@@ -58,13 +59,16 @@ class ResumingJobTest extends TestCase {
 		$this->start(self::pass(progress: true, failed: true), $jobList, ['attempt' => 3]);
 	}
 
-	public function testGivesUpAfterThreeRetriesWithoutProgress(): void {
+	/** A run that failed and one that only got nowhere end alike. */
+	#[\PHPUnit\Framework\Attributes\TestWith([true])]
+	#[\PHPUnit\Framework\Attributes\TestWith([false])]
+	public function testGivesUpAfterThreeRetriesWithoutProgress(bool $failed): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->never())->method('scheduleAfter');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with('gave up', ['app' => 'etherpad_nextcloud', 'item' => 7]);
 
-		$this->start(self::pass(failed: true), $jobList, ['attempt' => 3], $logger);
+		$this->start(self::pass(failed: $failed), $jobList, ['attempt' => 3], $logger);
 	}
 
 	public function testANextRunThatCannotBeQueuedSaysSo(): void {

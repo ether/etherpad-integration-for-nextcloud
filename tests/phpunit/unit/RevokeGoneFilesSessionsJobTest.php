@@ -99,6 +99,14 @@ class RevokeGoneFilesSessionsJobTest extends TestCase {
 		$this->assertSame(['g.one', 'g.two'], $this->run_($this->createMock(IJobList::class), ['groupIds' => [5, 'g.one', '', [1], 'g.two']]));
 	}
 
+	/** An entry left out does not shift what a later pass gets. */
+	public function testKeepsTheRightGroupsPastWhatIsNoGroup(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['groupIds' => ['g.two'], 'attempt' => 1]);
+
+		$this->assertSame(['g.one'], $this->run_($jobList, ['groupIds' => [5, 'g.one', 'g.two']], refuses: 'g.two'));
+	}
+
 	/**
 	 * @param mixed $argument
 	 * @param ?callable(): void $onQueue

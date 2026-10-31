@@ -345,6 +345,19 @@ class GoneFilesListenerTest extends TestCase {
 		$this->assertSame([['mark', [7, 8]], ['clear', [7]]], $this->calls);
 	}
 
+	/** What an earlier block marked is still known when a later block has been written. */
+	public function testAFileMarkedInAnEarlierBlockCanComeBack(): void {
+		$listener = $this->listener(block: 2);
+
+		foreach ([1, 2, 3, 4] as $fileId) {
+			$listener->handle($this->removed($fileId, 'files_trashbin/files/F' . $fileId . '.pad.d1'));
+		}
+		$listener->handle($this->inserted(1));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [1, 2]], ['mark', [3, 4]], ['clear', [1]]], $this->calls);
+	}
+
 	/**
 	 * A move to another storage keeps the file's id, and Nextcloud reports
 	 * it as a removal and an insert: the insert takes back the mark, before

@@ -28,8 +28,8 @@ use Psr\Log\LoggerInterface;
  * whether what gave access to it still does. A pad the sweep is to take may
  * be refused, and wait.
  *
- * The listener builds this on a process's first file cache removal, so it
- * does not depend on what talks to Etherpad.
+ * The listener builds this on a process's first file event, so it does not
+ * depend on what talks to Etherpad.
  */
 class GoneFileSessionRevoker {
 	/**
@@ -78,7 +78,7 @@ class GoneFileSessionRevoker {
 			]);
 			return;
 		}
-		foreach (array_chunk(array_values($groups), self::BATCH) as $batch) {
+		foreach (array_chunk($groups, self::BATCH) as $batch) {
 			$runAfter = max($this->timeFactory->getTime() * 1000, $this->nextDue);
 			try {
 				$this->jobList->scheduleAfter(RevokeGoneFilesSessionsJob::class, intdiv($runAfter, 1000), ['groupIds' => $batch]);

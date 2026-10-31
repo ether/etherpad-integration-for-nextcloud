@@ -433,11 +433,12 @@ times stand for that machine, the ratios for any:
   second look that ends at once where the sweep has taken the group by then.
   A file deleted past the trash has that group queued by its request too,
   and the batch leaves that pass where it is, for one more query.
-  A trash of a thousand protected pads emptied is about three thousand calls
-  over a quarter of an hour, about four thousand with deleting off or where
-  Etherpad refuses a delete, as the second look then asks both questions
-  again. Most of their sessions went when they moved to the trash: which ones
-  did only Etherpad can say, for the same call.
+  On a five-minute cron, a trash of a thousand protected pads emptied is up
+  to about three thousand calls over about twenty minutes, and about four
+  thousand with deleting off or where Etherpad refuses a delete, as the second
+  look then asks both questions again; the sweep's calls come on top. Most of
+  their sessions went when they moved to the trash: which ones did only
+  Etherpad can say, for the same call.
 - File cache removals cost an in-memory check each; those in a trash or a
   delete are collected and looked up 500 ids at a time, one indexed query.
 - Measured on the stack above with two million file cache rows, the

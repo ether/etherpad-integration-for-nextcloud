@@ -625,6 +625,18 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(0, $table->openResults);
 	}
 
+	/** Five hundred files to a query. */
+	public function testAsksForTheProtectedPadsOfFilesInBatches(): void {
+		$table = new InMemoryBindingTable([]);
+		$bindings = new BindingService($table, new FixedClock());
+
+		$bindings->protectedPadsOfFiles(range(1, 500));
+		$this->assertCount(1, $table->returned, 'five hundred fit one query');
+
+		$bindings->protectedPadsOfFiles(range(1, 501));
+		$this->assertCount(3, $table->returned, 'one more takes two');
+	}
+
 	/** A page goes by file id, whatever order the table has them in, past the row named and no further than its limit. */
 	public function testAPageOfProtectedPadsGoesByFileId(): void {
 		$row = static fn (int $fileId, string $mode = BindingService::ACCESS_PROTECTED, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => $mode, 'state' => $state];

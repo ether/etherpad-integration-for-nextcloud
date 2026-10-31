@@ -83,7 +83,7 @@ class GroupSessionRevokerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
 			'Could not queue the revocation of a group\'s remaining Etherpad sessions; the job that found the group tries again.',
-			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
+			self::callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['groupId'] === self::GROUP && isset($context['error'])),
 		);
 
 		self::assertFalse($this->revoker(jobList: $jobList, logger: $logger)->queueUnlessWaiting(self::GROUP));
@@ -95,7 +95,7 @@ class GroupSessionRevokerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
 			'Could not queue the revocation of a group\'s remaining Etherpad sessions; they will expire on their own.',
-			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
+			self::callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['groupId'] === self::GROUP && isset($context['error'])),
 		);
 
 		self::assertFalse($this->revoker(jobList: $jobList, logger: $logger)->queue(self::GROUP));
