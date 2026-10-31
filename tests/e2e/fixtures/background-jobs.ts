@@ -13,9 +13,10 @@ const composeFile = resolve(dirname(fileURLToPath(import.meta.url)), '../docker/
 const REVOCATION_JOBS = 'OCA\\\\EtherpadNextcloud\\\\BackgroundJob\\\\Revoke%'
 
 /**
- * Removes due-time waits from queued revocation jobs, including retries and
- * follow-up passes. cron.php still selects and runs the jobs. Nightly runs
- * retain scheduled delays (E2E.realJobWait). Only for the throwaway Docker
+ * Removes due-time waits from queued revocation jobs, follow-up passes too.
+ * Not from retries: run again at once, a job would spend its retries on one
+ * brief failure and give up. cron.php still selects and runs the jobs. Nightly
+ * runs retain scheduled delays (E2E.realJobWait). Only for the throwaway Docker
  * stack.
  */
 export const revocationJobsFallDue = (): void => {
@@ -25,6 +26,6 @@ export const revocationJobsFallDue = (): void => {
 	execFileSync('docker', [
 		'compose', '-f', composeFile, 'exec', '-T', 'db',
 		'psql', '-U', 'nextcloud', '-d', 'nextcloud', '-qc',
-		`UPDATE oc_jobs SET last_checked = 0 WHERE class LIKE '${REVOCATION_JOBS}'`,
+		`UPDATE oc_jobs SET last_checked = 0 WHERE class LIKE '${REVOCATION_JOBS}' AND argument NOT LIKE '%"attempt"%'`,
 	], { stdio: 'pipe' })
 }
