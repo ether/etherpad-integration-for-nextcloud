@@ -112,8 +112,8 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 	}
 
 	/**
-	 * A walk stopped short hands the folder to a job once the delete is done,
-	 * with no pad found as well; a delete that fails hands over nothing.
+	 * A walk stopped short queues the folder only after the delete, even when
+	 * it found no pads.
 	 */
 	public function testAWalkStoppedShortGoesToAJobOnceTheDeleteIsDone(): void {
 		foreach ([
@@ -154,7 +154,7 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 		$listener->handle(new NodeDeletedEvent($node));
 	}
 
-	/** A delete that fails raises no NodeDeletedEvent, and what it found goes with its next try. */
+	/** Without NodeDeletedEvent, a walk stopped short queues no folder job. */
 	public function testAFailedDeleteQueuesNoJob(): void {
 		$node = $this->createMock(Folder::class);
 		$node->method('getId')->willReturn(7);

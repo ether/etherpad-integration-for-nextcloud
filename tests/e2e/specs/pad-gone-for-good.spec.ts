@@ -255,12 +255,9 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
-	 * A folder of more protected pads than a delete's walk takes: a hundred
-	 * in it and one further down, which a walk going level by level does not
-	 * reach. The delete leaves that one its sessions, and background jobs
-	 * take them. Etherpad is asked directly, so the setup makes no user open
-	 * each pad in a browser; the jobs run through Nextcloud's cron.php, as on
-	 * an instance left on its default of a job per page.
+	 * The nested pad falls outside the request's 100-pad limit. API opens
+	 * create sessions without opening every pad in a browser, and HTTP calls
+	 * to cron.php exercise Nextcloud's background-job runner.
 	 */
 	test('a folder past what a delete reaches loses its sessions in the background', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
@@ -288,7 +285,8 @@ test.describe('pads of files deleted for good', () => {
 			expect(left, 'a delete should not reach the pad further down').toContain(groups[100])
 
 			await expect.poll(async () => {
-				// A job a request; a burst, as Etherpad is the slower to ask.
+				// Each HTTP cron call runs at most one job; a burst advances the queue.
+				// https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/background_jobs_configuration.html#webcron
 				for (let request = 0; request < 25; request++) {
 					const cron = await fetch(`${E2E.baseURL}/cron.php`)
 					expect(cron.status, 'cron.php should answer').toBe(200)

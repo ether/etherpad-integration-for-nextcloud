@@ -17,15 +17,14 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * The groups of the protected pads under a folder in a trash, after a
- * delete whose walk stopped short (ProtectedPadsOfNode). Each goes to its
- * own job (GroupSessionRevoker), which decides whether its sessions go.
+ * Finds the protected groups under a trashed folder after the request's
+ * bounded walk (ProtectedPadsOfNode). GroupSessionRevoker decides whether
+ * revoking is safe.
  *
- * By the rows, not by walking down again: what a walk has yet to visit does
- * not fit in a job's argument, and a file id does. What it costs grows with
- * the instance's protected pads, not the folder's entries (measured in
- * docs/architecture.md, "Cost at scale"). A folder the file cache no longer
- * has leaves nothing to tell its files by.
+ * Scanning the rows avoids storing the remaining folder tree in a job's
+ * argument. What it costs depends on the instance's active protected rows,
+ * not the folder's entries (docs/architecture.md, "Cost at scale"). A
+ * missing folder cannot be matched to its former descendants.
  */
 class FolderSessionRevoker {
 	/** Rows a query takes at a time. */
@@ -54,11 +53,13 @@ class FolderSessionRevoker {
 	}
 
 	/**
-	 * One run over the rows past $after, within a run's budget; never
-	 * throws. `after` is the last row dealt with, so what a run did not get
-	 * to, a group that could not be queued among it, is met again by the
-	 * next. `ended`: nothing is left to do. `failed`: a look-up failed, or a
-	 * group could not be queued, which each says.
+	 * Scans the active protected rows past $after; never throws. The time
+	 * budget is checked between pages and before queueing a group; running
+	 * queries are not interrupted.
+	 *
+	 * `after` is the last row processed; a failed queueing leaves its row for
+	 * the next pass. `ended` stops this scan, not the group jobs it queued.
+	 * `failed` reports a look-up or queueing failure.
 	 *
 	 * @return array{after:int,ended:bool,failed:bool}
 	 */

@@ -90,13 +90,13 @@ class FolderSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * Out of time in a page, it queues no further group, and says how far it
-	 * got. The budget starts with the run: the looks at the folder take of it.
+	 * Expiry before the third queueing preserves the last processed row, so
+	 * the next pass can retry the group not queued.
 	 */
 	public function testStopsInAPageWhenTheBudgetIsSpent(): void {
 		[$rows, $cached] = $this->folderOfRows(1000, 3);
 		$queued = [];
-		// The budget's start, the look before the page, one before each queueing.
+		// Time expires after two groups have been queued.
 		$clock = new ScriptedClock([1000.0, 1000.0, 1000.0, 1000.0, 2000.0]);
 
 		$pass = $this->revoker(new InMemoryBindingTable($rows, $cached), $queued, clock: $clock)->pass(self::FOLDER, 0);

@@ -24,7 +24,7 @@ use Psr\Log\LoggerInterface;
  * the rest expires on its own.
  */
 class RevokeFolderSessionsJob extends QueuedJob {
-	/** Backoff after a failure. The table is also the limit on attempts. */
+	/** Retry delays without cursor progress; progress restarts the backoff. */
 	private const RETRY_DELAYS = [60, 300, 900];
 
 	public function __construct(
@@ -47,7 +47,7 @@ class RevokeFolderSessionsJob extends QueuedJob {
 		if ($folderId <= 0) {
 			return;
 		}
-		// A row is just data; a negative attempt would index past the table.
+		// Stored job arguments may be malformed; negative values start at zero.
 		$after = max(0, (int)($argument['after'] ?? 0));
 		$attempt = max(0, (int)($argument['attempt'] ?? 0));
 		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $folderId];
