@@ -26,6 +26,7 @@ class RevokeFolderSessionsJobTest extends TestCase {
 	public function testComesBackAtOnceForTheRowsLeft(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->once())->method('add')->with(RevokeFolderSessionsJob::class, ['folderId' => 10, 'after' => 500]);
+		$jobList->expects($this->never())->method('scheduleAfter');
 
 		$this->start(['after' => 500, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 0], 0);
 	}
@@ -43,6 +44,22 @@ class RevokeFolderSessionsJobTest extends TestCase {
 		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + $delay, ['folderId' => 10, 'after' => 7, 'attempt' => $attempt + 1]);
 
 		$this->start(['after' => 7, 'ended' => false, 'failed' => true], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => $attempt], 7);
+	}
+
+	/** A first failure names no attempt yet, and takes the first delay. */
+	public function testAFirstFailureTakesTheFirstDelay(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 60, ['folderId' => 10, 'after' => 7, 'attempt' => 1]);
+
+		$this->start(['after' => 7, 'ended' => false, 'failed' => true], $jobList, ['folderId' => 10, 'after' => 7], 7);
+	}
+
+	/** Stored as text, the folder and the row still name what they name. */
+	public function testAnArgumentAsTextCounts(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects($this->once())->method('add')->with(RevokeFolderSessionsJob::class, ['folderId' => 10, 'after' => 8]);
+
+		$this->start(['after' => 8, 'ended' => false, 'failed' => false], $jobList, ['folderId' => '10', 'after' => '7'], 7);
 	}
 
 	public function testProgressStartsTheBackoffOver(): void {
@@ -75,7 +92,7 @@ class RevokeFolderSessionsJobTest extends TestCase {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->never())->method('scheduleAfter');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'));
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'), ['app' => 'etherpad_nextcloud', 'fileId' => 10]);
 
 		$this->start(['after' => 7, 'ended' => false, 'failed' => true], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 3], 7, $logger);
 	}
@@ -84,7 +101,7 @@ class RevokeFolderSessionsJobTest extends TestCase {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('add')->willThrowException(new \RuntimeException('database went away'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not queue'));
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not queue'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 10 && isset($context['error'])));
 
 		$this->start(['after' => 500, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10], 0, $logger);
 	}
@@ -117,7 +134,7 @@ class RevokeFolderSessionsJobTest extends TestCase {
 
 	/**
 	 * @param array{after:int,ended:bool,failed:bool} $pass
-	 * @param array<string,int> $argument
+	 * @param array<string,int|string> $argument
 	 */
 	private function start(array $pass, IJobList $jobList, array $argument, int $after, ?LoggerInterface $logger = null): void {
 		$revoker = $this->createMock(FolderSessionRevoker::class);

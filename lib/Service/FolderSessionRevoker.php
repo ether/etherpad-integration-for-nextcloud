@@ -95,7 +95,7 @@ class FolderSessionRevoker {
 							$result['failed'] = true;
 							break 2;
 						}
-						$queued[$groupId] = true;
+						$queued[$groupId] = $groupId;
 					}
 					$result['after'] = $fileId;
 				}

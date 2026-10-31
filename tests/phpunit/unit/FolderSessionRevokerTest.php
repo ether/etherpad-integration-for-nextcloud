@@ -131,7 +131,7 @@ class FolderSessionRevokerTest extends TestCase {
 		$groups = $this->createMock(GroupSessionRevoker::class);
 		$groups->expects($this->once())->method('queue')->with('g.one')->willReturn(true);
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with('Could not look through the rows for a deleted folder\'s protected pads.');
+		$logger->expects($this->once())->method('warning')->with('Could not look through the rows for a deleted folder\'s protected pads.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === self::FOLDER && isset($context['error'])));
 		$clock = new FixedClock();
 
 		$pass = (new FolderSessionRevoker($bindings, $groups, $this->createMock(IJobList::class), $logger, $clock))->pass(self::FOLDER, 0);
@@ -216,6 +216,42 @@ class FolderSessionRevokerTest extends TestCase {
 		}
 	}
 
+	/** What each way a pass ends says, under the app's name and the folder's id. */
+	public function testSaysWhatCameOfTheFolder(): void {
+		$rows = [$this->row(11, 'one')];
+		$gone = new InMemoryBindingTable($rows, []);
+		$back = new InMemoryBindingTable($rows, [
+			['fileid' => 1, 'storage' => self::STORAGE, 'path' => '', 'path_hash' => md5('')],
+			$this->cached(self::FOLDER, 'files/big'),
+		], [['storage_id' => self::STORAGE, 'root_id' => 1, 'mount_point' => '/alice/', 'mount_provider_class' => 'OC\\Files\\Mount\\LocalHomeMountProvider']]);
+		$found = new InMemoryBindingTable([$this->row(11, 'one'), $this->row(12, 'two')], [
+			$this->cached(self::FOLDER, self::TRASHED),
+			$this->cached(11, self::TRASHED . '/11.pad'),
+			$this->cached(12, self::TRASHED . '/12.pad'),
+		]);
+		$context = ['app' => 'etherpad_nextcloud', 'fileId' => self::FOLDER];
+		foreach ([
+			'gone' => [$gone, 'A folder deleted has left the file cache; the sessions of the protected pads a delete did not reach expire on their own.', $context],
+			'back' => [$back, 'A folder deleted is back in Files; its protected pads keep their sessions.', $context],
+			'found' => [$found, 'Queued the revocation of the sessions of protected pads a delete of their folder did not reach.', $context + ['groups' => 2]],
+		] as $case => [$table, $message, $expected]) {
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())->method('info')->with($message, $expected);
+			$queued = [];
+
+			$this->revoker($table, $queued, logger: $logger)->pass(self::FOLDER, 0);
+		}
+	}
+
+	/** No group queued, no line about any. */
+	public function testSaysNothingOfGroupsWhereNoneWasQueued(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+		$queued = [];
+
+		$this->revoker(new InMemoryBindingTable([], [$this->cached(self::FOLDER, self::TRASHED)]), $queued, logger: $logger)->pass(self::FOLDER, 0);
+	}
+
 	public function testQueueNamesTheFolderAndNeverFails(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->once())->method('add')->with(RevokeFolderSessionsJob::class, ['folderId' => self::FOLDER]);
@@ -224,7 +260,7 @@ class FolderSessionRevokerTest extends TestCase {
 		$failing = $this->createMock(IJobList::class);
 		$failing->method('add')->willThrowException(new \RuntimeException('database went away'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning');
+		$logger->expects($this->once())->method('warning')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === self::FOLDER && isset($context['error'])));
 		$this->withJobList($failing, $logger)->queue(self::FOLDER);
 	}
 
@@ -232,7 +268,7 @@ class FolderSessionRevokerTest extends TestCase {
 	 * @param list<string> $queued
 	 * @param ?callable(): void $onQueue
 	 */
-	private function revoker(InMemoryBindingTable $table, array &$queued, ?string $refuses = null, ?TestClock $clock = null, ?callable $onQueue = null): FolderSessionRevoker {
+	private function revoker(InMemoryBindingTable $table, array &$queued, ?string $refuses = null, ?TestClock $clock = null, ?callable $onQueue = null, ?LoggerInterface $logger = null): FolderSessionRevoker {
 		$clock ??= new FixedClock();
 		$groups = $this->createMock(GroupSessionRevoker::class);
 		$groups->method('queue')->willReturnCallback(static function (string $groupId) use (&$queued, $refuses, $onQueue): bool {
@@ -245,7 +281,7 @@ class FolderSessionRevokerTest extends TestCase {
 			}
 			return true;
 		});
-		return new FolderSessionRevoker(new BindingService($table, $clock), $groups, $this->createMock(IJobList::class), $this->createMock(LoggerInterface::class), $clock);
+		return new FolderSessionRevoker(new BindingService($table, $clock), $groups, $this->createMock(IJobList::class), $logger ?? $this->createMock(LoggerInterface::class), $clock);
 	}
 
 	private function withJobList(IJobList $jobList, ?LoggerInterface $logger = null): FolderSessionRevoker {
