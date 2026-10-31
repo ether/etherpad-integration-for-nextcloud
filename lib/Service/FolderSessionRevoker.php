@@ -74,7 +74,7 @@ class FolderSessionRevoker {
 		try {
 			$folder = $this->bindingService->placeOf($folderId);
 			if ($folder === null) {
-				$this->logger->info('A folder deleted has left the file cache; the sessions of the protected pads a delete did not reach expire on their own.', $context);
+				$this->logger->info('A folder deleted has left the file cache; nothing here can tell its files any more.', $context);
 				$result['ended'] = true;
 				return $result;
 			}

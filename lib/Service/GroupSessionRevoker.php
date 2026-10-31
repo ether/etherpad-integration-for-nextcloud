@@ -21,7 +21,9 @@ use Psr\Log\LoggerInterface;
  * The rest of a group's Etherpad sessions, in the background, after a
  * delete took what fit in its request (PadSessionRevoker): what did not
  * fit, what Etherpad did not answer for, and what an open already under
- * way made after the delete listed them.
+ * way made after the delete listed them. A file can also leave the file
+ * cache with no delete of its own, as with its account
+ * (GoneFileSessionRevoker).
  *
  * A group loses its sessions while every pad of it is away from Files:
  * its file in a trash, or out of the file cache (BindingService::anyInFiles()).

@@ -608,6 +608,23 @@ class BindingServiceTest extends TestCase {
 		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
 	}
 
+	/** The protected pads of the files named, in any state: past five hundred files too, with each result closed. */
+	public function testFindsTheProtectedPadsOfFilesInAnyState(): void {
+		$rows = [
+			['file_id' => 1, 'pad_id' => 'pad-1', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_PENDING_DELETE],
+			['file_id' => 2, 'pad_id' => 'pad-2', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
+			['file_id' => 3, 'pad_id' => 'pad-3', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE],
+			['file_id' => 4, 'pad_id' => 'pad-4', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
+			['file_id' => 600, 'pad_id' => 'pad-600', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
+		];
+		$table = new InMemoryBindingTable($rows);
+		$bindings = new BindingService($table, new FixedClock());
+
+		$this->assertSame([1 => 'pad-1', 2 => 'pad-2', 600 => 'pad-600'], $bindings->protectedPadsOfFiles([...range(1, 3), ...range(5, 600)]));
+		$this->assertSame([], $bindings->protectedPadsOfFiles([]));
+		$this->assertSame(0, $table->openResults);
+	}
+
 	/** A page goes by file id, whatever order the table has them in, past the row named and no further than its limit. */
 	public function testAPageOfProtectedPadsGoesByFileId(): void {
 		$row = static fn (int $fileId, string $mode = BindingService::ACCESS_PROTECTED, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => $mode, 'state' => $state];

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\GoneFileSessionRevoker;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
@@ -161,6 +162,7 @@ class GoneFilesListener implements IEventListener {
 		private IMountProviderCollection $mountProviders,
 		private LoggerInterface $logger,
 		private IRootFolder $rootFolder,
+		private GoneFileSessionRevoker $goneSessions,
 	) {
 		/** @var \WeakMap<object,true> $misnumbered */
 		$misnumbered = new \WeakMap();
@@ -185,6 +187,7 @@ class GoneFilesListener implements IEventListener {
 				$fileIds = $this->leavingHomes[$uid] ?? [];
 				unset($this->leavingHomes[$uid]);
 				$this->bindingService->markGone($fileIds);
+				$this->goneSessions->queue($fileIds);
 			} elseif ($event instanceof NodeRemovedFromCache) {
 				// A scan drops a file that vanished outside Nextcloud: sent
 				// right before its entries go, whatever path they are on.
@@ -417,7 +420,9 @@ class GoneFilesListener implements IEventListener {
 			$this->gone = [];
 			// Only files with a row are kept: a cleanup over millions of
 			// entries holds a handful, not all it removed.
-			$this->marked += array_fill_keys($this->bindingService->markIfGone($fileIds), true);
+			$marked = $this->bindingService->markIfGone($fileIds);
+			$this->marked += array_fill_keys($marked, true);
+			$this->goneSessions->queue($marked);
 		}
 		if ($this->back !== []) {
 			$fileIds = array_keys($this->back);

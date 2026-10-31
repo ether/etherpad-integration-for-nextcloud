@@ -493,6 +493,30 @@ class BindingService {
 	}
 
 	/**
+	 * The pads of the protected rows of $fileIds, in any state: a file seen
+	 * deleted for good waits as pending_delete.
+	 *
+	 * @param list<int> $fileIds
+	 * @return array<int,string> pad ids by file id
+	 */
+	public function protectedPadsOfFiles(array $fileIds): array {
+		$pads = [];
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('file_id', 'pad_id')
+				->from(self::TABLE)
+				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+				->andWhere($qb->expr()->eq('access_mode', $qb->createNamedParameter(self::ACCESS_PROTECTED)));
+			$result = $qb->executeQuery();
+			foreach (DbRows::all($result->fetchAll()) as $row) {
+				$pads[DbRows::int($row, 'file_id')] = DbRows::string($row, 'pad_id');
+			}
+			$result->closeCursor();
+		}
+		return $pads;
+	}
+
+	/**
 	 * The pads of the active protected rows past $after, by file id: a page
 	 * for a job that goes through them (FolderSessionRevoker).
 	 *

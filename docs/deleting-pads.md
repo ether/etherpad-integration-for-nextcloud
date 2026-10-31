@@ -33,11 +33,12 @@ The pad stays as it is, and nothing is written into the file.
   open makes a new session. A folder with more than 100 protected pads
   takes the sessions of the first 100 found, and a background job finds the
   others within minutes under a system cron, while the folder stays in the
-  trash. Where the file cache no longer has the folder by then - deleted
-  from the trash before the job runs, or moved to a trash under new ids, as
-  on a storage with a wrapped cache - the others' sessions expire on their
-  own, within six hours, as they do for a folder deleted past the trash,
-  unless the pad goes first.
+  trash. A folder deleted past the trash, or from it before that job runs,
+  has its files seen deleted for good, and a job takes the sessions from
+  those. Where they are not seen - moved to a trash under new ids, as on a
+  storage with a wrapped cache, or reported under the wrong ids, as below -
+  or the job could not be queued, the others' sessions expire on their own,
+  within six hours, unless the pad goes first.
 - **A public pad** stays reachable by its link, and can be written into.
   The file in the trash is not synced, so what is written there is in the
   pad, not in the file's snapshot; a restore brings it back with the pad.
@@ -183,4 +184,5 @@ trash does not ask: it gets its new pad on its own.
 
 The app deletes no pad at all: the pads of files deleted for good stay, and
 the admin page counts them as pending deletes. Switched back on, the job
-deletes them.
+deletes them. A protected pad's sessions go all the same: the setting says
+whether a pad stays, not whether what gave access to it still does.

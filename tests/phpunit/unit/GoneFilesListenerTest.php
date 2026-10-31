@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\GoneFilesListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\GoneFileSessionRevoker;
 use OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent;
 use OCA\Files_Trashbin\Events\NodeRestoredEvent;
 use OCP\EventDispatcher\Event;
@@ -52,8 +53,16 @@ class GoneFilesListenerTest extends TestCase {
 	private IMountProviderCollection $mounts;
 	private LoggerInterface $logger;
 	private IRootFolder $rootFolder;
+	/** @var list<list<int>> what the listener handed over for their sessions, in order */
+	private array $handedOver = [];
+	private GoneFileSessionRevoker $goneSessions;
 
 	protected function setUp(): void {
+		$this->handedOver = [];
+		$this->goneSessions = $this->createMock(GoneFileSessionRevoker::class);
+		$this->goneSessions->method('queue')->willReturnCallback(function (array $fileIds): void {
+			$this->handedOver[] = $fileIds;
+		});
 		$this->calls = [];
 		$this->atEnd = [];
 		$this->places = [];
@@ -63,8 +72,9 @@ class GoneFilesListenerTest extends TestCase {
 			$this->calls[] = ['mark', $fileIds];
 			return array_values(array_diff($fileIds, $this->withoutRow));
 		});
-		$this->bindings->method('markGone')->willReturnCallback(function (array $fileIds): void {
+		$this->bindings->method('markGone')->willReturnCallback(function (array $fileIds): int {
 			$this->calls[] = ['mark home', $fileIds];
+			return count($fileIds);
 		});
 		$this->bindings->method('placeOf')->willReturnCallback(fn (int $fileId): ?array => $this->places[$fileId] ?? null);
 		$this->bindings->method('clearGone')->willReturnCallback(function (array $fileIds): void {
@@ -423,6 +433,25 @@ class GoneFilesListenerTest extends TestCase {
 		$this->assertSame([['storage', [5]], ['mark home', [41, 42]], ['mark home', []], ['storage', [6]], ['mark home', []]], $this->calls);
 	}
 
+	/** The files marked go on for their sessions, those of a home as well: only those marked, not all removed. */
+	public function testHandsOverWhatItMarked(): void {
+		$alice = $this->user('alice');
+		$this->mounts->method('getHomeMountForUser')->willReturn($this->home(5));
+		$this->withoutRow = [8];
+		$listener = $this->listener();
+		$node = $this->node(6, 'files/Team');
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle($this->removed(7, 'files/Team/a.pad'));
+		$listener->handle($this->removed(8, 'files/Team/b.txt'));
+		$listener->handle(new NodeDeletedEvent($node));
+		$this->assertSame([[7]], $this->handedOver);
+
+		$listener->handle(new BeforeUserDeletedEvent($alice));
+		$listener->handle(new UserDeletedEvent($alice));
+		$this->assertSame([[7], [41, 42]], $this->handedOver);
+	}
+
 	/** A deletion the user backend refuses raises no UserDeletedEvent: nothing is marked. */
 	public function testARefusedUserDeletionMarksNothing(): void {
 		$this->mounts->method('getHomeMountForUser')->willReturn($this->home(5));
@@ -466,11 +495,11 @@ class GoneFilesListenerTest extends TestCase {
 		$atEnd = function (\Closure $write): void {
 			$this->atEnd[] = $write;
 		};
-		$args = [$this->bindings, $this->mounts, $this->logger, $this->rootFolder];
+		$args = [$this->bindings, $this->mounts, $this->logger, $this->rootFolder, $this->goneSessions];
 		return $block === 500
 			? new class($atEnd, ...$args) extends GoneFilesListener {
-				public function __construct(private \Closure $registers, BindingService $b, IMountProviderCollection $m, LoggerInterface $l, IRootFolder $r) {
-					parent::__construct($b, $m, $l, $r);
+				public function __construct(private \Closure $registers, BindingService $b, IMountProviderCollection $m, LoggerInterface $l, IRootFolder $r, GoneFileSessionRevoker $g) {
+					parent::__construct($b, $m, $l, $r, $g);
 				}
 
 				protected function atEnd(\Closure $write): void {
@@ -480,8 +509,8 @@ class GoneFilesListenerTest extends TestCase {
 			: new class($atEnd, ...$args) extends GoneFilesListener {
 				protected const BLOCK = 2;
 
-				public function __construct(private \Closure $registers, BindingService $b, IMountProviderCollection $m, LoggerInterface $l, IRootFolder $r) {
-					parent::__construct($b, $m, $l, $r);
+				public function __construct(private \Closure $registers, BindingService $b, IMountProviderCollection $m, LoggerInterface $l, IRootFolder $r, GoneFileSessionRevoker $g) {
+					parent::__construct($b, $m, $l, $r, $g);
 				}
 
 				protected function atEnd(\Closure $write): void {

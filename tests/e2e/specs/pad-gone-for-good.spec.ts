@@ -255,47 +255,87 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
-	 * The nested pad falls outside the request's 100-pad limit. API opens
-	 * create sessions without opening every pad in a browser, and HTTP calls
-	 * to cron.php exercise Nextcloud's background-job runner.
+	 * A folder of 100 protected pads and a nested one, each opened, which
+	 * falls outside the request's 100-pad limit. API opens create sessions
+	 * without opening every pad in a browser. The groups, the nested pad's
+	 * last.
 	 */
+	const padsPastTheWalk = async (folder: string): Promise<string[]> => {
+		const deep = `${folder}/deep`
+		await mkcolViaDav(folder)
+		await mkcolViaDav(deep)
+		const groups: string[] = []
+		for (let index = 0; index <= 100; index++) {
+			const pad = await createPadAtPath(`/${index < 100 ? folder : deep}/${uniquePadName(`past-${index}`)}`, 'protected')
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			groups.push(groupIdOfPadUrl(pad.padUrl))
+		}
+		expect(await withSessions(groups), 'every pad should have a session once opened').toHaveLength(groups.length)
+		return groups
+	}
+
+	const withSessions = async (among: string[]): Promise<string[]> => {
+		const live = await Promise.all(among.map(async (group) => await liveSessionsOfGroup(group) > 0))
+		return among.filter((_, index) => live[index])
+	}
+
+	/** HTTP calls to cron.php exercise Nextcloud's background-job runner, until none of the groups holds a session. */
+	const jobsTakeTheSessionsOf = async (groups: string[]): Promise<void> => {
+		let left = groups
+		await expect.poll(async () => {
+			// Each HTTP cron call runs at most one job; a burst advances the queue.
+			// https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/background_jobs_configuration.html#webcron
+			for (let request = 0; request < 25; request++) {
+				const cron = await fetch(`${E2E.baseURL}/cron.php`)
+				expect(cron.status, 'cron.php should answer').toBe(200)
+				expect((await cron.json() as { status?: string }).status, 'cron.php should run without an error').toBe('success')
+			}
+			left = await withSessions(left)
+			return left
+		}, { message: 'the jobs should take the sessions of every group', timeout: 12 * 60_000, intervals: [1_000] }).toEqual([])
+	}
+
 	test('a folder past what a delete reaches loses its sessions in the background', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.setTimeout(15 * 60_000)
 		const folder = uniqueName('gone-sessions-past')
-		const deep = `${folder}/deep`
-		await mkcolViaDav(folder)
-		await mkcolViaDav(deep)
 		try {
-			const groups: string[] = []
-			for (let index = 0; index <= 100; index++) {
-				const pad = await createPadAtPath(`/${index < 100 ? folder : deep}/${uniquePadName(`past-${index}`)}`, 'protected')
-				const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
-				expect(opened.status, JSON.stringify(opened.body)).toBe(200)
-				groups.push(groupIdOfPadUrl(pad.padUrl))
-			}
-			const withSessions = async (among: string[]): Promise<string[]> => {
-				const live = await Promise.all(among.map(async (group) => await liveSessionsOfGroup(group) > 0))
-				return among.filter((_, index) => live[index])
-			}
-			expect(await withSessions(groups), 'every pad should have a session once opened').toHaveLength(groups.length)
+			const groups = await padsPastTheWalk(folder)
 
 			await deleteViaDav(folder)
-			let left = await withSessions(groups)
+			const left = await withSessions(groups)
 			expect(left, 'a delete should not reach the pad further down').toContain(groups[100])
 
-			await expect.poll(async () => {
-				// Each HTTP cron call runs at most one job; a burst advances the queue.
-				// https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/background_jobs_configuration.html#webcron
-				for (let request = 0; request < 25; request++) {
-					const cron = await fetch(`${E2E.baseURL}/cron.php`)
-					expect(cron.status, 'cron.php should answer').toBe(200)
-					expect((await cron.json() as { status?: string }).status, 'cron.php should run without an error').toBe('success')
-				}
-				left = await withSessions(left)
-				return left
-			}, { message: 'the jobs should take the sessions of every group', timeout: 12 * 60_000, intervals: [1_000] }).toEqual([])
+			await jobsTakeTheSessionsOf(left)
 		} finally {
+			await deleteViaDav(folder, { pastTrash: true }).catch(() => {})
+		}
+	})
+
+	/**
+	 * Past the trash the folder is gone, so only the marks on its files lead
+	 * to the pad further down: and with deleting off no sweep takes its
+	 * group, while the pad stays.
+	 */
+	test('a folder deleted for good loses its sessions with deleting off', async () => {
+		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
+		test.setTimeout(15 * 60_000)
+		const key = 'delete_pad_with_file'
+		const before = await getAppConfig(key)
+		const folder = uniqueName('gone-sessions-for-good')
+		try {
+			await setAppConfig(key, 'no')
+			const groups = await padsPastTheWalk(folder)
+
+			await deleteViaDav(folder, { pastTrash: true })
+			const left = await withSessions(groups)
+			expect(left, 'a delete should not reach the pad further down').toContain(groups[100])
+
+			await jobsTakeTheSessionsOf(left)
+			expect(await groupExists(groups[100]), 'with deleting off, the group should stay').toBe(true)
+		} finally {
+			await restoreAppConfig(key, before)
 			await deleteViaDav(folder, { pastTrash: true }).catch(() => {})
 		}
 	})

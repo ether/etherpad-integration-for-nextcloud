@@ -276,7 +276,7 @@ class FolderSessionRevokerTest extends TestCase {
 		]);
 		$context = ['app' => 'etherpad_nextcloud', 'fileId' => self::FOLDER];
 		foreach ([
-			'gone' => [$gone, 'A folder deleted has left the file cache; the sessions of the protected pads a delete did not reach expire on their own.', $context],
+			'gone' => [$gone, 'A folder deleted has left the file cache; nothing here can tell its files any more.', $context],
 			'back' => [$back, 'A folder deleted is back in Files; its protected pads keep their sessions.', $context],
 			'found' => [$found, 'Queued the revocation of the sessions of protected pads a delete of their folder did not reach.', $context + ['groups' => 2]],
 		] as $case => [$table, $message, $expected]) {
