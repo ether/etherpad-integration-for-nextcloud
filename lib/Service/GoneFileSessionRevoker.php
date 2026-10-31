@@ -28,10 +28,16 @@ use Psr\Log\LoggerInterface;
  * be refused, and wait.
  */
 class GoneFileSessionRevoker {
-	/** Groups a job names at a time: ids as long as a row holds stay below the 32,000 bytes of a job's argument. */
+	/**
+	 * Groups per job. Etherpad-generated group ids keep each batch below
+	 * Nextcloud's 32,000-byte limit for JSON-encoded arguments.
+	 */
 	private const BATCH = 100;
 
-	/** Seconds between two batches of a process: the earliest each runs, as cron may run late and catch up. */
+	/**
+	 * Due-time offset per 100 distinct groups handed over in this process.
+	 * Overdue jobs may run together.
+	 */
 	private const SECONDS_A_BATCH = 30;
 
 	/** @var array<string,true> groups this process handed over: what paces a trash emptied one delete at a time as one large one */

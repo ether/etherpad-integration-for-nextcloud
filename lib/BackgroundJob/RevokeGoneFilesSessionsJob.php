@@ -29,7 +29,7 @@ class RevokeGoneFilesSessionsJob extends ResumingJob {
 	}
 
 	protected function pass(array $argument): ?array {
-		// Stored job arguments may be malformed; what is no group's id is left out.
+		// Stored job arguments may be malformed; only non-empty strings remain.
 		$groupIds = array_values(array_filter((array)($argument['groupIds'] ?? null), static fn (mixed $groupId): bool => is_string($groupId) && $groupId !== ''));
 		if ($groupIds === []) {
 			return null;

@@ -74,7 +74,7 @@ class GoneFileSessionRevokerTest extends TestCase {
 		$this->assertSame([], $scheduled->calls);
 	}
 
-	/** Ids as long as a row holds stay below the 32,000 bytes Nextcloud takes as a job's argument. */
+	/** Long alphanumeric group names exercise the batch limit without JSON escaping. */
 	public function testABatchOfTheLongestIdsFitsAJobsArgument(): void {
 		$rows = [];
 		for ($fileId = 1; $fileId <= 150; $fileId++) {

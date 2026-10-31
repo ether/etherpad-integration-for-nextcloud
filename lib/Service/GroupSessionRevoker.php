@@ -91,6 +91,8 @@ class GroupSessionRevoker {
 	 * As queue(), for a job that finds groups after a delete has queued them:
 	 * it leaves a first pass waiting where it is. Moved, the row misses the
 	 * cron run it was due in, and waits for the next.
+	 *
+	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/private/BackgroundJob/JobList.php add()
 	 */
 	public function queueUnlessWaiting(string $groupId): bool {
 		try {

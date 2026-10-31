@@ -11,7 +11,7 @@ use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-/** The batch's argument and what it says; whether a run was enough is ResumingJob's, which RevokeFolderSessionsJobTest holds to its rules. */
+/** Batch arguments and log context; retry scheduling is covered by ResumingJobTest. */
 class RevokeGoneFilesSessionsJobTest extends TestCase {
 	private const NOW = 1_000_000;
 
@@ -73,7 +73,7 @@ class RevokeGoneFilesSessionsJobTest extends TestCase {
 		$this->run_($revoker, $this->createMock(IJobList::class), $argument);
 	}
 
-	/** What is no group's id is left out, and what is stays in order. */
+	/** Empty strings and non-string values are discarded; remaining strings keep their order. */
 	public function testLeavesOutWhatIsNoGroup(): void {
 		$revoker = $this->createMock(GoneFileSessionRevoker::class);
 		$revoker->expects($this->once())->method('pass')->with(['g.one', 'g.two'])->willReturn(['left' => [], 'failed' => false]);

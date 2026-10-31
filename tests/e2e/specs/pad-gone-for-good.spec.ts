@@ -314,12 +314,13 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
-	 * Past the trash the folder is gone, so only the marks on its files lead
-	 * to the pad further down: and with deleting off no sweep takes its
-	 * group, while the pad stays.
+	 * The nested pad is missed by the request and cannot be rediscovered
+	 * through the deleted folder. Disabling pad deletion ensures that this
+	 * test cannot pass merely because the sweep deletes its group.
 	 */
 	test('a folder deleted for good loses its sessions with deleting off', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
+		test.skip(await misnumbersFolderFiles(), misnumbered)
 		test.setTimeout(15 * 60_000)
 		const key = 'delete_pad_with_file'
 		const before = await getAppConfig(key)

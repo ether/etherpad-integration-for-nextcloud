@@ -44,14 +44,6 @@ class RevokeFolderSessionsJobTest extends TestCase {
 		$this->start(['after' => 7, 'ended' => false, 'failed' => true], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => $attempt], 7);
 	}
 
-	/** A first failure names no attempt yet, and takes the first delay. */
-	public function testAFirstFailureTakesTheFirstDelay(): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 60, ['folderId' => 10, 'after' => 7, 'attempt' => 1]);
-
-		$this->start(['after' => 7, 'ended' => false, 'failed' => true], $jobList, ['folderId' => 10, 'after' => 7], 7);
-	}
-
 	/** Stored as text, the folder and the row still name what they name. */
 	public function testAnArgumentAsTextCounts(): void {
 		$jobList = $this->createMock(IJobList::class);
@@ -73,15 +65,6 @@ class RevokeFolderSessionsJobTest extends TestCase {
 		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeFolderSessionsJob::class, self::NOW + 300, ['folderId' => 10, 'after' => 7, 'attempt' => 2]);
 
 		$this->start(['after' => 7, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 1], 7);
-	}
-
-	public function testGivesUpOnRunsThatGetNowhere(): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->never())->method('scheduleAfter');
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'));
-
-		$this->start(['after' => 7, 'ended' => false, 'failed' => false], $jobList, ['folderId' => 10, 'after' => 7, 'attempt' => 3], 7, $logger);
 	}
 
 	public function testGivesUpAfterThreeRetriesWithoutProgress(): void {

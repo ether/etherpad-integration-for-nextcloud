@@ -16,11 +16,9 @@ use OCP\BackgroundJob\QueuedJob;
 use Psr\Log\LoggerInterface;
 
 /**
- * A job whose argument names what is left to do, and changes as it gets
- * through it: back after a minute while it gets further, backed off when
- * something failed or a run got nowhere, and stopped after three delayed
- * retries without progress. SessionSweepJob matches its rows by their exact
- * arguments, which an argument that changes cannot be.
+ * Resumes work stored in the job argument. Progress schedules another pass
+ * after a minute. Failures or no progress trigger backoff; three retries
+ * without progress stop the job.
  */
 abstract class ResumingJob extends QueuedJob {
 	/** Seconds to the next run of a job that got further. */
@@ -38,8 +36,9 @@ abstract class ResumingJob extends QueuedJob {
 	}
 
 	/**
-	 * One run: null when nothing is left. `next` is the argument of the next
-	 * run, `context` what the log says of it.
+	 * Returns null to stop the job. `next` stores remaining work; `progress`
+	 * resets retry backoff; `failed` requests backoff even after progress;
+	 * `context` contains log fields.
 	 *
 	 * @param array<array-key,mixed> $argument stored data, which may be malformed
 	 * @return ?array{next:array<string,mixed>,progress:bool,failed:bool,context:array<string,mixed>}
