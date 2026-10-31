@@ -18,9 +18,9 @@ const parseJsonResponse = async (res: Response): Promise<unknown> => {
 	}
 }
 
-const davUrl = (relativePath: string): string => {
+const davUrl = (relativePath: string, uid: string = E2E.user): string => {
 	const path = relativePath.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')
-	return `${E2E.baseURL}/remote.php/dav/files/${encodeURIComponent(E2E.user)}/${path}`
+	return `${E2E.baseURL}/remote.php/dav/files/${encodeURIComponent(uid)}/${path}`
 }
 
 /**
@@ -556,7 +556,10 @@ export const createPadAtPath = async (
  * for cross-user / API permission checks. Throws if the file is missing
  * or the fileid prop cannot be parsed.
  */
-export const propfindFileId = async (relativePath: string): Promise<number> => {
+export const propfindFileId = async (
+	relativePath: string,
+	as: { uid: string, password: string } | null = null,
+): Promise<number> => {
 	const path = relativePath.replace(/^\/+/, '')
 	const body = '<?xml version="1.0"?>\n'
 		+ '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">\n'
@@ -567,10 +570,10 @@ export const propfindFileId = async (relativePath: string): Promise<number> => {
 	// NC's filecache propagation lags the create response by a few ms;
 	// retry until the file is visible to DAV.
 	const res = await withDavRetry(
-		() => fetch(davUrl(path), {
+		() => fetch(davUrl(path, as?.uid), {
 			method: 'PROPFIND',
 			headers: {
-				Authorization: basicAuthHeader(),
+				Authorization: as === null ? basicAuthHeader() : `Basic ${Buffer.from(`${as.uid}:${as.password}`).toString('base64')}`,
 				Depth: '0',
 				'Content-Type': 'application/xml; charset=UTF-8',
 			},
@@ -653,6 +656,7 @@ export const createUserShare = async (
 	relativePath: string,
 	shareWith: string,
 	permissions: number = SHARE_PERMISSION_READ,
+	as: { uid: string, password: string } | null = null,
 ): Promise<{ id: string }> => {
 	const body = new URLSearchParams()
 	body.set('path', '/' + relativePath.replace(/^\/+/, ''))
@@ -673,7 +677,7 @@ export const createUserShare = async (
 		res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
 			method: 'POST',
 			headers: {
-				Authorization: basicAuthHeader(),
+				Authorization: as === null ? basicAuthHeader() : `Basic ${Buffer.from(`${as.uid}:${as.password}`).toString('base64')}`,
 				'OCS-APIRequest': 'true',
 				'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
 				Accept: 'application/json',
@@ -706,8 +710,11 @@ export const createUserReadShare = async (relativePath: string, shareWith: strin
 	createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ)
 
 /** Writable user share: the recipient opens the editable pad. */
-export const createUserWriteShare = async (relativePath: string, shareWith: string): Promise<{ id: string }> =>
-	createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ_WRITE)
+export const createUserWriteShare = async (
+	relativePath: string,
+	shareWith: string,
+	as: { uid: string, password: string } | null = null,
+): Promise<{ id: string }> => createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ_WRITE, as)
 
 /**
  * Revoke a share by its OCS id. Used by both link-share and user-share

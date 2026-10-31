@@ -16,10 +16,10 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Takes the rest of one group's live Etherpad sessions after a delete
- * (GroupSessionRevoker). Queued by the delete, per group, under the
- * group's id. It ends when the group holds no live session - looked at
- * once more ten minutes later - when a pad of it is back, or after three
- * delayed retries without progress: then the rest expires on its own.
+ * (GroupSessionRevoker). Queued per group, under the group's id. It ends
+ * when the group holds no live session - looked at once more ten minutes
+ * later - when a pad of it is back, or after three delayed retries without
+ * progress: then the rest expires on its own.
  */
 class RevokeGroupSessionsJob extends SessionSweepJob {
 	/**

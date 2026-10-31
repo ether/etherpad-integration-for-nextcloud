@@ -31,12 +31,6 @@ use Psr\Log\LoggerInterface;
  * whether one pass was enough.
  */
 abstract class SessionSweepJob extends QueuedJob {
-	/** Seconds to wait before the next pass of a sweep that had more to do. */
-	private const CONTINUE_DELAY_SECONDS = 60;
-
-	/** Backoff after a refusal. The table is also the limit on attempts. */
-	private const RETRY_DELAYS = [60, 300, 900];
-
 	/** How long a sweep that could not read its listing keeps from listing again (park()). */
 	private const PARKED_DELAY_SECONDS = 86400;
 
@@ -113,7 +107,7 @@ abstract class SessionSweepJob extends QueuedJob {
 		$arguments = [];
 		foreach ($looks as $look) {
 			$arguments[] = $look;
-			foreach (array_keys(self::RETRY_DELAYS) as $index) {
+			foreach (array_keys(ResumingJob::RETRY_DELAYS) as $index) {
 				$arguments[] = $look + ['attempt' => $index + 1];
 			}
 		}
@@ -168,7 +162,7 @@ abstract class SessionSweepJob extends QueuedJob {
 			// and is tried again as any failure is; one on a retry parks.
 			// A listing too long is no shorter a minute later.
 			if ($result['park'] === 'timeout' && $attempt === 0) {
-				$this->reschedule($item, 1, self::RETRY_DELAYS[0], $again);
+				$this->reschedule($item, 1, ResumingJob::RETRY_DELAYS[0], $again);
 				return;
 			}
 			$this->park($item, $result['park']);
@@ -180,27 +174,27 @@ abstract class SessionSweepJob extends QueuedJob {
 			// and carries on as a fresh attempt rather than being given up
 			// on because a few entries were refused.
 			if ($result['deleted'] > 0) {
-				$this->reschedule($item, 0, self::RETRY_DELAYS[$attempt] ?? self::CONTINUE_DELAY_SECONDS, $again);
+				$this->reschedule($item, 0, ResumingJob::RETRY_DELAYS[$attempt] ?? ResumingJob::CONTINUE_DELAY_SECONDS, $again);
 				return;
 			}
 
 			// Nothing moved: three delayed retries without progress, then the
 			// sweep stops, and says so.
-			if (!isset(self::RETRY_DELAYS[$attempt])) {
+			if (!isset(ResumingJob::RETRY_DELAYS[$attempt])) {
 				$context = ['app' => 'etherpad_nextcloud', static::key() => $item, 'attempts' => $attempt];
 				$this->givingUpWarns()
 					? $this->logger->warning($this->gaveUpMessage(), $context)
 					: $this->logger->info($this->gaveUpMessage(), $context);
 				return;
 			}
-			$this->reschedule($item, $attempt + 1, self::RETRY_DELAYS[$attempt], $again);
+			$this->reschedule($item, $attempt + 1, ResumingJob::RETRY_DELAYS[$attempt], $again);
 			return;
 		}
 
 		if ($result['remaining'] > 0) {
 			// Queued rather than looped: holding a cron worker on a long
 			// backlog would starve everything behind it.
-			$this->reschedule($item, 0, self::CONTINUE_DELAY_SECONDS, $again);
+			$this->reschedule($item, 0, ResumingJob::CONTINUE_DELAY_SECONDS, $again);
 			return;
 		}
 

@@ -33,11 +33,12 @@ The pad stays as it is, and nothing is written into the file.
   open makes a new session. A folder with more than 100 protected pads
   takes the sessions of the first 100 found, and a background job finds the
   others within minutes under a system cron, while the folder stays in the
-  trash. Where the file cache no longer has the folder by then - deleted
-  from the trash before the job runs, or moved to a trash under new ids, as
-  on a storage with a wrapped cache - the others' sessions expire on their
-  own, within six hours, as they do for a folder deleted past the trash,
-  unless the pad goes first.
+  trash. A folder deleted past the trash, or from it before that job runs,
+  has its files seen deleted for good, and a job takes the sessions from
+  those. Where they are not seen - moved to a trash under new ids, as on a
+  storage with a wrapped cache, or reported under the wrong ids, as below -
+  or the job could not be queued, the others' sessions expire on their own,
+  within six hours, unless the pad goes first.
 - **A public pad** stays reachable by its link, and can be written into.
   The file in the trash is not synced, so what is written there is in the
   pad, not in the file's snapshot; a restore brings it back with the pad.
@@ -84,12 +85,20 @@ deleted for good once five minutes have passed, so the pad goes within
 about ten minutes; the admin page's "Check pending pads" does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
+Once a file is seen deleted for good, its protected pad's sessions go too,
+by a background job of their own: everyone's, so an account deleted also
+takes those of the people its pads were shared with. That is usually within
+minutes; thousands of protected pads going at once take longer, as about 100
+of them start every 30 seconds. A group with a file still in Files, or a pad
+of no file, keeps them.
+
 A pad an earlier version bound from a legacy Ownpad file under an id
 Etherpad's API may not act on as it is - with whitespace or a `:` in it,
 say - is the exception: the job removes the file's row and leaves the pad
 in Etherpad, as deleting it could take down another pad. A group pad's
-group stays with it. The same holds for such a pad deleted from the
-consistency check.
+group stays with it, and once the row is gone, sessions not yet taken
+expire on their own, within six hours. The same holds for such a pad
+deleted from the consistency check.
 
 So is a public pad imported from a `.pad` file in Ownpad's format, whether
 Ownpad or someone else wrote it. This app names its own public pads `nc-…`,
@@ -116,7 +125,8 @@ one folder. The fix (Nextcloud server pull request 63998) is in 35.0.1,
 as its backport 64498; the backport to 34 (pull request 64497) is in no
 34 release yet, 34.0.5 included. The app cannot tell which files they
 were, so the pads of the `.pad` files inside such a folder, or in a trash
-emptied as a whole, stay, and the consistency check lists them. A `.pad`
+emptied as a whole, stay, and the consistency check lists them; what is
+left of their sessions expires on its own, within six hours. A `.pad`
 file deleted on its own - past the trash, or from the trash by itself or
 when it expires - and an account deleted, are not affected.
 
@@ -183,4 +193,5 @@ trash does not ask: it gets its new pad on its own.
 
 The app deletes no pad at all: the pads of files deleted for good stay, and
 the admin page counts them as pending deletes. Switched back on, the job
-deletes them.
+deletes them. A protected pad's sessions go all the same: the setting says
+whether a pad stays, not whether what gave access to it still does.
