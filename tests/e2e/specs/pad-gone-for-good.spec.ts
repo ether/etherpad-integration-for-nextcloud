@@ -297,6 +297,14 @@ test.describe('pads of files deleted for good', () => {
 		}, { message: 'the jobs should take the sessions of every group', timeout: 12 * 60_000, intervals: [1_000] }).toEqual([])
 	}
 
+	/**
+	 * For a throwaway stack, which has it on (up.sh). Set rather than read
+	 * first: Nextcloud's config cache can answer with the old value for three
+	 * seconds, and a retry starting then would put deleting off for good, and
+	 * fail the tests after it.
+	 */
+	const deletingBackOn = (): Promise<void> => setAppConfig('delete_pad_with_file', 'yes')
+
 	test('a folder past what a delete reaches loses its sessions in the background', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.setTimeout(15 * 60_000)
@@ -324,7 +332,6 @@ test.describe('pads of files deleted for good', () => {
 		test.skip(await misnumbersFolderFiles(), misnumbered)
 		test.setTimeout(15 * 60_000)
 		const key = 'delete_pad_with_file'
-		const before = await getAppConfig(key)
 		const folder = uniqueName('gone-sessions-for-good')
 		try {
 			await setAppConfig(key, 'no')
@@ -337,7 +344,7 @@ test.describe('pads of files deleted for good', () => {
 			await jobsTakeTheSessionsOf(left)
 			expect(await groupExists(groups[100]), 'with deleting off, the group should stay').toBe(true)
 		} finally {
-			await restoreAppConfig(key, before)
+			await deletingBackOn()
 			await deleteViaDav(folder, { pastTrash: true }).catch(() => {})
 			// The rows left waiting would come first in the next test's settle.
 			await settle().catch(() => {})
@@ -567,7 +574,6 @@ test.describe('pads of files deleted for good', () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.setTimeout(15 * 60_000)
 		const key = 'delete_pad_with_file'
-		const before = await getAppConfig(key)
 		const owner = await createAccount(uniqueName('gone-sessions-owner'))
 		const sharee = await createAccount(uniqueName('gone-sessions-sharee'))
 		try {
@@ -586,7 +592,7 @@ test.describe('pads of files deleted for good', () => {
 			await jobsTakeTheSessionsOf([group])
 			expect(await groupExists(group), 'with deleting off, the group should stay').toBe(true)
 		} finally {
-			await restoreAppConfig(key, before)
+			await deletingBackOn()
 			await deleteAccount(owner.uid)
 			await deleteAccount(sharee.uid)
 			await settle().catch(() => {})
