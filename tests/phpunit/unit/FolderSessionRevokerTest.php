@@ -10,7 +10,6 @@ use OCA\EtherpadNextcloud\Service\FolderSessionRevoker;
 use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
-use OCA\EtherpadNextcloud\Tests\Support\ScriptedClock;
 use OCA\EtherpadNextcloud\Tests\Support\TestClock;
 use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
@@ -96,10 +95,21 @@ class FolderSessionRevokerTest extends TestCase {
 	public function testStopsInAPageWhenTheBudgetIsSpent(): void {
 		[$rows, $cached] = $this->folderOfRows(1000, 3);
 		$queued = [];
-		// Time expires after two groups have been queued.
-		$clock = new ScriptedClock([1000.0, 1000.0, 1000.0, 1000.0, 2000.0]);
+		$clock = new class extends TestClock {
+			public int $at = 1000;
 
-		$pass = $this->revoker(new InMemoryBindingTable($rows, $cached), $queued, clock: $clock)->pass(self::FOLDER, 0);
+			public function now(): \DateTimeImmutable {
+				return new \DateTimeImmutable('@' . $this->at);
+			}
+		};
+		// Time expires after two groups have been queued.
+		$onQueue = static function () use (&$queued, $clock): void {
+			if (count($queued) === 2) {
+				$clock->at += 1000;
+			}
+		};
+
+		$pass = $this->revoker(new InMemoryBindingTable($rows, $cached), $queued, clock: $clock, onQueue: $onQueue)->pass(self::FOLDER, 0);
 
 		$this->assertSame(['g.g1000', 'g.g1001'], $queued);
 		$this->assertSame(['after' => 1001, 'ended' => false, 'failed' => false], $pass);

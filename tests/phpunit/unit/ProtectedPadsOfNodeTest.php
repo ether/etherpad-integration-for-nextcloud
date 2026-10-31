@@ -81,7 +81,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$table = $this->folderOfPads(150);
 		$logger = $this->createMock(LoggerInterface::class);
 		// The line counts the pads found, one past those taken.
-		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; a background job looks for the rest.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['pads'] === 101 && $context['folders'] === 1));
+		$logger->expects($this->once())->method('info')->with('A folder being deleted holds more than a delete takes the sessions of.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['pads'] === 101 && $context['folders'] === 1));
 
 		$found = $this->walk($table, $logger)->of($this->folder(10));
 		$pads = $found->pads;

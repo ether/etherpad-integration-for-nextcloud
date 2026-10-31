@@ -290,6 +290,7 @@ test.describe('pads of files deleted for good', () => {
 				for (let request = 0; request < 25; request++) {
 					const cron = await fetch(`${E2E.baseURL}/cron.php`)
 					expect(cron.status, 'cron.php should answer').toBe(200)
+					expect((await cron.json() as { status?: string }).status, 'cron.php should run without an error').toBe('success')
 				}
 				left = await withSessions(left)
 				return left

@@ -107,7 +107,7 @@ class ProtectedPadsOfNode {
 		}
 		$stoppedShort = count($pads) > static::MAX_PADS || $foldersLeft;
 		if ($stoppedShort) {
-			$this->logger->info('A folder deleted holds more than a delete takes the sessions of; a background job looks for the rest.', [
+			$this->logger->info('A folder being deleted holds more than a delete takes the sessions of.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $node->getId(),
 				'pads' => count($pads),
