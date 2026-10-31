@@ -67,13 +67,26 @@ class GroupSessionRevokerTest extends TestCase {
 		self::assertTrue($this->revoker(jobList: $jobList)->queueUnlessWaiting(self::GROUP));
 	}
 
-	/** A job list that gives no answer may still take the row; one that does not either says so through queue(). */
+	/** A job list that gives no answer may still take the row. */
 	public function testAJobListThatCannotSayStillQueues(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('has')->willThrowException(new \RuntimeException('database gone'));
 		$jobList->expects(self::once())->method('scheduleAfter');
 
 		self::assertTrue($this->revoker(jobList: $jobList)->queueUnlessWaiting(self::GROUP));
+	}
+
+	/** The job that found the group tries again, so nothing has expired yet. */
+	public function testAPassThatCouldNotBeQueuedForAJobSaysItIsTriedAgain(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('database gone'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Could not queue the revocation of a group\'s remaining Etherpad sessions; the job that found the group tries again.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
+		);
+
+		self::assertFalse($this->revoker(jobList: $jobList, logger: $logger)->queueUnlessWaiting(self::GROUP));
 	}
 
 	public function testAJobListThatFailsFailsNoDelete(): void {

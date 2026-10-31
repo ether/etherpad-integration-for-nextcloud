@@ -278,7 +278,7 @@ class FolderSessionRevokerTest extends TestCase {
 		foreach ([
 			'gone' => [$gone, 'A folder deleted has left the file cache; nothing here can tell its files any more.', $context],
 			'back' => [$back, 'A folder deleted is back in Files; its protected pads keep their sessions.', $context],
-			'found' => [$found, 'Queued the revocation of the sessions of protected pads a delete of their folder did not reach.', $context + ['groups' => 2]],
+			'found' => [$found, 'Found the groups of protected pads a delete of their folder did not reach; a revocation is waiting for each.', $context + ['groups' => 2]],
 		] as $case => [$table, $message, $expected]) {
 			$logger = $this->createMock(LoggerInterface::class);
 			$logger->expects($this->once())->method('info')->with($message, $expected);

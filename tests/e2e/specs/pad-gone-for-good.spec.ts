@@ -338,6 +338,8 @@ test.describe('pads of files deleted for good', () => {
 		} finally {
 			await restoreAppConfig(key, before)
 			await deleteViaDav(folder, { pastTrash: true }).catch(() => {})
+			// The rows left waiting would come first in the next test's settle.
+			await settle().catch(() => {})
 		}
 	})
 

@@ -7,7 +7,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\BackgroundJob\RevokeGoneFilesSessionsJob;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\GoneFileSessionRevoker;
-use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use OCA\EtherpadNextcloud\Tests\Support\TestClock;
@@ -18,10 +17,11 @@ use Psr\Log\LoggerInterface;
 /**
  * The groups of files deleted for good go to jobs in batches, paced over the
  * process, whatever delete_pad_with_file says: this takes no setting. They go
- * on to their own jobs, and whose sessions go is GroupSessionRevokerTest's.
+ * on to their own jobs (RevokeGoneFilesSessionsJobTest), and whose sessions go
+ * is GroupSessionRevokerTest's.
  */
 class GoneFileSessionRevokerTest extends TestCase {
-	private const NOW = 1_000_000;
+	public const NOW = 1_000_000;
 
 	/** Only protected pads' groups, each once, in batches, each thirty seconds after the last. */
 	public function testQueuesTheGroupsInBatches(): void {
@@ -42,27 +42,62 @@ class GoneFileSessionRevokerTest extends TestCase {
 		$this->assertSame([100, 100, 25], array_map('count', array_column($scheduled->calls, 1)));
 	}
 
-	/** A trash emptied one file at a time paces as one large delete, and a group already handed over stays out. */
+	/** A trash emptied one file at a time paces as one large delete. */
 	public function testPacesOverAllCallsOfAProcess(): void {
 		$rows = [];
-		for ($fileId = 1000; $fileId < 1110; $fileId++) {
+		for ($fileId = 1000; $fileId < 1201; $fileId++) {
 			$rows[] = $this->row($fileId);
 		}
-		$rows[] = $this->row(2000, 'g.g1000');
 		[$revoker, $scheduled] = $this->queueing($rows);
 
-		for ($fileId = 1000; $fileId < 1101; $fileId++) {
+		for ($fileId = 1000; $fileId < 1201; $fileId++) {
 			$revoker->queue([$fileId]);
 		}
-		$before = count($scheduled->calls);
-		$revoker->queue([2000]);
-		$this->assertCount($before, $scheduled->calls, 'its group went with the first');
-		$revoker->queue([1101]);
 
 		$this->assertSame(self::NOW, $scheduled->calls[0][0]);
-		$this->assertSame(self::NOW, $scheduled->calls[99][0], 'the hundredth');
-		$this->assertSame(self::NOW + 30, $scheduled->calls[100][0], 'the next');
-		$this->assertSame(self::NOW + 30, $scheduled->calls[101][0]);
+		$this->assertSame(self::NOW + 29, $scheduled->calls[99][0], 'the hundredth');
+		$this->assertSame(self::NOW + 30, $scheduled->calls[100][0], 'a hundred groups on');
+		$this->assertSame(self::NOW + 60, $scheduled->calls[200][0], 'two hundred groups on');
+	}
+
+	/**
+	 * A process that lives long - a worker in a loop, a long cron run - owes
+	 * nothing for what it handed over long ago.
+	 */
+	public function testThePaceRunsOutAsTimePasses(): void {
+		$rows = [];
+		for ($fileId = 1000; $fileId < 1200; $fileId++) {
+			$rows[] = $this->row($fileId);
+		}
+		$rows[] = $this->row(2000);
+		$clock = new class extends TestClock {
+			public int $at = GoneFileSessionRevokerTest::NOW;
+
+			public function now(): \DateTimeImmutable {
+				return new \DateTimeImmutable('@' . $this->at);
+			}
+		};
+		[$revoker, $scheduled] = $this->queueing($rows, $clock);
+
+		$revoker->queue(range(1000, 1199));
+		$clock->at += 3600;
+		$revoker->queue([2000]);
+
+		$this->assertSame(self::NOW + 3600, $scheduled->calls[2][0]);
+	}
+
+	/**
+	 * Its other pad's file may have kept the group's sessions the first time,
+	 * so a later file of the same group, in the same process, hands it over
+	 * again.
+	 */
+	public function testAGroupHandedOverBeforeIsHandedOverAgain(): void {
+		[$revoker, $scheduled] = $this->queueing([$this->row(1, 'g.one'), $this->row(2, 'g.one')]);
+
+		$revoker->queue([1]);
+		$revoker->queue([2]);
+
+		$this->assertSame([['g.one'], ['g.one']], array_column($scheduled->calls, 1));
 	}
 
 	public function testFilesWithoutAGroupQueueNoJob(): void {
@@ -86,7 +121,7 @@ class GoneFileSessionRevokerTest extends TestCase {
 			$arguments[] = $argument;
 		});
 		$clock = new FixedClock(self::NOW);
-		$revoker = new GoneFileSessionRevoker(new BindingService(new InMemoryBindingTable($rows), $clock), $this->createMock(GroupSessionRevoker::class), $jobList, $this->createMock(LoggerInterface::class), $clock);
+		$revoker = new GoneFileSessionRevoker(new BindingService(new InMemoryBindingTable($rows), $clock), $jobList, $this->createMock(LoggerInterface::class), $clock);
 
 		$revoker->queue(range(1, 150));
 
@@ -94,61 +129,45 @@ class GoneFileSessionRevokerTest extends TestCase {
 		$this->assertLessThan(32000, strlen((string)json_encode($arguments[0])));
 	}
 
-	/** Never fails what called it: the delete goes on, with a line. */
-	public function testAQueueingThatFailsSaysSo(): void {
+	/** Never fails what called it: the delete goes on, with a line saying how much went to no job. */
+	public function testABatchThatCannotBeQueuedSaysSoAndLeavesTheNextToTry(): void {
+		$rows = [];
+		for ($fileId = 1000; $fileId < 1150; $fileId++) {
+			$rows[] = $this->row($fileId);
+		}
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('database went away'));
+		$tried = [];
+		$jobList->method('scheduleAfter')->willReturnCallback(static function (string $job, int $at, mixed $argument) use (&$tried): void {
+			$tried[] = $at;
+			if (count($tried) === 1) {
+				throw new \RuntimeException('database went away');
+			}
+		});
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && isset($context['error'])));
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not queue'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['groups'] === 100 && $context['groupId'] === 'g.g1000' && isset($context['error'])));
 		$clock = new FixedClock(self::NOW);
 
-		(new GoneFileSessionRevoker(new BindingService(new InMemoryBindingTable([$this->row(1)]), $clock), $this->createMock(GroupSessionRevoker::class), $jobList, $logger, $clock))->queue([1]);
+		(new GoneFileSessionRevoker(new BindingService(new InMemoryBindingTable($rows), $clock), $jobList, $logger, $clock))->queue(range(1000, 1149));
+
+		$this->assertSame([self::NOW, self::NOW], $tried, 'a batch not queued adds nothing to the pace');
 	}
 
-	public function testQueuesEveryGroup(): void {
-		$queued = [];
+	public function testGroupsThatCannotBeReadSaySo(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('protectedPadsOfFiles')->willThrowException(new \RuntimeException('database went away'));
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects($this->never())->method('scheduleAfter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not read'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && isset($context['error'])));
 
-		$pass = $this->passing($queued)->pass(['g.one', 'g.two']);
-
-		$this->assertSame(['g.one', 'g.two'], $queued);
-		$this->assertSame(['left' => [], 'failed' => false], $pass);
-	}
-
-	/** A group not queued stays in what is left, and what went before does not. */
-	public function testKeepsWhatCouldNotBeQueued(): void {
-		$queued = [];
-
-		$pass = $this->passing($queued, refuses: 'g.two')->pass(['g.one', 'g.two', 'g.three']);
-
-		$this->assertSame(['g.one'], $queued);
-		$this->assertSame(['left' => ['g.two', 'g.three'], 'failed' => true], $pass);
-	}
-
-	/** Out of time, it queues no further group, and what is left goes to a later pass. */
-	public function testStopsWhenTheBudgetIsSpent(): void {
-		$queued = [];
-		$clock = new class extends TestClock {
-			public int $at = 1000;
-
-			public function now(): \DateTimeImmutable {
-				return new \DateTimeImmutable('@' . $this->at);
-			}
-		};
-		$onQueue = static function () use ($clock): void {
-			$clock->at += 1000;
-		};
-
-		$pass = $this->passing($queued, clock: $clock, onQueue: $onQueue)->pass(['g.one', 'g.two', 'g.three']);
-
-		$this->assertSame(['g.one'], $queued);
-		$this->assertSame(['left' => ['g.two', 'g.three'], 'failed' => false], $pass);
+		(new GoneFileSessionRevoker($bindings, $jobList, $logger, new FixedClock(self::NOW)))->queue([1]);
 	}
 
 	/**
 	 * @param list<array<string,mixed>> $rows
 	 * @return array{GoneFileSessionRevoker,object{calls:list<array{int,list<string>}>}}
 	 */
-	private function queueing(array $rows): array {
+	private function queueing(array $rows, ?TestClock $clock = null): array {
 		$scheduled = new class {
 			/** @var list<array{int,list<string>}> */
 			public array $calls = [];
@@ -158,28 +177,8 @@ class GoneFileSessionRevokerTest extends TestCase {
 			$this->assertSame(RevokeGoneFilesSessionsJob::class, $job);
 			$scheduled->calls[] = [$at, $argument['groupIds']];
 		});
-		$clock = new FixedClock(self::NOW);
-		return [new GoneFileSessionRevoker(new BindingService(new InMemoryBindingTable($rows), $clock), $this->createMock(GroupSessionRevoker::class), $jobList, $this->createMock(LoggerInterface::class), $clock), $scheduled];
-	}
-
-	/**
-	 * @param list<string> $queued
-	 * @param ?callable(): void $onQueue
-	 */
-	private function passing(array &$queued, ?string $refuses = null, ?TestClock $clock = null, ?callable $onQueue = null): GoneFileSessionRevoker {
 		$clock ??= new FixedClock(self::NOW);
-		$groups = $this->createMock(GroupSessionRevoker::class);
-		$groups->method('queueUnlessWaiting')->willReturnCallback(static function (string $groupId) use (&$queued, $refuses, $onQueue): bool {
-			if ($groupId === $refuses) {
-				return false;
-			}
-			$queued[] = $groupId;
-			if ($onQueue !== null) {
-				$onQueue();
-			}
-			return true;
-		});
-		return new GoneFileSessionRevoker($this->createMock(BindingService::class), $groups, $this->createMock(IJobList::class), $this->createMock(LoggerInterface::class), $clock);
+		return [new GoneFileSessionRevoker(new BindingService(new InMemoryBindingTable($rows), $clock), $jobList, $this->createMock(LoggerInterface::class), $clock), $scheduled];
 	}
 
 	/** @return array<string,mixed> */

@@ -30,7 +30,7 @@ class FolderSessionRevoker {
 	/** Rows a query takes at a time. */
 	private const PAGE = 500;
 
-	/** Groups a pass queues at most: each is a job's row and its passes, and a folder can hold thousands. */
+	/** Groups a pass takes at most, waiting or queued: each is a job's row and its passes, and a folder can hold thousands. */
 	private const MAX_GROUPS_PER_PASS = 250;
 
 	public function __construct(
@@ -69,7 +69,7 @@ class FolderSessionRevoker {
 	public function pass(int $folderId, int $after): array {
 		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $folderId];
 		$budget = new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
-		$queued = [];
+		$found = [];
 		$result = ['after' => $after, 'ended' => false, 'failed' => false];
 		try {
 			$folder = $this->bindingService->placeOf($folderId);
@@ -92,15 +92,15 @@ class FolderSessionRevoker {
 				$places = $this->bindingService->placesOf(array_keys($pads));
 				foreach ($pads as $fileId => $padId) {
 					$groupId = PadId::groupIdOf($padId);
-					if ($groupId !== null && !isset($queued[$groupId]) && self::isUnder($places[$fileId] ?? null, $folder)) {
-						if (count($queued) >= self::MAX_GROUPS_PER_PASS || $budget->exhausted()) {
+					if ($groupId !== null && !isset($found[$groupId]) && self::isUnder($places[$fileId] ?? null, $folder)) {
+						if (count($found) >= self::MAX_GROUPS_PER_PASS || $budget->exhausted()) {
 							break 2;
 						}
 						if (!$this->groupSessions->queueUnlessWaiting($groupId)) {
 							$result['failed'] = true;
 							break 2;
 						}
-						$queued[$groupId] = $groupId;
+						$found[$groupId] = $groupId;
 					}
 					$result['after'] = $fileId;
 				}
@@ -109,8 +109,8 @@ class FolderSessionRevoker {
 			$this->logger->warning('Could not look through the rows for a deleted folder\'s protected pads.', [...$context, ...SafeError::context($e)]);
 			$result['failed'] = true;
 		}
-		if ($queued !== []) {
-			$this->logger->info('Queued the revocation of the sessions of protected pads a delete of their folder did not reach.', [...$context, 'groups' => count($queued)]);
+		if ($found !== []) {
+			$this->logger->info('Found the groups of protected pads a delete of their folder did not reach; a revocation is waiting for each.', [...$context, 'groups' => count($found)]);
 		}
 		return $result;
 	}

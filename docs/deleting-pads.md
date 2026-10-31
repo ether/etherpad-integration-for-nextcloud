@@ -85,12 +85,18 @@ deleted for good once five minutes have passed, so the pad goes within
 about ten minutes; the admin page's "Check pending pads" does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
+However the file goes, a protected pad's sessions go too, by a background
+job of their own, usually within minutes: everyone's, so an account deleted
+also takes those of the people its pads were shared with. A group with a
+file still in Files, or a pad of no file, keeps them.
+
 A pad an earlier version bound from a legacy Ownpad file under an id
 Etherpad's API may not act on as it is - with whitespace or a `:` in it,
 say - is the exception: the job removes the file's row and leaves the pad
 in Etherpad, as deleting it could take down another pad. A group pad's
-group stays with it. The same holds for such a pad deleted from the
-consistency check.
+group stays with it, and once the row is gone, sessions not yet taken
+expire on their own, within six hours. The same holds for such a pad
+deleted from the consistency check.
 
 So is a public pad imported from a `.pad` file in Ownpad's format, whether
 Ownpad or someone else wrote it. This app names its own public pads `nc-…`,

@@ -74,23 +74,14 @@ class GroupSessionRevoker {
 	 * (SessionSweepJob).
 	 */
 	public function queue(string $groupId): bool {
-		try {
-			$this->jobList->scheduleAfter(RevokeGroupSessionsJob::class, $this->timeFactory->getTime() + self::FIRST_PASS_DELAY_SECONDS, ['groupId' => $groupId]);
-			return true;
-		} catch (\Throwable $e) {
-			$this->logger->warning('Could not queue the revocation of a group\'s remaining Etherpad sessions; they will expire on their own.', [
-				'app' => 'etherpad_nextcloud',
-				'groupId' => $groupId,
-				...SafeError::context($e),
-			]);
-			return false;
-		}
+		return $this->schedule($groupId, 'Could not queue the revocation of a group\'s remaining Etherpad sessions; they will expire on their own.');
 	}
 
 	/**
 	 * As queue(), for a job that finds groups after a delete has queued them:
 	 * it leaves a first pass waiting where it is. Moved, the row misses the
-	 * cron run it was due in, and waits for the next.
+	 * cron run it was due in, and waits for the next. A group it could not
+	 * queue is that job's to try again, and to give up on, which it says.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v35.0.2/lib/private/BackgroundJob/JobList.php add()
 	 */
@@ -100,9 +91,23 @@ class GroupSessionRevoker {
 				return true;
 			}
 		} catch (\Throwable) {
-			// No answer either way: queue() says so if the job list still fails.
+			// No answer either way: schedule() says so if the job list still fails.
 		}
-		return $this->queue($groupId);
+		return $this->schedule($groupId, 'Could not queue the revocation of a group\'s remaining Etherpad sessions; the job that found the group tries again.');
+	}
+
+	private function schedule(string $groupId, string $failure): bool {
+		try {
+			$this->jobList->scheduleAfter(RevokeGroupSessionsJob::class, $this->timeFactory->getTime() + self::FIRST_PASS_DELAY_SECONDS, ['groupId' => $groupId]);
+			return true;
+		} catch (\Throwable $e) {
+			$this->logger->warning($failure, [
+				'app' => 'etherpad_nextcloud',
+				'groupId' => $groupId,
+				...SafeError::context($e),
+			]);
+			return false;
+		}
 	}
 
 	/**

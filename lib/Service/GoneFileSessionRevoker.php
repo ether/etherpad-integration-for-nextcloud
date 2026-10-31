@@ -17,15 +17,19 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * The groups of the protected pads whose files were seen deleted for good
- * (GoneFilesListener), for what no delete's request reached: a folder past
- * the trash, or one emptied from it before its job ran. Each goes to its own
- * job (GroupSessionRevoker), which decides whether its sessions go; a batch
- * of them first, to keep a delete's request from queueing thousands.
+ * Queues the groups of the protected pads whose files were seen deleted for
+ * good (GoneFilesListener), for what no delete's request reached: a file or
+ * folder purged from a trash, a folder past the trash, an account's home.
+ * They go to a job in batches, to keep a delete's request from queueing
+ * thousands; it queues each group's own job (GroupSessionRevoker), which
+ * decides whether its sessions go.
  *
  * Whatever delete_pad_with_file says: that decides whether a pad stays, not
  * whether what gave access to it still does. A pad the sweep is to take may
  * be refused, and wait.
+ *
+ * The listener builds this on a process's first file cache removal, so it
+ * does not depend on what talks to Etherpad.
  */
 class GoneFileSessionRevoker {
 	/**
@@ -35,17 +39,16 @@ class GoneFileSessionRevoker {
 	private const BATCH = 100;
 
 	/**
-	 * Due-time offset per 100 distinct groups handed over in this process.
-	 * Overdue jobs may run together.
+	 * Due-time offset per group handed over in this process, 30 seconds per
+	 * batch, which runs out as time passes. Overdue jobs may run together.
 	 */
-	private const SECONDS_A_BATCH = 30;
+	private const MILLISECONDS_A_GROUP = 300;
 
-	/** @var array<string,true> groups this process handed over: what paces a trash emptied one delete at a time as one large one */
-	private array $handedOver = [];
+	/** The earliest the next batch of this process is due, in milliseconds: what paces a trash emptied one delete at a time as one large one. */
+	private int $nextDue = 0;
 
 	public function __construct(
 		private BindingService $bindingService,
-		private GroupSessionRevoker $groupSessions,
 		private IJobList $jobList,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
@@ -55,7 +58,7 @@ class GoneFileSessionRevoker {
 	/**
 	 * Queue the jobs for the groups of the protected ones of $fileIds. Never
 	 * fails what called it: what could not be queued goes to no job, and says
-	 * so.
+	 * so, and a batch that fails leaves the next to try.
 	 *
 	 * @param list<int> $fileIds
 	 */
@@ -64,44 +67,30 @@ class GoneFileSessionRevoker {
 			$groups = [];
 			foreach ($this->bindingService->protectedPadsOfFiles($fileIds) as $padId) {
 				$groupId = PadId::groupIdOf($padId);
-				if ($groupId !== null && !isset($this->handedOver[$groupId])) {
+				if ($groupId !== null) {
 					$groups[$groupId] = $groupId;
 				}
 			}
-			foreach (array_chunk(array_values($groups), self::BATCH) as $batch) {
-				$runAfter = $this->timeFactory->getTime() + intdiv(count($this->handedOver), self::BATCH) * self::SECONDS_A_BATCH;
-				$this->jobList->scheduleAfter(RevokeGoneFilesSessionsJob::class, $runAfter, ['groupIds' => $batch]);
-				$this->handedOver += array_fill_keys($batch, true);
-			}
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not queue the groups of files deleted for good; their sessions will expire on their own.', [
+			$this->logger->warning('Could not read the groups of files deleted for good; their sessions will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
 			]);
+			return;
 		}
-	}
-
-	/**
-	 * Queues $groupIds, within a run's budget. `left` is what a later pass
-	 * still has to do; `failed` that a group could not be queued, which
-	 * queue() has said.
-	 *
-	 * @param list<string> $groupIds
-	 * @return array{left:list<string>,failed:bool}
-	 */
-	public function pass(array $groupIds): array {
-		$budget = new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
-		$result = ['left' => [], 'failed' => false];
-		foreach ($groupIds as $index => $groupId) {
-			if ($budget->exhausted()) {
-				$result['left'] = array_slice($groupIds, $index);
-				break;
-			}
-			if (!$this->groupSessions->queueUnlessWaiting($groupId)) {
-				$result = ['left' => array_slice($groupIds, $index), 'failed' => true];
-				break;
+		foreach (array_chunk(array_values($groups), self::BATCH) as $batch) {
+			$runAfter = max($this->timeFactory->getTime() * 1000, $this->nextDue);
+			try {
+				$this->jobList->scheduleAfter(RevokeGoneFilesSessionsJob::class, intdiv($runAfter, 1000), ['groupIds' => $batch]);
+				$this->nextDue = $runAfter + count($batch) * self::MILLISECONDS_A_GROUP;
+			} catch (\Throwable $e) {
+				$this->logger->warning('Could not queue the groups of files deleted for good; their sessions will expire on their own.', [
+					'app' => 'etherpad_nextcloud',
+					'groups' => count($batch),
+					'groupId' => $batch[0],
+					...SafeError::context($e),
+				]);
 			}
 		}
-		return $result;
 	}
 }

@@ -9,19 +9,21 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\BackgroundJob;
 
-use OCA\EtherpadNextcloud\Service\GoneFileSessionRevoker;
+use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Hands over a batch of the groups of files deleted for good
- * (GoneFileSessionRevoker), under the groups still to go.
+ * Queues each group's own job from a batch of the groups of files deleted
+ * for good (GoneFileSessionRevoker), within a run's budget, under the groups
+ * still to go.
  */
 class RevokeGoneFilesSessionsJob extends ResumingJob {
 	public function __construct(
 		ITimeFactory $time,
-		private GoneFileSessionRevoker $revoker,
+		private GroupSessionRevoker $groupSessions,
 		IJobList $jobList,
 		LoggerInterface $logger,
 	) {
@@ -35,16 +37,20 @@ class RevokeGoneFilesSessionsJob extends ResumingJob {
 			return null;
 		}
 
-		$pass = $this->revoker->pass($groupIds);
-		if ($pass['left'] === []) {
-			return null;
+		$budget = new RunBudget($this->time, RunBudget::DEFAULT_SECONDS);
+		foreach ($groupIds as $index => $groupId) {
+			$spent = $budget->exhausted();
+			if ($spent || !$this->groupSessions->queueUnlessWaiting($groupId)) {
+				$left = array_slice($groupIds, $index);
+				return [
+					'next' => ['groupIds' => $left],
+					'progress' => $index > 0,
+					'failed' => !$spent,
+					'context' => ['groups' => count($left), 'groupId' => $left[0]],
+				];
+			}
 		}
-		return [
-			'next' => ['groupIds' => $pass['left']],
-			'progress' => count($pass['left']) < count($groupIds),
-			'failed' => $pass['failed'],
-			'context' => ['groups' => count($pass['left']), 'groupId' => $pass['left'][0]],
-		];
+		return null;
 	}
 
 	protected function gaveUpMessage(): string {
