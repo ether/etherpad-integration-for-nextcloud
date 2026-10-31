@@ -465,6 +465,19 @@ class GoneFilesListenerTest extends TestCase {
 		$this->assertSame([[7], [41, 42]], $this->handedOver);
 	}
 
+	/** A full block and the end of the request hand over as a delete does: a team folder's trash has only those. */
+	public function testHandsOverFromABlockAndFromTheEndOfTheRequest(): void {
+		$listener = $this->listener(block: 2);
+
+		foreach ([1, 2, 3] as $fileId) {
+			$listener->handle($this->removed($fileId, 'files_trashbin/files/F' . $fileId . '.pad.d1'));
+		}
+		$this->assertSame([[1, 2]], $this->handedOver);
+
+		$this->endRequest();
+		$this->assertSame([[1, 2], [3]], $this->handedOver);
+	}
+
 	/** A deletion the user backend refuses raises no UserDeletedEvent: nothing is marked. */
 	public function testARefusedUserDeletionMarksNothing(): void {
 		$this->mounts->method('getHomeMountForUser')->willReturn($this->home(5));

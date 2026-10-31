@@ -69,6 +69,7 @@ class GoneFileSessionRevoker {
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not read the groups of files deleted for good; their sessions will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
+				'files' => count($fileIds),
 				...SafeError::context($e),
 			]);
 			return;

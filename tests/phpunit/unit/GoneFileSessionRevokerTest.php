@@ -158,9 +158,9 @@ class GoneFileSessionRevokerTest extends TestCase {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->never())->method('scheduleAfter');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not read'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && isset($context['error'])));
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not read'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['files'] === 2 && isset($context['error'])));
 
-		(new GoneFileSessionRevoker($bindings, $jobList, $logger, new FixedClock(self::NOW)))->queue([1]);
+		(new GoneFileSessionRevoker($bindings, $jobList, $logger, new FixedClock(self::NOW)))->queue([1, 2]);
 	}
 
 	/**

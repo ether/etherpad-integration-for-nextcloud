@@ -86,9 +86,11 @@ about ten minutes; the admin page's "Check pending pads" does it at once. When E
 it does; until then the admin page counts it as a pending delete.
 
 Once a file is seen deleted for good, its protected pad's sessions go too,
-by a background job of their own, usually within minutes: everyone's, so an
-account deleted also takes those of the people its pads were shared with. A
-group with a file still in Files, or a pad of no file, keeps them.
+by a background job of their own: everyone's, so an account deleted also
+takes those of the people its pads were shared with. That is usually within
+minutes; thousands of protected pads going at once take longer, as about 100
+of them start every 30 seconds. A group with a file still in Files, or a pad
+of no file, keeps them.
 
 A pad an earlier version bound from a legacy Ownpad file under an id
 Etherpad's API may not act on as it is - with whitespace or a `:` in it,

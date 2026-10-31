@@ -6,6 +6,7 @@ import { test, expect } from '../fixtures/browser-noise'
 import { E2E, needsEtherpadApi } from '../fixtures/env'
 import {
 	createPadAtPath,
+	createUserWriteShare,
 	deleteViaDav,
 	findTrashbinEntry,
 	getAppConfig,
@@ -553,6 +554,42 @@ test.describe('pads of files deleted for good', () => {
 			expect(await padExists(padId), 'the account should have taken its pad').toBe(false)
 		} finally {
 			await deleteAccount(account.uid)
+		}
+	})
+
+	/**
+	 * The account's own sessions go as its delete starts; a sharee's only by
+	 * the job, and only once Nextcloud has taken the account's mounts and
+	 * files, or the job finds the file still in Files and ends. Deleting off
+	 * keeps the sweep from passing this by taking the group.
+	 */
+	test('a deleted account takes the sessions of those its pads were shared with', async () => {
+		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
+		test.setTimeout(15 * 60_000)
+		const key = 'delete_pad_with_file'
+		const before = await getAppConfig(key)
+		const owner = await createAccount(uniqueName('gone-sessions-owner'))
+		const sharee = await createAccount(uniqueName('gone-sessions-sharee'))
+		try {
+			await setAppConfig(key, 'no')
+			const name = uniquePadName('shared')
+			const pad = await createPadAtPath(`/${name}`, 'protected', owner)
+			await createUserWriteShare(name, sharee.uid, owner)
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(name, owner)) }, sharee)
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			const group = groupIdOfPadUrl(pad.padUrl)
+			expect(await withSessions([group]), 'the sharee should have a session once opened').toEqual([group])
+
+			await deleteAccount(owner.uid)
+			expect(await withSessions([group]), 'the account\'s delete should leave the sharee\'s session to the job').toEqual([group])
+
+			await jobsTakeTheSessionsOf([group])
+			expect(await groupExists(group), 'with deleting off, the group should stay').toBe(true)
+		} finally {
+			await restoreAppConfig(key, before)
+			await deleteAccount(owner.uid)
+			await deleteAccount(sharee.uid)
+			await settle().catch(() => {})
 		}
 	})
 })
