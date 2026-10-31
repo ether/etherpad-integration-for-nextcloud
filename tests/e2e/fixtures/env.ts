@@ -79,6 +79,14 @@ export const E2E = {
 		return process.env.E2E_THROWAWAY_STACK?.trim() === '1'
 	},
 	/**
+	 * Whether background jobs come due in their own time, as in the nightly
+	 * run: `E2E_REAL_JOB_WAIT=1`. Also for a throwaway target without the
+	 * Docker stack, whose database revocationJobsFallDue() cannot reach.
+	 */
+	get realJobWait(): boolean {
+		return process.env.E2E_REAL_JOB_WAIT?.trim() === '1'
+	},
+	/**
 	 * The pad server's address on its own. `/health` needs no api key, so a
 	 * spec that only asks that must not be gated on one — a target that
 	 * configured the URL and nothing else would skip in silence.

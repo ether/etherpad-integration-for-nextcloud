@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { test, expect } from '../fixtures/browser-noise'
+import { revocationJobsFallDue } from '../fixtures/background-jobs'
 import { E2E, needsEtherpadApi } from '../fixtures/env'
 import {
 	createPadAtPath,
@@ -258,19 +259,22 @@ test.describe('pads of files deleted for good', () => {
 	/**
 	 * A folder of 100 protected pads and a nested one, each opened, which
 	 * falls outside the request's 100-pad limit. API opens create sessions
-	 * without opening every pad in a browser. The groups, the nested pad's
-	 * last.
+	 * without opening every pad in a browser, in blocks to save the wait.
+	 * The groups, the nested pad's last.
 	 */
 	const padsPastTheWalk = async (folder: string): Promise<string[]> => {
 		const deep = `${folder}/deep`
 		await mkcolViaDav(folder)
 		await mkcolViaDav(deep)
 		const groups: string[] = []
-		for (let index = 0; index <= 100; index++) {
-			const pad = await createPadAtPath(`/${index < 100 ? folder : deep}/${uniquePadName(`past-${index}`)}`, 'protected')
-			const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
-			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
-			groups.push(groupIdOfPadUrl(pad.padUrl))
+		for (let start = 0; start <= 100; start += 10) {
+			const block = Array.from({ length: Math.min(10, 101 - start) }, (_, offset) => start + offset)
+			groups.push(...await Promise.all(block.map(async (index) => {
+				const pad = await createPadAtPath(`/${index < 100 ? folder : deep}/${uniquePadName(`past-${index}`)}`, 'protected')
+				const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
+				expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+				return groupIdOfPadUrl(pad.padUrl)
+			})))
 		}
 		expect(await withSessions(groups), 'every pad should have a session once opened').toHaveLength(groups.length)
 		return groups
@@ -285,6 +289,7 @@ test.describe('pads of files deleted for good', () => {
 	const jobsTakeTheSessionsOf = async (groups: string[]): Promise<void> => {
 		let left = groups
 		await expect.poll(async () => {
+			revocationJobsFallDue()
 			// Each HTTP cron call runs at most one job; a burst advances the queue.
 			// https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/background_jobs_configuration.html#webcron
 			for (let request = 0; request < 25; request++) {
@@ -294,7 +299,7 @@ test.describe('pads of files deleted for good', () => {
 			}
 			left = await withSessions(left)
 			return left
-		}, { message: 'the jobs should take the sessions of every group', timeout: 12 * 60_000, intervals: [1_000] }).toEqual([])
+		}, { message: 'the jobs should take the sessions of every group', timeout: (E2E.realJobWait ? 12 : 5) * 60_000, intervals: [1_000] }).toEqual([])
 	}
 
 	/**
@@ -305,7 +310,7 @@ test.describe('pads of files deleted for good', () => {
 	 */
 	const deletingBackOn = (): Promise<void> => setAppConfig('delete_pad_with_file', 'yes')
 
-	test('a folder past what a delete reaches loses its sessions in the background', async () => {
+	test('a folder past what a delete reaches loses its sessions in the background', { tag: '@slow' }, async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.setTimeout(15 * 60_000)
 		const folder = uniqueName('gone-sessions-past')
@@ -327,7 +332,7 @@ test.describe('pads of files deleted for good', () => {
 	 * through the deleted folder. Disabling pad deletion ensures that this
 	 * test cannot pass merely because the sweep deletes its group.
 	 */
-	test('a folder deleted for good loses its sessions with deleting off', async () => {
+	test('a folder deleted for good loses its sessions with deleting off', { tag: '@slow' }, async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.skip(await misnumbersFolderFiles(), misnumbered)
 		test.setTimeout(15 * 60_000)
@@ -570,7 +575,7 @@ test.describe('pads of files deleted for good', () => {
 	 * files, or the job finds the file still in Files and ends. Deleting off
 	 * keeps the sweep from passing this by taking the group.
 	 */
-	test('a deleted account takes the sessions of those its pads were shared with', async () => {
+	test('a deleted account takes the sessions of those its pads were shared with', { tag: '@slow' }, async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.setTimeout(15 * 60_000)
 		const key = 'delete_pad_with_file'
