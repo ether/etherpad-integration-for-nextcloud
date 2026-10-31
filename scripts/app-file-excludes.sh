@@ -48,6 +48,7 @@ RSYNC_EXCLUDES=(
 	# tree regardless) — must never end up in the app tarball.
 	--exclude='test-results'
 	--exclude='playwright-report'
+	--exclude='e2e-results.json'
 	--exclude='blob-report'
 	--exclude='.playwright'
 )

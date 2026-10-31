@@ -48,9 +48,10 @@ in the deployed app.
 The end-to-end checks are a Playwright suite that drives a real Nextcloud and
 Etherpad: creating and opening pads, sharing, the trash and its restore, pads
 Etherpad lost, public links, legacy migration, the session cookie. CI runs it
-on every pull request that touches the app, against the oldest and newest
-supported Nextcloud with Etherpad 2 and against the newest with Etherpad 3,
-and nightly against every supported major.
+on every pull request that touches the app, against the oldest supported
+Nextcloud with Etherpad 2 and the newest with Etherpad 3, and nightly against
+every supported major ([tests/e2e/README.md](../tests/e2e/README.md), "In
+CI").
 
 Each release is also upgraded from the last one: the `e2e-upgrade` workflow
 runs `tests/e2e/docker/test-upgrade.sh` on the release pull request, and

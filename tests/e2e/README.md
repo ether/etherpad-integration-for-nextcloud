@@ -66,6 +66,31 @@ JSDoc.
 env file it sets `NODE_EXTRA_CA_CERTS`, which node reads at startup and
 which therefore cannot come from an env file.
 
+### In CI
+
+A pull request runs two stacks, the oldest Nextcloud on Etherpad 2 and the
+newest on Etherpad 3, each split over two shards with a stack of its own. The
+nightly run takes every supported major, and Etherpad 2 on the newest too.
+
+To spare the shared runners, `ci-scope.mjs` decides in a pull request what a
+run has to do, and its log says why:
+
+- A push that changes nothing the suite runs on starts no suite, if the run
+  of the commit before passed. Otherwise it runs: a push right after another
+  cancels that one's run, and nothing else would test its code.
+- The cases tagged `@slow` run only where the pull request touches what they
+  hold (`SLOW_PATHS`), and always at night. A new case that takes a minute or
+  more gets the tag; `tests/js/e2e-ci-scope.test.js` holds the list to files
+  that exist.
+
+Where they can, those cases do not wait for a job's minute: they make the jobs
+due with a query (`fixtures/background-jobs.ts`), and `cron.php` runs them as
+ever. The nightly run sets `E2E_REAL_JOB_WAIT=1` and waits, as does a throwaway
+target other than the Docker stack.
+
+Each job lists its slowest tests in its summary, and keeps
+`e2e-results.json` as an artifact for a week.
+
 The `setup` project logs in once per account and saves the sessions to
 `tests/e2e/.auth/` (gitignored); every spec reuses the stored
 `storageState` instead of re-logging in. `E2E_LOGIN_URL` defaults to

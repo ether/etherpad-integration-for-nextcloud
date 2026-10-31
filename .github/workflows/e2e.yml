@@ -25,10 +25,10 @@ on:
       - '.github/workflows/e2e.yml'
   workflow_dispatch:
   schedule:
-    # The suite is slow and talks to a whole stack. The nightly run is what
-    # covers every supported major and catches drift in the Nextcloud and
-    # Etherpad images; a pull request only pays for the edges. See the
-    # matrix below.
+    # The suite talks to a whole stack. The nightly run is what covers every
+    # supported major and catches drift in the Nextcloud and Etherpad images,
+    # and lets background jobs come due themselves; a pull request only pays
+    # for the edges. See the matrix below.
     - cron: '0 3 * * *'
 
 # Same as every other workflow here: a read-only token, and no credentials
@@ -42,40 +42,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e:
-    # Even three container stacks is a lot to spend on work in progress.
+  decide:
+    # Even a few container stacks are a lot to spend on work in progress.
     # Keep the PR a draft while iterating; marking it ready starts the run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    name: What this run has to do
+    # To read how the run of the commit before ended; the jobs that run a
+    # pull request's code do not get this.
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      slow: ${{ steps.decide.outputs.slow }}
+    steps:
+      # Two commits: the merge GitHub made, and the base it merges onto.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Decide from what changed
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          REPOSITORY: ${{ github.repository }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        # The runner's own Node: the script needs nothing installed.
+        run: node tests/e2e/ci-scope.mjs
+
+  e2e:
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # Nextcloud is the axis that matters, on the Etherpad major the app is
-        # written against. Crossing both versions would double the jobs for
-        # almost no information — an Etherpad problem looks the same on every
-        # Nextcloud.
+        # A pull request runs the lower bound, the oldest Nextcloud on the
+        # oldest Etherpad major, and the upper bound, the newest on the newest:
+        # what sits between fails the same way as its neighbours, so it waits
+        # for the nightly run rather than loading the shared runners on every
+        # push.
         #
-        # A pull request runs the two ends of the declared range, plus
-        # Etherpad 3 on the newest Nextcloud; the majors in between fail the
-        # same way as their neighbours, so they wait for the nightly run
-        # rather than gating every merge.
-        #
-        # The Etherpad 3 job blocks like the others: the suite passes against
-        # 3.3.3 today, so a red result means something changed, which is
-        # exactly what it is for.
-        nextcloud: >-
+        # Nextcloud is the axis that matters at night, on the Etherpad major
+        # the app is written against, with Etherpad 3 on the newest.
+        stack: >-
           ${{ fromJSON(github.event_name == 'pull_request'
-          && '["32.0.9", "35"]' || '["32.0.9", "33", "34", "35"]') }}
-        etherpad: ['2']
-        include:
-          # Neither key can be added to an existing combination without
-          # overwriting it, so this is one extra job rather than a change to
-          # the Etherpad 2 ones.
-          - nextcloud: '35'
-            etherpad: '3'
+          && '[{"nextcloud":"32.0.9","etherpad":"2"},{"nextcloud":"35","etherpad":"3"}]'
+          || '[{"nextcloud":"32.0.9","etherpad":"2"},{"nextcloud":"33","etherpad":"2"},{"nextcloud":"34","etherpad":"2"},{"nextcloud":"35","etherpad":"2"},{"nextcloud":"35","etherpad":"3"}]') }}
+        # Each shard brings up a stack of its own, so tests never share one.
+        # Two rather than more: every further one pays for that stack again.
+        shard: [1, 2]
 
-    name: Nextcloud ${{ matrix.nextcloud }} + Etherpad ${{ matrix.etherpad }}
+    name: Nextcloud ${{ matrix.stack.nextcloud }} + Etherpad ${{ matrix.stack.etherpad }} (${{ matrix.shard }}/2)
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,23 +141,33 @@ jobs:
       - name: Resolve the stack hostnames
         run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
 
-      - name: Bring up Nextcloud ${{ matrix.nextcloud }} + Etherpad ${{ matrix.etherpad }}
+      - name: Bring up Nextcloud ${{ matrix.stack.nextcloud }} + Etherpad ${{ matrix.stack.etherpad }}
         env:
-          NC_VERSION: ${{ matrix.nextcloud }}
-          EP_VERSION: ${{ matrix.etherpad }}
+          NC_VERSION: ${{ matrix.stack.nextcloud }}
+          EP_VERSION: ${{ matrix.stack.etherpad }}
         run: bash tests/e2e/docker/up.sh
 
       # Cheap, and it guards a property no unit test can: the declaration in
       # lib/Util/SensitiveMethods.php only has an effect inside a running
       # Nextcloud, through its own exception serializer.
       - name: Check that secrets stay out of the log
+        if: matrix.shard == 1
         run: bash tests/e2e/docker/test-log-secrets.sh
 
       - name: Run the Playwright suite
         id: suite
         # run-suite.sh wires up the generated env file, the CA for node's
         # fetch, and the browser-side exemption for the per-run CA.
-        run: bash tests/e2e/docker/run-suite.sh
+        env:
+          SHARD: ${{ matrix.shard }}
+          SLOW: ${{ needs.decide.outputs.slow }}
+          E2E_REAL_JOB_WAIT: ${{ github.event_name == 'schedule' && '1' || '' }}
+        run: |
+          args=("--shard=$SHARD/2")
+          if [[ "$SLOW" != true ]]; then
+            args+=(--grep-invert @slow)
+          fi
+          bash tests/e2e/docker/run-suite.sh "${args[@]}"
 
       # What Nextcloud and its other apps logged in the browser fails no
       # test; grouped on the run's page, the noise a new release brings
@@ -147,6 +181,20 @@ jobs:
         # in, the log also to the API.
         run: node tests/e2e/browser-noise-summary.mjs | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # Where the time goes, on green runs too: what to look at before making
+      # the suite faster, and how the stacks differ.
+      - name: Summarise the slowest tests
+        if: always() && (steps.suite.outcome == 'success' || steps.suite.outcome == 'failure')
+        continue-on-error: true
+        run: node tests/e2e/slowest-tests.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && (steps.suite.outcome == 'success' || steps.suite.outcome == 'failure')
+        with:
+          name: e2e-times-nc${{ matrix.stack.nextcloud }}-ep${{ matrix.stack.etherpad }}-${{ matrix.shard }}
+          path: e2e-results.json
+          retention-days: 7
+
       - name: Collect stack logs on failure
         if: failure()
         run: docker compose -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
@@ -154,7 +202,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: e2e-nc${{ matrix.nextcloud }}-ep${{ matrix.etherpad }}
+          name: e2e-nc${{ matrix.stack.nextcloud }}-ep${{ matrix.stack.etherpad }}-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
