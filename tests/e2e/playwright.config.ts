@@ -69,7 +69,9 @@ export default defineConfig({
 	// so serial execution avoids create/cleanup races. Bump locally with
 	// --workers if your target can take it.
 	workers: 1,
-	fullyParallel: false,
+	// With one worker this changes no order. It lets --shard split by test,
+	// or the largest spec would make one shard the slow one.
+	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	// Single retry locally too — long full-suite runs against a real NC
 	// occasionally hit transient ERR_NETWORK_CHANGED or WebDAV 423 lock
@@ -83,7 +85,7 @@ export default defineConfig({
 	failOnFlakyTests: !!process.env.CI,
 	timeout: 60_000,
 	expect: { timeout: 15_000 },
-	reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list'], ['html', { open: 'never' }]],
+	reporter: process.env.CI ? [['github'], ['html', { open: 'never' }], ['json', { outputFile: 'e2e-results.json' }]] : [['list'], ['html', { open: 'never' }]],
 	// Where the noise guard keeps its record too, and the summary looks.
 	outputDir: OUTPUT_DIR,
 
@@ -91,7 +93,10 @@ export default defineConfig({
 		baseURL,
 		trace: 'retain-on-failure',
 		screenshot: 'only-on-failure',
-		video: 'retain-on-failure',
+		// A test that fails once is run again, which records it, so a green
+		// one need not be. The trace stays on every attempt: a flaky result
+		// fails the CI run, and only the attempt that failed can explain it.
+		video: 'on-first-retry',
 		// NC's session cookies need a real browser context; storageState is
 		// produced by the "setup" project below.
 		//
