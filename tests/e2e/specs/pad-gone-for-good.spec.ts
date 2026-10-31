@@ -675,7 +675,24 @@ test.describe('pads of team folder files deleted for good', () => {
 			}
 			padIds.push(...pads)
 			const [forgottenFile, deletedFile, restFile] = [await propfindFileId(paths[0]), await propfindFileId(paths[1]), await propfindFileId(paths[2])]
+			const importedPad = `e2e-imported-${Date.now()}`
+			padIds.push(importedPad)
+			await etherpadApiPost('createPad', { padID: importedPad })
+			const importedPath = `${other}/${uniquePadName('imported')}`
+			await putFileViaDav(importedPath, `[InternetShortcut]\nURL=${new URL((await padInTeam(`${other}/${uniquePadName('origin')}`)).padUrl).origin}/p/${importedPad}\n`)
+			made.pop()
+			const importedFile = await propfindFileId(importedPath)
+			const bound = await padApiPost(`pads/initialize-by-id/${importedFile}`)
+			expect(bound.status, JSON.stringify(bound.body)).toBe(200)
 			await deleteTeamFolder(otherId)
+
+			const stays = await padApiPost('admin/delete-vanished', { fileId: String(importedFile) })
+			expect((stays.body as { marked?: number }).marked, 'the app does not delete an imported pad, so nothing is marked').toBe(0)
+			const forgottenImport = await padApiPost('admin/forget-vanished', { fileId: String(importedFile) })
+			expect((forgottenImport.body as { forgotten?: boolean }).forgotten, 'forgetting is what it offers').toBe(true)
+			await settle()
+			expect(await padExists(importedPad), 'the pad stays in Etherpad').toBe(true)
+
 			const vanishedBefore = await vanishedFiles()
 			expect(vanishedBefore, 'the team folder deleted as a whole leaves its files vanished').toBeGreaterThanOrEqual(3)
 

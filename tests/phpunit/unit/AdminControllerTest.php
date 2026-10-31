@@ -214,13 +214,14 @@ class AdminControllerTest extends TestCase {
 	 */
 	public function testDeleteVanishedTakesTheOneFileNamed(): void {
 		$cases = [
-			'marked' => [true, true, 1, 'The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'],
-			'no longer vanished' => [true, false, 0, 'This file is no longer vanished; nothing was changed.'],
+			'marked' => [true, ConsistencyCheckService::MARKED, 1, 'The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'],
+			'no longer vanished' => [true, ConsistencyCheckService::NOT_VANISHED, 0, 'This file is no longer vanished; nothing was changed.'],
+			'a pad the sweep leaves' => [true, ConsistencyCheckService::PAD_STAYS, 0, "The app does not delete this public pad, imported from a .pad file in Ownpad's format. Forget it instead."],
 			'deleting off' => [false, null, 0, 'Deleting pads is switched off, so no pad was marked for deletion.'],
 		];
-		foreach ($cases as $case => [$deleting, $stillVanished, $marked, $message]) {
+		foreach ($cases as $case => [$deleting, $outcome, $marked, $message]) {
 			$consistency = $this->vanishedList(2);
-			$consistency->expects($stillVanished === null ? $this->never() : $this->once())->method('markVanishedFile')->with(42)->willReturn((bool)$stillVanished);
+			$consistency->expects($outcome === null ? $this->never() : $this->once())->method('markVanishedFile')->with(42)->willReturn((string)$outcome);
 			$appConfig = $this->createMock(AppConfigService::class);
 			$appConfig->method('isDeletePadWithFileEnabled')->willReturn($deleting);
 

@@ -197,7 +197,7 @@ class GoneFileSweep {
 			}
 			return false;
 		}
-		if (!PadId::isGroupPad($binding->padId) && !PadId::isAppPublicId($binding->padId)) {
+		if (PadId::isOtherPublicId($binding->padId)) {
 			// A public pad this app did not make came in by a shortcut file,
 			// Ownpad's or written by anyone else, and a pad's address is all
 			// that file showed: it may be another installation's on the same

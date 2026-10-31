@@ -93,6 +93,12 @@ class PadIdTest extends TestCase {
 		yield 'a group pad' => ['g.abcdefghijklmnop$p-' . str_repeat('a', 20), false];
 	}
 
+	public function testAGroupPadIsNoOtherPublicId(): void {
+		$this->assertFalse(PadId::isOtherPublicId('g.abcdefghijklmnop$imported'));
+		$this->assertFalse(PadId::isOtherPublicId('nc-abcdefghijklmnopqrstuvwx'));
+		$this->assertTrue(PadId::isOtherPublicId('imported'));
+	}
+
 	#[\PHPUnit\Framework\Attributes\DataProvider('publicIds')]
 	public function testKnowsThePublicIdsTheAppGives(string $padId, bool $own): void {
 		$this->assertSame($own, PadId::isAppPublicId($padId));

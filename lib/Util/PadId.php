@@ -62,6 +62,11 @@ final class PadId {
 		return preg_match(self::APP_PUBLIC_PATTERN, $padId) === 1;
 	}
 
+	/** Whether this is a public id not of the app's form, whose pad stays when its file goes for good (GoneFileSweep). */
+	public static function isOtherPublicId(string $padId): bool {
+		return !self::isGroupPad($padId) && !self::isAppPublicId($padId);
+	}
+
 	/**
 	 * Whether Etherpad's API acts on this id as it is, capitals aside: with
 	 * its lowerCasePadIds on, it lowers an id no pad exists under, too.

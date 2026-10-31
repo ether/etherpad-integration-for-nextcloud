@@ -282,6 +282,26 @@ describe('admin settings status areas', () => {
 	 * pads show and the list goes; one grown since is shown to confirm
 	 * again, as a warning.
 	 */
+	it('offers no Delete for a pad the app leaves in Etherpad', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Consistency check finished with issues.',
+			vanished_file_count: 2,
+			pending_delete_count: 0,
+			samples: { vanished_files: [
+				{ file_id: 7, pad_id: 'nc-own', access_mode: 'public', can_delete: true },
+				{ file_id: 9, pad_id: 'imported', access_mode: 'public', can_delete: false },
+			] },
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+
+		const buttons = [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((item) => [...item.querySelectorAll('button')].length)
+		expect(buttons).toEqual([2, 1])
+		expect(document.querySelector('#etherpad-nextcloud-vanished-list li:last-child button').getAttribute('aria-label')).toContain('imported')
+	})
+
 	it('deletes the pads of all vanished files, as many as confirmed', async () => {
 		let answer = { message: 'Marked.', marked: 30, vanished_file_count: 0, pending_delete_count: 30, samples: { vanished_files: [] } }
 		const fetchMock = vi.fn((url) => Promise.resolve(okResponse(url === '/delete-all-vanished'
