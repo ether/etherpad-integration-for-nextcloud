@@ -79,7 +79,7 @@ class PadControllerErrorMapperTest extends TestCase {
 		// Two initialisations at once: the next open finds the winner's pad.
 		yield 'a row another request made first' => [new BindingNotCreatedException('Could not create unique pad binding.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', ['retryable' => true]];
 		yield 'a legacy import switched off' => [new LegacyProtectedImportDisabledException('internal wording'), Http::STATUS_FORBIDDEN, 'This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.', ['code' => 'legacy_protected_import_disabled']];
-		yield 'a legacy pad missing from its group' => [new LegacyPadNotFoundException('internal wording'), Http::STATUS_BAD_REQUEST, 'This legacy Ownpad file names a pad that does not exist in Etherpad.', []];
+		yield 'a legacy pad missing from its group' => [new LegacyPadNotFoundException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file names a pad that cannot be linked to it.', []];
 		yield 'a legacy pad bound elsewhere' => [new LegacyPadCollisionException('internal wording'), Http::STATUS_CONFLICT, 'This pad is already linked to another file you do not have access to.', ['code' => 'legacy_collision_no_access']];
 		yield 'too large to show' => [new EtherpadTooLargeException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is too large to show here. Open it in Etherpad instead.', ['code' => 'pad_too_large']];
 		// The clients initialise the file and retry, by the code.

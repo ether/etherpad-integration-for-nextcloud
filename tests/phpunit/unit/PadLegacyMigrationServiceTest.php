@@ -442,6 +442,54 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		]);
 	}
 
+	/** @return iterable<string, array{string}> */
+	public static function idsOfTheAppsForm(): iterable {
+		yield 'a new pad' => ['nc-' . str_repeat('a', 24)];
+		yield 'a restored pad' => ['r-old-pad-abc123def456'];
+		yield 'a new pad in capitals' => ['Nc-' . str_repeat('A', 24)];
+		yield 'a restored pad in capitals' => ['R-OLD-PAD-ABC123DEF456'];
+		// U+212A, which JavaScript's toLowerCase() takes to a plain k too.
+		yield 'a capital only Unicode lowers to plain ASCII' => ["nc-\u{212A}" . str_repeat('a', 23)];
+	}
+
+	/**
+	 * A public id of the app's form with no active row here is refused: the
+	 * migration cannot tell whose pad it is. The file stays as it is.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('idsOfTheAppsForm')]
+	public function testRefusesAnUnboundPublicIdOfTheAppsForm(string $padId): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(508);
+		$file->expects($this->never())->method('putContent');
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->with($padId, BindingService::STATE_ACTIVE)->willReturn(null);
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(LegacyPadNotFoundException::class);
+		$this->expectExceptionMessage('The legacy .pad file names a pad with the id of a pad this app makes.');
+		$this->buildService(
+			binding: $binding,
+			padFileService: new PadFileService(new FixedClock()),
+			etherpadClient: $this->sameOriginClient(),
+			logger: $this->refusalLine('the pad it names cannot be linked.', 508, BindingService::ACCESS_PUBLIC, 'mallory', ['reason' => 'own_name']),
+		)->migrate($this->claimOn('mallory', $file), ['url' => 'https://pad.our-server.test/p/' . $padId, 'pad_id' => $padId]);
+	}
+
+	/** With its row here, such an id is this file's own, and its migration finishes. */
+	public function testFinishesItsOwnFileUnderAnIdThisAppGives(): void {
+		$padId = 'nc-' . str_repeat('a', 24);
+		$file = $this->createMock(File::class);
+		$file->method('getContent')->willReturn(self::SHORTCUT);
+		$file->expects($this->once())->method('putContent');
+		$this->claimedFile = $file;
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 509, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->buildService(binding: $binding, padFileService: new PadFileService(new FixedClock()), etherpadClient: $this->sameOriginClient())
+			->migrate(new CreatedFileClaim('alice', 509, self::SHORTCUT), ['url' => 'https://pad.our-server.test/p/' . $padId, 'pad_id' => $padId]);
+	}
+
 	/** @return iterable<string, array{string, string}> */
 	public static function idsNotToLink(): iterable {
 		yield 'a group of fifteen' => ['g.VICTIMGROUPID12$notes', BindingService::ACCESS_PROTECTED];

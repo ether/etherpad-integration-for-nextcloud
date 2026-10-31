@@ -70,6 +70,44 @@ class PadIdTest extends TestCase {
 		$this->assertSame($valid, PadId::isValid($padId));
 	}
 
+	/**
+	 * The names the app gives its public pads: what the generators make,
+	 * as PadBootstrapServiceTest and RestoreServiceTest show them. An Ownpad
+	 * pad has none of them, and a group pad is no public pad.
+	 *
+	 * @return iterable<string, array{string, bool}>
+	 */
+	public static function publicIds(): iterable {
+		yield 'a new pad' => ['nc-' . str_repeat('a', 12) . str_repeat('0', 12), true];
+		yield 'a restored pad' => ['r-old-pad-abc123def456', true];
+		yield 'restored, of an id with nothing left of it' => ['r--abc123def456', true];
+		yield 'restored, of an id with dots, underscores and capitals' => ['r-Old.pad_1-abc123def456', true];
+		yield 'a name of its own' => ['team-notes', false];
+		yield 'restored in form, with a character no restore keeps' => ['r-Réunion-abc123def456', false];
+		yield 'restored in form, with a space' => ['r-old pad-abc123def456', false];
+		yield 'restored in form, with the `$` an earlier restore kept' => ['r-old$pad-abc123def456', false];
+		yield 'one too short' => ['nc-' . str_repeat('a', 23), false];
+		yield 'one too long' => ['nc-' . str_repeat('a', 25), false];
+		yield 'capitals' => ['nc-' . str_repeat('A', 24), false];
+		yield 'a line break after it' => ['nc-' . str_repeat('a', 24) . "\n", false];
+		yield 'something before it' => ['x-nc-' . str_repeat('a', 24), false];
+		yield 'restored, without a name' => ['r-abc123def456', false];
+		yield 'restored, with too short an ending' => ['r-old-pad-abc123def45', false];
+		yield 'restored, with capitals at its end' => ['r-old-pad-ABC123DEF456', false];
+		yield 'a group pad' => ['g.abcdefghijklmnop$p-' . str_repeat('a', 20), false];
+	}
+
+	public function testAGroupPadIsNoOtherPublicId(): void {
+		$this->assertFalse(PadId::isOtherPublicId('g.abcdefghijklmnop$imported'));
+		$this->assertFalse(PadId::isOtherPublicId('nc-abcdefghijklmnopqrstuvwx'));
+		$this->assertTrue(PadId::isOtherPublicId('imported'));
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('publicIds')]
+	public function testKnowsThePublicIdsTheAppGives(string $padId, bool $own): void {
+		$this->assertSame($own, PadId::isAppPublicId($padId));
+	}
+
 	/** What an id already bound names stays the loose rule's to say. */
 	public function testAGroupIsNamedEvenWhereTheIdIsNotValid(): void {
 		$this->assertSame('g.abc', PadId::groupIdOf('g.abc$notes'));

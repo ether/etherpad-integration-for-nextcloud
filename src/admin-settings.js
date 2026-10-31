@@ -63,8 +63,8 @@ import { handFocusTo } from './lib/hand-focus.js'
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
 		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
 		vanishedShown: root.getAttribute('data-l10n-vanished-shown') || 'Showing {shown} of {total}:',
-		deleteVanishedConfirm: root.getAttribute('data-l10n-delete-vanished-confirm') || 'Delete the pads of all {count} vanished files? Etherpad deletes them for good.',
-		deleteVanishedConfirmOne: root.getAttribute('data-l10n-delete-vanished-confirm-one') || 'Delete the pad of the one vanished file? Etherpad deletes it for good.',
+		deleteVanishedConfirm: root.getAttribute('data-l10n-delete-vanished-confirm') || 'Delete the pads of all {count} vanished files? Etherpad deletes them for good. A public pad imported from a .pad file in Ownpad\'s format stays there and only leaves this list.',
+		deleteVanishedConfirmOne: root.getAttribute('data-l10n-delete-vanished-confirm-one') || 'Delete the pad of the one vanished file? Etherpad deletes it for good. A public pad imported from a .pad file in Ownpad\'s format stays there and only leaves this list.',
 		deleteVanishedRunning: root.getAttribute('data-l10n-delete-vanished-running') || 'Marking the pads of the vanished files for deletion...',
 		deleteVanishedFailed: root.getAttribute('data-l10n-delete-vanished-failed') || 'Could not delete the pads of the vanished files.',
 		vanishedDeleteOne: root.getAttribute('data-l10n-vanished-delete-one') || 'Delete',
@@ -551,10 +551,15 @@ import { handFocusTo } from './lib/hand-focus.js'
 		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
 			return
 		}
-		const items = (Array.isArray(rows) ? rows : [])
+		const listed = (Array.isArray(rows) ? rows : [])
 			.filter((row) => row && typeof row.pad_id === 'string')
-			.map(vanishedItem)
+		const items = listed.map(vanishedItem)
 		vanishedTotal = Math.max(Number.isFinite(Number(total)) ? Number(total) : 0, items.length)
+		// As with a row's own button; of a list shown in part only the rest could say.
+		if (deleteVanishedButton instanceof HTMLElement) {
+			const noneToDelete = vanishedTotal === items.length && listed.every((row) => row.can_delete === false)
+			deleteVanishedButton.style.display = noneToDelete ? 'none' : ''
+		}
 		vanishedList.replaceChildren(...items)
 		if (vanishedShownNode instanceof HTMLElement) {
 			vanishedShownNode.textContent = l10n.vanishedShown
@@ -649,9 +654,11 @@ import { handFocusTo } from './lib/hand-focus.js'
 		// A function, not the id itself: a replacement string reads `$&`,
 		// `$'` and the like, and a group pad's id carries a `$`.
 		const withPad = (text) => text.replace('{pad}', () => row.pad_id)
-		const actions = [
-			{ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' },
-		]
+		const actions = []
+		// A pad the app leaves in Etherpad offers no Delete it would not do.
+		if (row.can_delete !== false) {
+			actions.push({ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' })
+		}
 		// Only a public pad is forgotten (docs/deleting-pads.md says why).
 		if (row.access_mode === 'public') {
 			actions.push({ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' })

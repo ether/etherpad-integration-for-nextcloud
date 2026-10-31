@@ -35,7 +35,19 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$this->assertSame(3, $result['vanished_file_count'], 'not the ones seen deleted for good, nor the one still there');
 		$this->assertSame(['vanished_file_count', 'samples'], array_keys($result));
 		$this->assertSame(['vanished_files'], array_keys($result['samples']));
-		$this->assertSame([['file_id' => 3, 'pad_id' => 'pad-3', 'access_mode' => BindingService::ACCESS_PUBLIC], ['file_id' => 5, 'pad_id' => 'pad-5', 'access_mode' => BindingService::ACCESS_PUBLIC]], $result['samples']['vanished_files']);
+		$this->assertSame([['file_id' => 3, 'pad_id' => 'pad-3', 'access_mode' => BindingService::ACCESS_PUBLIC, 'can_delete' => false], ['file_id' => 5, 'pad_id' => 'pad-5', 'access_mode' => BindingService::ACCESS_PUBLIC, 'can_delete' => false]], $result['samples']['vanished_files']);
+	}
+
+	/** The list says which pads Delete can take: not a public one the sweep leaves. */
+	public function testListsWhichPadsCanBeDeleted(): void {
+		$rows = [];
+		foreach (['nc-abcdefghijklmnopqrstuvwx', 'r-old-abcdefghijkl', 'g.abcdefghijklmnop$p-abc', 'imported'] as $index => $padId) {
+			$rows[] = ['file_id' => $index + 1, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE];
+		}
+
+		$samples = $this->service(new InMemoryBindingTable($rows, []))->run()['samples']['vanished_files'];
+
+		$this->assertSame([true, true, true, false], array_column($samples, 'can_delete'));
 	}
 
 	/**
@@ -150,6 +162,18 @@ class ConsistencyCheckServiceTest extends TestCase {
 		}
 	}
 
+	/** A row another flow changed after it was read marks nothing, and says so: no line, as no word took effect. */
+	public function testARowChangedAfterItWasReadIsNotMarked(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->with(7)->willReturn(new Binding(fileId: 7, padId: 'nc-' . str_repeat('a', 24), accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$bindings->method('isFileGone')->willReturn(true);
+		$bindings->expects($this->once())->method('markGone')->with([7])->willReturn(0);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, (new ConsistencyCheckService(new InMemoryBindingTable([], []), $bindings, $logger))->markVanishedFile(7));
+	}
+
 	/**
 	 * Once the row is gone, nothing is left that can fail before the log
 	 * has the pad's id: the file cache is asked before, and not again. A
@@ -194,7 +218,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 	 * there, or one on its way already.
 	 */
 	public function testTakesOneVanishedFileAtATime(): void {
-		$row = static fn (int $fileId, string $mode, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => $mode, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
+		$row = static fn (int $fileId, string $mode, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => ($mode === BindingService::ACCESS_PROTECTED ? 'g.abcdefghijklmnop$' : '') . 'pad-' . $fileId, 'access_mode' => $mode, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
 		$db = new InMemoryBindingTable([
 			$row(1, BindingService::ACCESS_PUBLIC),
 			$row(2, BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE),
@@ -210,9 +234,10 @@ class ConsistencyCheckServiceTest extends TestCase {
 		});
 		$service = $this->service($db, new FixedClock(500), $logger);
 
-		$this->assertTrue($service->markVanishedFile(3));
-		$this->assertFalse($service->markVanishedFile(1), 'its file is there');
-		$this->assertFalse($service->markVanishedFile(2), 'on its way already');
+		$this->assertSame(ConsistencyCheckService::MARKED, $service->markVanishedFile(3));
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->markVanishedFile(1), 'its file is there');
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->markVanishedFile(2), 'on its way already');
+		$this->assertSame(ConsistencyCheckService::PAD_STAYS, $service->markVanishedFile(4), 'the sweep would leave its pad, and the row is not marked');
 		$this->assertSame(ConsistencyCheckService::FORGOTTEN, $service->forgetVanished(4));
 		$this->assertSame(ConsistencyCheckService::PROTECTED_PAD, $service->forgetVanished(5));
 		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->forgetVanished(1), 'its file is there');

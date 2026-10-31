@@ -86,6 +86,24 @@ in Etherpad, as deleting it could take down another pad. A group pad's
 group stays with it. The same holds for such a pad deleted from the
 consistency check.
 
+So is a public pad imported from a `.pad` file in Ownpad's format, whether
+Ownpad or someone else wrote it. This app names its own public pads `nc-…`,
+and `r-…` when restored; a public pad under any other name came in by an
+import, which asked for nothing but its address, and it may be another
+installation's on the same Etherpad. The job removes the row
+and leaves the pad, which stays reachable by its address, on an Etherpad
+only this Nextcloud uses too; to remove it, delete it in Etherpad. The app
+keeps no record of that address once the row is gone. A protected pad
+imported past
+`allow_legacy_protected_import` goes with its file, as the admin vouched for
+the server by switching that on.
+
+The name is all that tells them apart, as no version recorded where a pad
+came from. A row an earlier version made by importing a pad named like this
+app's own, another Nextcloud's on the same Etherpad, cannot be told from
+this app's own pads, and its pad goes with its file. New imports of such a
+pad are refused.
+
 On Nextcloud 34, and on 35.0.0, Nextcloud reports the files inside a
 folder deleted for good under the wrong ids - and a trash emptied as a
 whole, from the Files app or with `occ trashbin:cleanup`, is deleted as
@@ -128,7 +146,11 @@ the new count to confirm again. A pad marked for deletion cannot be taken
 back from the page. Switching `delete_pad_with_file` off before the job
 runs keeps it, but switching it back on deletes it.
 
-A listed public pad can also be forgotten: it leaves the list and stays in
+A public pad the app would leave in Etherpad, imported as above, is listed
+with no Delete, only Forget. Deleting them all takes its row as forgetting
+would, without its id in the log, and the confirmation says so; the pad
+stays. Where every pad is listed and all are such pads, that button is not
+offered. A listed public pad can be forgotten: it leaves the list and stays in
 Etherpad, reachable by its link, and the app never cleans it up after
 that. That suits a public pad still used by its link. A protected pad
 cannot be forgotten: without its row, the sessions made for it would stay

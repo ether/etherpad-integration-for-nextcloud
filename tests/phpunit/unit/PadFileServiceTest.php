@@ -929,6 +929,13 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/team%2Bmeeting',
 				'team+meeting',
 			],
+			// A hand-written file does not hide the id it names from the
+			// rules on the id.
+			'an id encoded and padded by hand' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/%20nc%2Dabc%20\n",
+				'https://pad.example.test/p/%20nc%2Dabc%20',
+				'nc-abc',
+			],
 		];
 	}
 

@@ -184,6 +184,15 @@ class PadLegacyMigrationService {
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
+			// With no active row here, an id of the app's form may be another
+			// installation's: a shortcut, Ownpad's or written by anyone else,
+			// does not make the pad this file's. Ownpad's own names have no
+			// such form, so its files pass. In any capitals, which Etherpad's
+			// lowerCasePadIds may take to a pad of that form.
+			// https://github.com/otetard/ownpad/blob/v0.13.2/lib/Service/OwnpadService.php create()
+			if (PadId::isAppPublicId(mb_strtolower($sourcePadId))) {
+				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'own_name', 'The legacy .pad file names a pad with the id of a pad this app makes.');
+			}
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);

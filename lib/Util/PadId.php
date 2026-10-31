@@ -39,6 +39,13 @@ final class PadId {
 	 */
 	private const VALID_PATTERN = '/^(?!\.{1,2}$)(?:g\.[a-zA-Z0-9]{16}\$)?([^$:\t\n\x{0B}\f\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+)$/uD';
 
+	/**
+	 * The public ids this app gives its pads, the same since 1.0.0
+	 * (PadBootstrapService::newPadId(), RestoreService::buildPublicRestorePadId()),
+	 * but for a `$` a restore kept before 1.1.0-beta.2: isValid() refuses that.
+	 */
+	private const APP_PUBLIC_PATTERN = '/^(?:nc-[a-z0-9]{24}|r-[a-zA-Z0-9._-]*-[a-z0-9]{12})$/D';
+
 	/** The longest name Etherpad takes, in UTF-16 code units, as JavaScript counts a string. */
 	public const MAX_NAME_UNITS = 50;
 
@@ -49,6 +56,16 @@ final class PadId {
 
 	public static function isGroupPad(string $padId): bool {
 		return self::groupIdOf($padId) !== null;
+	}
+
+	/** Whether this has the form of a public id this app gives; which installation made the pad it cannot say. */
+	public static function isAppPublicId(string $padId): bool {
+		return preg_match(self::APP_PUBLIC_PATTERN, $padId) === 1;
+	}
+
+	/** Whether this is a public id not of the app's form, whose pad stays when its file goes for good (GoneFileSweep). */
+	public static function isOtherPublicId(string $padId): bool {
+		return !self::isGroupPad($padId) && !self::isAppPublicId($padId);
 	}
 
 	/**

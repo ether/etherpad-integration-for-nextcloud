@@ -174,14 +174,15 @@ class AdminController extends Controller {
 				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
 				// With deleting off a mark would only wait for it to be
 				// switched on: nothing is marked, and the page says why.
-				$marked = $deleting && $this->consistencyCheckService->markVanishedFile($fileId);
+				$outcome = $deleting ? $this->consistencyCheckService->markVanishedFile($fileId) : null;
 				return $this->withTheList([
-					'message' => match (true) {
-						!$deleting => $this->deletingOff(),
-						$marked => $this->l10n->t('The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'),
+					'message' => match ($outcome) {
+						null => $this->deletingOff(),
+						ConsistencyCheckService::MARKED => $this->l10n->t('The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'),
+						ConsistencyCheckService::PAD_STAYS => $this->l10n->t('The app does not delete this public pad, imported from a .pad file in Ownpad\'s format. Forget it instead.'),
 						default => $this->noLongerVanished(),
 					},
-					'marked' => $marked ? 1 : 0,
+					'marked' => $outcome === ConsistencyCheckService::MARKED ? 1 : 0,
 				]);
 			},
 			fn(array $result): DataResponse => new DataResponse(['ok' => true] + $result),

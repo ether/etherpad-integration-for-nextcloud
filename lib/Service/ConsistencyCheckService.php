@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\DbRows;
+use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use Psr\Log\LoggerInterface;
@@ -25,6 +26,10 @@ class ConsistencyCheckService {
 	public const FORGOTTEN = 'forgotten';
 	public const NOT_VANISHED = 'not_vanished';
 	public const PROTECTED_PAD = 'protected_pad';
+
+	/** What markVanishedFile() came to, besides NOT_VANISHED. */
+	public const MARKED = 'marked';
+	public const PAD_STAYS = 'pad_stays';
 
 	public function __construct(
 		private IDBConnection $db,
@@ -112,16 +117,29 @@ class ConsistencyCheckService {
 		return self::MARK_MAX;
 	}
 
-	/** One vanished file's row marked, as markVanished() marks them: whether it was still vanished, and is marked now. */
-	public function markVanishedFile(int $fileId): bool {
-		if (!$this->bindingService->isFileGone($fileId) || $this->bindingService->markGone([$fileId]) === 0) {
-			return false;
+	/**
+	 * One vanished file's row marked, as markVanished() marks them. Not one
+	 * whose pad the sweep would leave: asked to delete that pad, the mark
+	 * would take its row and nothing else, which is forgetVanished()'s to do.
+	 *
+	 * @return string MARKED, NOT_VANISHED, or PAD_STAYS for a pad the sweep leaves
+	 */
+	public function markVanishedFile(int $fileId): string {
+		$binding = $this->bindingService->findByFileId($fileId);
+		if ($binding === null || $binding->state !== BindingService::STATE_ACTIVE || !$this->bindingService->isFileGone($fileId)) {
+			return self::NOT_VANISHED;
+		}
+		if (PadId::isOtherPublicId($binding->padId)) {
+			return self::PAD_STAYS;
+		}
+		if ($this->bindingService->markGone([$fileId]) === 0) {
+			return self::NOT_VANISHED;
 		}
 		$this->logger->info('An admin marked the row of a vanished file as deleted for good; the sweep takes it as such.', [
 			'app' => Application::APP_ID,
 			'fileId' => $fileId,
 		]);
-		return true;
+		return self::MARKED;
 	}
 
 	/**
@@ -188,7 +206,10 @@ class ConsistencyCheckService {
 
 	/** @return array<int,array<string,mixed>> */
 	private function sampleVanished(int $limit): array {
-		return $this->vanishedRows(['b.file_id', 'b.pad_id', 'b.access_mode'], $limit);
+		return array_map(
+			static fn (array $row): array => $row + ['can_delete' => !PadId::isOtherPublicId(DbRows::string($row, 'pad_id'))],
+			$this->vanishedRows(['b.file_id', 'b.pad_id', 'b.access_mode'], $limit),
+		);
 	}
 
 	/**

@@ -174,9 +174,10 @@ class GoneFileSweep {
 	 * The pad and row of a file gone for good, once the file cache confirms
 	 * it. Left when the file is there after all, the row changed, or
 	 * Etherpad refused - then tried again an hour later, with a warning the
-	 * first time. Under an id PadId::isValid() refuses, only the row goes.
+	 * first time. Under an id PadId::isValid() refuses, and for a public id
+	 * not of the app's form, only the row goes, with no call to Etherpad.
 	 *
-	 * @return bool whether pad and row went
+	 * @return bool whether pad and row went; false where only the row did
 	 * @throws RunBudgetSpentException
 	 * @throws EtherpadClientException Etherpad did not answer, or rejected the key
 	 */
@@ -188,11 +189,22 @@ class GoneFileSweep {
 			// Etherpad's API may rewrite such an id onto another pad and
 			// delete that one; an earlier version bound some. The line leaves
 			// the id out, as it may lead to another file's pad.
-			if ($budget->exhausted()) {
-				throw new RunBudgetSpentException('No time left in the run for another row.');
-			}
-			if ($this->bindingService->deleteInState($binding->fileId, $binding->padId, BindingService::STATE_PENDING_DELETE)) {
+			if ($this->removeRowOnly($binding, $budget)) {
 				$this->logger->warning('The file of a pad is gone for good; its row goes, but the pad stays: Etherpad\'s API may not act on its id as it is.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $binding->fileId,
+				]);
+			}
+			return false;
+		}
+		if (PadId::isOtherPublicId($binding->padId)) {
+			// A public pad this app did not make came in by a shortcut file,
+			// Ownpad's or written by anyone else, and a pad's address is all
+			// that file showed: it may be another installation's on the same
+			// Etherpad. The id stays out of the line, as with the host it is
+			// a link to the pad.
+			if ($this->removeRowOnly($binding, $budget)) {
+				$this->logger->info('The file of an imported public pad is gone for good; its row goes, and the pad stays in Etherpad.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $binding->fileId,
 				]);
@@ -226,6 +238,17 @@ class GoneFileSweep {
 		}
 		$this->logger->info('The file of a pad is gone for good; the pad is deleted.', $context);
 		return true;
+	}
+
+	/**
+	 * @return bool whether the row went
+	 * @throws RunBudgetSpentException
+	 */
+	private function removeRowOnly(Binding $binding, RunBudget $budget): bool {
+		if ($budget->exhausted()) {
+			throw new RunBudgetSpentException('No time left in the run for another row.');
+		}
+		return $this->bindingService->deleteInState($binding->fileId, $binding->padId, BindingService::STATE_PENDING_DELETE);
 	}
 
 	/**

@@ -16,6 +16,7 @@ import {
 	padOfFile,
 	propfindFileId,
 	purgeTrashbinEntry,
+	putFileViaDav,
 	restoreAppConfig,
 	restoreFromTrashViaDav,
 	setAppConfig,
@@ -112,6 +113,91 @@ test.describe('pads of files deleted for good', () => {
 
 		expect(await padExists(padId), 'the job should have deleted the pad').toBe(false)
 		expect(await groupExists(groupIdOfPadUrl(pad.padUrl)), 'and its group with it').toBe(false)
+	})
+
+	/**
+	 * Files anyone can write: neither a shortcut, in whichever spelling, nor
+	 * metadata naming a pad of the app's form makes that pad the file's, so
+	 * it stays when they go.
+	 */
+	test('a pad of the app\'s form named by hand-written files stays', async () => {
+		const shortcutName = uniquePadName('gone-handmade-shortcut')
+		const metadataName = uniquePadName('gone-handmade-metadata')
+		const originName = uniquePadName('gone-handmade-origin')
+		const padName = Date.now().toString(36).padEnd(24, '0')
+		const padId = `nc-${padName}`
+		try {
+			const origin = new URL((await createPadAtPath(`/${originName}`)).padUrl).origin
+			await etherpadApiPost('createPad', { padID: padId })
+
+			await putFileViaDav(shortcutName, `[InternetShortcut]\nURL=${origin}/p/nc%2D${padName}\n`)
+			const refused = await padApiPost(`pads/initialize-by-id/${await propfindFileId(shortcutName)}`)
+			expect(refused.status, JSON.stringify(refused.body)).toBe(400)
+
+			await putFileViaDav(metadataName, [
+				'---',
+				'format: "etherpad-nextcloud/1"',
+				'file_id: 1',
+				`pad_id: "${padId}"`,
+				'access_mode: "public"',
+				'state: "active"',
+				'deleted_at: null',
+				'created_at: "2026-01-01T00:00:00+00:00"',
+				'updated_at: "2026-01-01T00:00:00+00:00"',
+				'snapshot_rev: 0',
+				'---',
+				'[TEXT]',
+				'',
+			].join('\n'))
+			const metadataFileId = await propfindFileId(metadataName)
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(metadataFileId) })
+			expect(opened.status, JSON.stringify(opened.body)).not.toBe(200)
+
+			await deleteViaDav(shortcutName, { pastTrash: true })
+			await deleteViaDav(metadataName, { pastTrash: true })
+			await settle()
+
+			expect(await padExists(padId), 'the pad should stay in Etherpad').toBe(true)
+		} finally {
+			await Promise.allSettled([
+				etherpadApiPost('deletePad', { padID: padId }),
+				deleteViaDav(shortcutName, { pastTrash: true }),
+				deleteViaDav(metadataName, { pastTrash: true }),
+				deleteViaDav(originName, { pastTrash: true }),
+			])
+		}
+	})
+
+	/**
+	 * Importing a public pad's address does not make the pad this file's,
+	 * so deleting the file for good leaves the pad where it was.
+	 */
+	test('an imported public pad stays with its file deleted past the trash', async () => {
+		const name = uniquePadName('gone-imported')
+		const originName = uniquePadName('gone-imported-origin')
+		const padId = `e2e-imported-${Date.now()}`
+		try {
+			const origin = new URL((await createPadAtPath(`/${originName}`)).padUrl).origin
+			await etherpadApiPost('createPad', { padID: padId })
+			await putFileViaDav(name, `[InternetShortcut]\nURL=${origin}/p/${padId}\n`)
+			const fileId = await propfindFileId(name)
+			const opened = await padApiPost(`pads/initialize-by-id/${fileId}`)
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			expect(await padOfFile(fileId), 'the import should have bound the pad').toBe(padId)
+
+			await deleteViaDav(name, { pastTrash: true })
+			await settle()
+
+			expect(await padExists(padId), 'the pad should stay in Etherpad').toBe(true)
+		} finally {
+			// Each on its own: what a failure left out of a test's run is not
+			// there to clean up, and the rest still has to go.
+			await Promise.allSettled([
+				etherpadApiPost('deletePad', { padID: padId }),
+				deleteViaDav(name, { pastTrash: true }),
+				deleteViaDav(originName, { pastTrash: true }),
+			])
+		}
 	})
 
 	/**
@@ -583,13 +669,32 @@ test.describe('pads of team folder files deleted for good', () => {
 		try {
 			const paths = ['forgotten', 'deleted', 'rest'].map((label) => `${other}/${uniquePadName(label)}`)
 			const pads: string[] = []
+			let origin = ''
 			for (const [index, path] of paths.entries()) {
-				pads.push(padIdOfPadUrl((await padInTeam(path, index === 1 ? 'protected' : 'public')).padUrl))
+				const { padUrl } = await padInTeam(path, index === 1 ? 'protected' : 'public')
+				origin = new URL(padUrl).origin
+				pads.push(padIdOfPadUrl(padUrl))
 				made.pop()
 			}
 			padIds.push(...pads)
 			const [forgottenFile, deletedFile, restFile] = [await propfindFileId(paths[0]), await propfindFileId(paths[1]), await propfindFileId(paths[2])]
+			const importedPad = `e2e-imported-${Date.now()}`
+			padIds.push(importedPad)
+			await etherpadApiPost('createPad', { padID: importedPad })
+			const importedPath = `${other}/${uniquePadName('imported')}`
+			await putFileViaDav(importedPath, `[InternetShortcut]\nURL=${origin}/p/${importedPad}\n`)
+			const importedFile = await propfindFileId(importedPath)
+			const bound = await padApiPost(`pads/initialize-by-id/${importedFile}`)
+			expect(bound.status, JSON.stringify(bound.body)).toBe(200)
 			await deleteTeamFolder(otherId)
+
+			const stays = await padApiPost('admin/delete-vanished', { fileId: String(importedFile) })
+			expect((stays.body as { marked?: number }).marked, 'the app does not delete an imported pad, so nothing is marked').toBe(0)
+			const forgottenImport = await padApiPost('admin/forget-vanished', { fileId: String(importedFile) })
+			expect((forgottenImport.body as { forgotten?: boolean }).forgotten, 'forgetting is what it offers').toBe(true)
+			await settle()
+			expect(await padExists(importedPad), 'the pad stays in Etherpad').toBe(true)
+
 			const vanishedBefore = await vanishedFiles()
 			expect(vanishedBefore, 'the team folder deleted as a whole leaves its files vanished').toBeGreaterThanOrEqual(3)
 
