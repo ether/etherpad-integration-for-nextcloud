@@ -492,6 +492,31 @@ class BindingService {
 		return $this->fileIdsOf($qb);
 	}
 
+	/**
+	 * The pads of the active protected rows past $after, by file id: a page
+	 * for a job that goes through them (FolderSessionRevoker).
+	 *
+	 * @param positive-int $limit
+	 * @return array<int,string> pad ids by file id, in that order
+	 */
+	public function activeProtectedPadsAfter(int $after, int $limit): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('file_id', 'pad_id')
+			->from(self::TABLE)
+			->where($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)))
+			->andWhere($qb->expr()->eq('access_mode', $qb->createNamedParameter(self::ACCESS_PROTECTED)))
+			->andWhere($qb->expr()->gt('file_id', $qb->createNamedParameter($after, IQueryBuilder::PARAM_INT)))
+			->orderBy('file_id', 'ASC')
+			->setMaxResults($limit);
+		$result = $qb->executeQuery();
+		$pads = [];
+		foreach (DbRows::all($result->fetchAll()) as $row) {
+			$pads[DbRows::int($row, 'file_id')] = DbRows::string($row, 'pad_id');
+		}
+		$result->closeCursor();
+		return $pads;
+	}
+
 	/** @return list<int> */
 	private function fileIdsOf(IQueryBuilder $qb): array {
 		$result = $qb->executeQuery();

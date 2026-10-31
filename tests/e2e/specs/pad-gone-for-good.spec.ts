@@ -255,6 +255,50 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
+	 * A folder of more protected pads than a delete's walk takes: the delete
+	 * leaves some with their sessions, and background jobs take those too.
+	 * Etherpad is asked directly, so the setup makes no user open each pad
+	 * in a browser; the jobs run through Nextcloud's cron.php, as on an
+	 * instance left on its default of a job per page.
+	 */
+	test('a folder past what a delete reaches loses its sessions in the background', async () => {
+		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
+		test.setTimeout(15 * 60_000)
+		const folder = uniqueName('gone-sessions-past')
+		await mkcolViaDav(folder)
+		try {
+			const groups: string[] = []
+			for (let index = 0; index < 101; index++) {
+				const pad = await createPadAtPath(`/${folder}/${uniquePadName(`past-${index}`)}`, 'protected')
+				const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
+				expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+				groups.push(groupIdOfPadUrl(pad.padUrl))
+			}
+			const withSessions = async (among: string[]): Promise<string[]> => {
+				const live = await Promise.all(among.map(async (group) => await liveSessionsOfGroup(group) > 0))
+				return among.filter((_, index) => live[index])
+			}
+			expect(await withSessions(groups), 'every pad should have a session once opened').toHaveLength(groups.length)
+
+			await deleteViaDav(folder)
+			let left = await withSessions(groups)
+			expect(left.length, 'a delete should leave some groups with their sessions').toBeGreaterThan(0)
+
+			await expect.poll(async () => {
+				// A job a request; a burst, as Etherpad is the slower to ask.
+				for (let request = 0; request < 25; request++) {
+					const cron = await fetch(`${E2E.baseURL}/cron.php`)
+					expect(cron.status, 'cron.php should answer').toBe(200)
+				}
+				left = await withSessions(left)
+				return left
+			}, { message: 'the jobs should take the sessions of every group', timeout: 12 * 60_000, intervals: [1_000] }).toEqual([])
+		} finally {
+			await deleteViaDav(folder, { pastTrash: true }).catch(() => {})
+		}
+	})
+
+	/**
 	 * What counts is the file, not its name: a `.pad` renamed keeps its
 	 * pad, and the pad goes once the file is deleted for good - past the
 	 * trash, or from it.

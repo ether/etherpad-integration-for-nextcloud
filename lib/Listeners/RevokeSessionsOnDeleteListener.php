@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Service\FolderSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
+use OCA\EtherpadNextcloud\Service\ProtectedPadsFound;
 use OCA\EtherpadNextcloud\Service\ProtectedPadsOfNode;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
@@ -32,19 +34,21 @@ use Psr\Log\LoggerInterface;
  * still in Files, keeps editing.
  *
  * As on a logout (PadSessionRevoker), within a few seconds: what does not
- * fit goes to a background job per group (GroupSessionRevoker). Etherpad
- * refuses the next change of whoever had the pad open. Nothing here stops
- * the delete.
+ * fit goes to a background job per group (GroupSessionRevoker), and what
+ * the walk did not reach to one that finds it (FolderSessionRevoker).
+ * Etherpad refuses the next change of whoever had the pad open. Nothing
+ * here stops the delete.
  *
  * @template-implements IEventListener<Event>
  */
 class RevokeSessionsOnDeleteListener implements IEventListener {
-	/** @var array<int,list<string>> by file id, the protected pads a delete under way takes along */
+	/** @var array<int,ProtectedPadsFound> by file id, what a delete under way takes along */
 	private array $pending = [];
 
 	public function __construct(
 		private ProtectedPadsOfNode $protectedPads,
 		private PadSessionRevoker $revoker,
+		private FolderSessionRevoker $folderSessions,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -57,16 +61,22 @@ class RevokeSessionsOnDeleteListener implements IEventListener {
 				// It goes before the walk, so a walk that finds nothing, or
 				// throws, leaves nothing of it to revoke.
 				unset($this->pending[$node->getId()]);
-				$pads = $this->protectedPads->of($node);
-				if ($pads !== []) {
-					$this->pending[$node->getId()] = $pads;
+				$found = $this->protectedPads->of($node);
+				if ($found->pads !== [] || $found->stoppedShort) {
+					$this->pending[$node->getId()] = $found;
 				}
 			} elseif ($event instanceof NodeDeletedEvent) {
 				$fileId = $event->getNode()->getId();
-				$pads = $this->pending[$fileId] ?? [];
+				$found = $this->pending[$fileId] ?? null;
 				unset($this->pending[$fileId]);
-				if ($pads !== []) {
-					$this->revoker->revokeForPads($pads);
+				if ($found === null) {
+					return;
+				}
+				if ($found->stoppedShort) {
+					$this->folderSessions->queue($fileId);
+				}
+				if ($found->pads !== []) {
+					$this->revoker->revokeForPads($found->pads);
 				}
 			}
 		} catch (\Throwable $e) {
