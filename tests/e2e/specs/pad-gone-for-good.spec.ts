@@ -285,6 +285,9 @@ test.describe('pads of files deleted for good', () => {
 		return among.filter((_, index) => live[index])
 	}
 
+	/** Room for making the fixtures on top of what jobsTakeTheSessionsOf() waits, so it is what says why a case failed. */
+	const slowCaseTimeout = (E2E.realJobWait ? 15 : 7) * 60_000
+
 	/** HTTP calls to cron.php exercise Nextcloud's background-job runner, until none of the groups holds a session. */
 	const jobsTakeTheSessionsOf = async (groups: string[]): Promise<void> => {
 		let left = groups
@@ -312,7 +315,7 @@ test.describe('pads of files deleted for good', () => {
 
 	test('a folder past what a delete reaches loses its sessions in the background', { tag: '@slow' }, async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
-		test.setTimeout(15 * 60_000)
+		test.setTimeout(slowCaseTimeout)
 		const folder = uniqueName('gone-sessions-past')
 		try {
 			const groups = await padsPastTheWalk(folder)
@@ -335,7 +338,7 @@ test.describe('pads of files deleted for good', () => {
 	test('a folder deleted for good loses its sessions with deleting off', { tag: '@slow' }, async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.skip(await misnumbersFolderFiles(), misnumbered)
-		test.setTimeout(15 * 60_000)
+		test.setTimeout(slowCaseTimeout)
 		const key = 'delete_pad_with_file'
 		const folder = uniqueName('gone-sessions-for-good')
 		try {
@@ -577,7 +580,7 @@ test.describe('pads of files deleted for good', () => {
 	 */
 	test('a deleted account takes the sessions of those its pads were shared with', { tag: '@slow' }, async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
-		test.setTimeout(15 * 60_000)
+		test.setTimeout(slowCaseTimeout)
 		const key = 'delete_pad_with_file'
 		const owner = await createAccount(uniqueName('gone-sessions-owner'))
 		const sharee = await createAccount(uniqueName('gone-sessions-sharee'))

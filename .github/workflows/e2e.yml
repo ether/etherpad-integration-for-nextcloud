@@ -48,8 +48,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     name: What this run has to do
-    # To read how the run of the commit before ended; the jobs that run a
-    # pull request's code do not get this.
+    # Reads the previous workflow result. Only this job needs Actions read
+    # access; the stack jobs keep Contents read access only.
     permissions:
       contents: read
       actions: read
@@ -57,7 +57,7 @@ jobs:
       run: ${{ steps.decide.outputs.run }}
       slow: ${{ steps.decide.outputs.slow }}
     steps:
-      # Two commits: the merge GitHub made, and the base it merges onto.
+      # Fetch the merge commit's parents so the scope check can diff against its base.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
@@ -79,24 +79,20 @@ jobs:
     needs: decide
     if: needs.decide.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Past three attempts of a slow case that hangs, at night with its real wait.
+    timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       fail-fast: false
       matrix:
-        # A pull request runs the lower bound, the oldest Nextcloud on the
-        # oldest Etherpad major, and the upper bound, the newest on the newest:
-        # what sits between fails the same way as its neighbours, so it waits
-        # for the nightly run rather than loading the shared runners on every
-        # push.
-        #
-        # Nextcloud is the axis that matters at night, on the Etherpad major
-        # the app is written against, with Etherpad 3 on the newest.
+        # Pull requests cover the version-range endpoints to limit runner cost.
+        # Nightly runs cover intermediate Nextcloud majors and Etherpad 2
+        # on the newest Nextcloud.
         stack: >-
           ${{ fromJSON(github.event_name == 'pull_request'
           && '[{"nextcloud":"32.0.9","etherpad":"2"},{"nextcloud":"35","etherpad":"3"}]'
           || '[{"nextcloud":"32.0.9","etherpad":"2"},{"nextcloud":"33","etherpad":"2"},{"nextcloud":"34","etherpad":"2"},{"nextcloud":"35","etherpad":"2"},{"nextcloud":"35","etherpad":"3"}]') }}
-        # Each shard brings up a stack of its own, so tests never share one.
-        # Two rather than more: every further one pays for that stack again.
+        # Each shard has its own stack; shards do not share instance state.
+        # Two shards limit the repeated stack setup cost.
         shard: [1, 2]
 
     name: Nextcloud ${{ matrix.stack.nextcloud }} + Etherpad ${{ matrix.stack.etherpad }} (${{ matrix.shard }}/2)
@@ -195,12 +191,13 @@ jobs:
           path: e2e-results.json
           retention-days: 7
 
+      # Cancelled too: a job past its timeout counts as that, and needs them most.
       - name: Collect stack logs on failure
-        if: failure()
+        if: failure() || cancelled()
         run: docker compose -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: e2e-nc${{ matrix.stack.nextcloud }}-ep${{ matrix.stack.etherpad }}-${{ matrix.shard }}
           path: |

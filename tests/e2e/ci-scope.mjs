@@ -41,9 +41,13 @@ export const SLOW_PATHS = [
 	'lib/Listeners/RevokeSessions*.php',
 	'lib/Service/*SessionRevoker.php',
 	'lib/Service/BindingService.php',
+	'lib/Service/EtherpadClient.php',
 	'lib/Service/GoneFileSweep.php',
+	'lib/Service/ManagedPadLifecycle.php',
 	'lib/Service/ProtectedPads*.php',
+	'lib/Service/RunBudget.php',
 	'lib/Service/SessionDeletes.php',
+	'lib/Util/EtherpadErrorClassifier.php',
 	'lib/Util/PadId.php',
 	'appinfo/**',
 	'tests/e2e/specs/pad-gone-for-good.spec.ts',
@@ -107,6 +111,15 @@ export const decide = ({ event, action, pushedFiles = null, previousConclusion =
 	return { run: false, slow, why: 'This push changes nothing the suite runs on, and the run before passed' }
 }
 
+/**
+ * Both names of a file renamed: moved out of what the suite runs on, it still
+ * changes what the suite runs on.
+ *
+ * @param {{ filename: string, previous_filename?: string }[]} files
+ * @returns {string[]}
+ */
+export const changedPaths = (files) => files.flatMap((file) => file.previous_filename ? [file.filename, file.previous_filename] : [file.filename])
+
 /** @param {string} path */
 const gh = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }))
 
@@ -120,8 +133,8 @@ const gh = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'u
  */
 const pushedFilesOf = (repository, before, after) => {
 	const comparison = gh(`repos/${repository}/compare/${before}...${after}`)
-	const files = (comparison.files ?? []).map((/** @type {{ filename: string }} */ file) => file.filename)
-	return comparison.status === 'ahead' && files.length < COMPARE_FILE_LIMIT ? files : null
+	const files = comparison.files ?? []
+	return comparison.status === 'ahead' && files.length < COMPARE_FILE_LIMIT ? changedPaths(files) : null
 }
 
 /**
@@ -132,8 +145,8 @@ const pushedFilesOf = (repository, before, after) => {
 const previousConclusionOf = (repository, before) =>
 	gh(`repos/${repository}/actions/workflows/e2e.yml/runs?head_sha=${before}&event=pull_request&per_page=1`).workflow_runs?.[0]?.conclusion ?? null
 
-/** The merge GitHub made: its first parent is the base it merges onto. */
-const prFilesOf = () => execFileSync('git', ['diff', '--name-only', 'HEAD^1', 'HEAD'], { encoding: 'utf8' }).split('\n').filter(Boolean)
+/** The merge GitHub made: its first parent is the base it merges onto. Both names of a file renamed. */
+const prFilesOf = () => execFileSync('git', ['diff', '--name-only', '--no-renames', 'HEAD^1', 'HEAD'], { encoding: 'utf8' }).split('\n').filter(Boolean)
 
 /**
  * @template T

@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
-import { RUNTIME_PATHS, SLOW_PATHS, decide, touches } from '../e2e/ci-scope.mjs'
+import { RUNTIME_PATHS, SLOW_PATHS, changedPaths, decide, touches } from '../e2e/ci-scope.mjs'
 import { summary, timesOf } from '../e2e/slowest-tests.mjs'
 
 const push = {
@@ -69,6 +69,12 @@ describe('whether the slow cases run', () => {
 })
 
 describe('the paths', () => {
+	it('count both names of a file renamed', () => {
+		const pushedFiles = changedPaths([{ filename: 'tests/phpunit/Moved.php', previous_filename: 'lib/Service/Moved.php' }, { filename: 'docs/a.md' }])
+		expect(pushedFiles).toEqual(['tests/phpunit/Moved.php', 'lib/Service/Moved.php', 'docs/a.md'])
+		expect(decide({ ...push, pushedFiles }).run).toBe(true)
+	})
+
 	it('match a star within a folder, and two stars across them', () => {
 		expect(touches(['lib/Service/GroupSessionRevoker.php'], ['lib/Service/*SessionRevoker.php'])).toBe(true)
 		expect(touches(['lib/Service/Sub/GroupSessionRevoker.php'], ['lib/Service/*SessionRevoker.php'])).toBe(false)

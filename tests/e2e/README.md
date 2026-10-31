@@ -69,8 +69,9 @@ which therefore cannot come from an env file.
 ### In CI
 
 A pull request runs two stacks, the oldest Nextcloud on Etherpad 2 and the
-newest on Etherpad 3, each split over two shards with a stack of its own. The
-nightly run takes every supported major, and Etherpad 2 on the newest too.
+newest on Etherpad 3, each split over two shards. Each shard has its own
+stack; the tests of a shard share it, one after the other. The nightly run
+takes every supported major, and Etherpad 2 on the newest too.
 
 To spare the shared runners, `ci-scope.mjs` decides in a pull request what a
 run has to do, and its log says why:
@@ -83,10 +84,11 @@ run has to do, and its log says why:
   more gets the tag; `tests/js/e2e-ci-scope.test.js` holds the list to files
   that exist.
 
-Where they can, those cases do not wait for a job's minute: they make the jobs
-due with a query (`fixtures/background-jobs.ts`), and `cron.php` runs them as
-ever. The nightly run sets `E2E_REAL_JOB_WAIT=1` and waits, as does a throwaway
-target other than the Docker stack.
+Those cases do not wait for a job's due time: a query removes it
+(`fixtures/background-jobs.ts`), and `cron.php` runs the jobs as ever. Nightly
+runs set `E2E_REAL_JOB_WAIT=1` to retain scheduled delays. Set it explicitly
+for throwaway targets outside the Docker stack, whose database the helper
+cannot reach.
 
 Each job lists its slowest tests in its summary, and keeps
 `e2e-results.json` as an artifact for a week.
