@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnDeleteListener;
+use OCA\EtherpadNextcloud\Service\FolderSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
+use OCA\EtherpadNextcloud\Service\ProtectedPadsFound;
 use OCA\EtherpadNextcloud\Service\ProtectedPadsOfNode;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
 use OCP\Files\File;
+use OCP\Files\Folder;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -24,7 +27,7 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 		$node = $this->createMock(File::class);
 		$node->method('getId')->willReturn(7);
 		$pads = $this->createMock(ProtectedPadsOfNode::class);
-		$pads->method('of')->with($node)->willReturn(['g.AAAAAAAAAAAAAAAA$one']);
+		$pads->method('of')->with($node)->willReturn(new ProtectedPadsFound(['g.AAAAAAAAAAAAAAAA$one']));
 		$revoked = [];
 		$revoker = $this->createMock(PadSessionRevoker::class);
 		$revoker->method('revokeForPads')->willReturnCallback(static function (array $padIds) use (&$revoked): int {
@@ -32,7 +35,7 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 			return 1;
 		});
 
-		$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(LoggerInterface::class));
+		$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(FolderSessionRevoker::class), $this->createMock(LoggerInterface::class));
 		$listener->handle(new BeforeNodeDeletedEvent($node));
 		$this->assertSame([], $revoked, 'nothing before the delete is done');
 		$listener->handle(new Event());
@@ -48,11 +51,13 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 		$other = $this->createMock(File::class);
 		$other->method('getId')->willReturn(8);
 		$pads = $this->createMock(ProtectedPadsOfNode::class);
-		$pads->method('of')->willReturnCallback(static fn (File $node): array => $node === $locked ? ['g.AAAAAAAAAAAAAAAA$locked'] : []);
+		$pads->method('of')->willReturnCallback(static fn (File $node): ProtectedPadsFound => new ProtectedPadsFound($node === $locked ? ['g.AAAAAAAAAAAAAAAA$locked'] : []));
 		$revoker = $this->createMock(PadSessionRevoker::class);
 		$revoker->expects($this->never())->method('revokeForPads');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
 
-		$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(LoggerInterface::class));
+		$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(FolderSessionRevoker::class), $logger);
 		$listener->handle(new BeforeNodeDeletedEvent($locked));
 		$listener->handle(new BeforeNodeDeletedEvent($other));
 		$listener->handle(new NodeDeletedEvent($other));
@@ -73,12 +78,12 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 			$node->method('getId')->willReturn(7);
 			$found = [['g.AAAAAAAAAAAAAAAA$one'], $second];
 			$pads = $this->createMock(ProtectedPadsOfNode::class);
-			$pads->method('of')->willReturnCallback(static function () use (&$found): array {
+			$pads->method('of')->willReturnCallback(static function () use (&$found): ProtectedPadsFound {
 				$next = array_shift($found);
 				if ($next instanceof \Throwable) {
 					throw $next;
 				}
-				return $next ?? [];
+				return new ProtectedPadsFound($next ?? []);
 			});
 			$revoked = [];
 			$revoker = $this->createMock(PadSessionRevoker::class);
@@ -87,7 +92,7 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 				return 1;
 			});
 
-			$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(LoggerInterface::class));
+			$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(FolderSessionRevoker::class), $this->createMock(LoggerInterface::class));
 			$listener->handle(new BeforeNodeDeletedEvent($node));
 			$listener->handle(new BeforeNodeDeletedEvent($node));
 			$listener->handle(new NodeDeletedEvent($node));
@@ -98,12 +103,100 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 
 	public function testANodeWithoutProtectedPadsAsksEtherpadNothing(): void {
 		$pads = $this->createMock(ProtectedPadsOfNode::class);
-		$pads->method('of')->willReturn([]);
+		$pads->method('of')->willReturn(new ProtectedPadsFound([]));
 		$revoker = $this->createMock(PadSessionRevoker::class);
 		$revoker->expects($this->never())->method('revokeForPads');
 
-		(new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(LoggerInterface::class)))
+		(new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(FolderSessionRevoker::class), $this->createMock(LoggerInterface::class)))
 			->handle(new BeforeNodeDeletedEvent($this->createMock(File::class)));
+	}
+
+	/**
+	 * A walk stopped short queues the folder only after the delete, even when
+	 * it found no pads.
+	 */
+	public function testAWalkStoppedShortGoesToAJobOnceTheDeleteIsDone(): void {
+		foreach ([
+			'with pads found' => [['g.AAAAAAAAAAAAAAAA$one'], 1],
+			'with none found' => [[], 0],
+		] as $case => [$found, $revokes]) {
+			$node = $this->createMock(Folder::class);
+			$node->method('getId')->willReturn(7);
+			$pads = $this->createMock(ProtectedPadsOfNode::class);
+			$pads->method('of')->willReturn(new ProtectedPadsFound($found, true));
+			$revoker = $this->createMock(PadSessionRevoker::class);
+			$revoker->expects($this->exactly($revokes))->method('revokeForPads')->with($found);
+			$queued = [];
+			$folders = $this->createMock(FolderSessionRevoker::class);
+			$folders->method('queue')->willReturnCallback(static function (int $fileId) use (&$queued): void {
+				$queued[] = $fileId;
+			});
+			$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $folders, $this->createMock(LoggerInterface::class));
+
+			$listener->handle(new BeforeNodeDeletedEvent($node));
+			$this->assertSame([], $queued, $case . ': nothing before the delete is done');
+			$listener->handle(new NodeDeletedEvent($node));
+			$this->assertSame([7], $queued, $case);
+		}
+	}
+
+	/** A folder's walk that throws still hands the folder to the job, which needs no walk; nothing stops the delete. */
+	public function testAFolderWhoseWalkThrowsStillGoesToAJob(): void {
+		$node = $this->createMock(Folder::class);
+		$node->method('getId')->willReturn(7);
+		$pads = $this->createMock(ProtectedPadsOfNode::class);
+		$pads->method('of')->willThrowException(new \RuntimeException('lock wait timeout'));
+		$revoker = $this->createMock(PadSessionRevoker::class);
+		$revoker->expects($this->never())->method('revokeForPads');
+		$folders = $this->createMock(FolderSessionRevoker::class);
+		$folders->expects($this->once())->method('queue')->with(7);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Could not walk a folder being deleted for its protected pads.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 7 && isset($context['error'])));
+		$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $folders, $logger);
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle(new NodeDeletedEvent($node));
+	}
+
+	/** A file's that throws has no folder to look under, and leaves nothing. */
+	public function testAFileWhoseLookUpThrowsQueuesNoJob(): void {
+		$node = $this->createMock(File::class);
+		$node->method('getId')->willReturn(7);
+		$pads = $this->createMock(ProtectedPadsOfNode::class);
+		$pads->method('of')->willThrowException(new \RuntimeException('lock wait timeout'));
+		$folders = $this->createMock(FolderSessionRevoker::class);
+		$folders->expects($this->never())->method('queue');
+		$listener = new RevokeSessionsOnDeleteListener($pads, $this->createMock(PadSessionRevoker::class), $folders, $this->createMock(LoggerInterface::class));
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle(new NodeDeletedEvent($node));
+	}
+
+	/** A walk that reached the end leaves the job out. */
+	public function testAWalkThatReachedTheEndQueuesNoJob(): void {
+		$node = $this->createMock(Folder::class);
+		$node->method('getId')->willReturn(7);
+		$pads = $this->createMock(ProtectedPadsOfNode::class);
+		$pads->method('of')->willReturn(new ProtectedPadsFound(['g.AAAAAAAAAAAAAAAA$one']));
+		$folders = $this->createMock(FolderSessionRevoker::class);
+		$folders->expects($this->never())->method('queue');
+		$listener = new RevokeSessionsOnDeleteListener($pads, $this->createMock(PadSessionRevoker::class), $folders, $this->createMock(LoggerInterface::class));
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle(new NodeDeletedEvent($node));
+	}
+
+	/** Without NodeDeletedEvent, a walk stopped short queues no folder job. */
+	public function testAFailedDeleteQueuesNoJob(): void {
+		$node = $this->createMock(Folder::class);
+		$node->method('getId')->willReturn(7);
+		$pads = $this->createMock(ProtectedPadsOfNode::class);
+		$pads->method('of')->willReturn(new ProtectedPadsFound([], true));
+		$folders = $this->createMock(FolderSessionRevoker::class);
+		$folders->expects($this->never())->method('queue');
+		$listener = new RevokeSessionsOnDeleteListener($pads, $this->createMock(PadSessionRevoker::class), $folders, $this->createMock(LoggerInterface::class));
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
 	}
 
 	public function testNothingStopsTheDelete(): void {
@@ -112,7 +205,7 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with('Could not revoke the Etherpad sessions of pads leaving Files; they will expire on their own.', $this->anything());
 
-		(new RevokeSessionsOnDeleteListener($pads, $this->createMock(PadSessionRevoker::class), $logger))
+		(new RevokeSessionsOnDeleteListener($pads, $this->createMock(PadSessionRevoker::class), $this->createMock(FolderSessionRevoker::class), $logger))
 			->handle(new BeforeNodeDeletedEvent($this->createMock(File::class)));
 	}
 }

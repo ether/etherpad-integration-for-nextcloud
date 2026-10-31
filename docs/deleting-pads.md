@@ -31,8 +31,13 @@ The pad stays as it is, and nothing is written into the file.
   slow to answer - a background job takes within minutes, while the file
   stays in the trash; a file restored keeps what is left, and its next
   open makes a new session. A folder with more than 100 protected pads
-  takes the sessions of the first 100 found; the others expire on their
-  own, within six hours.
+  takes the sessions of the first 100 found, and a background job finds the
+  others within minutes under a system cron, while the folder stays in the
+  trash. Where the file cache no longer has the folder by then - deleted
+  from the trash before the job runs, or moved to a trash under new ids, as
+  on a storage with a wrapped cache - the others' sessions expire on their
+  own, within six hours, as they do for a folder deleted past the trash,
+  unless the pad goes first.
 - **A public pad** stays reachable by its link, and can be written into.
   The file in the trash is not synced, so what is written there is in the
   pad, not in the file's snapshot; a restore brings it back with the pad.

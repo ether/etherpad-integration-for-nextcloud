@@ -161,6 +161,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
+	public function gt(string $column, string $operand): \Closure {
+		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) > (int)$this->operand($row, $operand);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
 	public function in(string $column, string $parameter): \Closure {
 		return fn (array $row): bool => in_array($this->value($row, $column), (array)$this->parameters[$parameter], false);
 	}

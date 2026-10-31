@@ -40,8 +40,8 @@ use Psr\Log\LoggerInterface;
  * budget (PadSessionRevoker), and MAX_FOLDERS folders. Every CHUNK folders
  * of a level take up to two queries, whose limits bound what they return,
  * not what the database reads or how long that takes.
- * What it does not reach keeps its sessions until they expire, within six
- * hours, with a line that says so.
+ * What it does not reach is a job's to find (FolderSessionRevoker), with a
+ * line that says so.
  */
 class ProtectedPadsOfNode {
 	private const DIRECTORY = 'httpd/unix-directory';
@@ -70,13 +70,12 @@ class ProtectedPadsOfNode {
 	) {
 	}
 
-	/** @return list<string> */
-	public function of(Node $node): array {
+	public function of(Node $node): ProtectedPadsFound {
 		if (!$node instanceof Folder) {
-			return $this->padsOf('file_id', [$node->getId()], 1);
+			return new ProtectedPadsFound($this->padsOf('file_id', [$node->getId()], 1));
 		}
 		if (!$this->anyProtectedPad()) {
-			return [];
+			return new ProtectedPadsFound([]);
 		}
 		$directory = $this->mimeTypes->getId(self::DIRECTORY);
 		$pads = [];
@@ -106,15 +105,16 @@ class ProtectedPadsOfNode {
 			}
 			$level = $next;
 		}
-		if (count($pads) > static::MAX_PADS || $foldersLeft) {
-			$this->logger->info('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', [
+		$stoppedShort = count($pads) > static::MAX_PADS || $foldersLeft;
+		if ($stoppedShort) {
+			$this->logger->info('A folder being deleted holds more than a delete takes the sessions of.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $node->getId(),
 				'pads' => count($pads),
 				'folders' => $walked,
 			]);
 		}
-		return array_slice($pads, 0, static::MAX_PADS);
+		return new ProtectedPadsFound(array_slice($pads, 0, static::MAX_PADS), $stoppedShort);
 	}
 
 	/**

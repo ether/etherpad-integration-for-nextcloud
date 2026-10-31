@@ -607,4 +607,23 @@ class BindingServiceTest extends TestCase {
 		$deletedAt = $state === BindingService::STATE_PENDING_DELETE ? 100 : null;
 		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
 	}
+
+	/** A page goes by file id, whatever order the table has them in, past the row named and no further than its limit. */
+	public function testAPageOfProtectedPadsGoesByFileId(): void {
+		$row = static fn (int $fileId, string $mode = BindingService::ACCESS_PROTECTED, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => $mode, 'state' => $state];
+		$table = new InMemoryBindingTable([
+			$row(30),
+			$row(10),
+			$row(25, BindingService::ACCESS_PUBLIC),
+			$row(20),
+			$row(26, BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE),
+			$row(40),
+		]);
+		$bindings = new BindingService($table, new FixedClock());
+
+		$this->assertSame([20 => 'pad-20', 30 => 'pad-30'], $bindings->activeProtectedPadsAfter(10, 2));
+		$this->assertSame([40 => 'pad-40'], $bindings->activeProtectedPadsAfter(30, 2));
+		$this->assertSame([], $bindings->activeProtectedPadsAfter(40, 2));
+		$this->assertSame(0, $table->openResults, 'each result closed');
+	}
 }

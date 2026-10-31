@@ -38,6 +38,7 @@ const dav = `remote.php/dav/files/${encodeURIComponent(target.user)}`
 // one count, not rows added.
 const groups = [...new Set(pads.map((pad) => pad.padId.split('$')[0]))]
 const groupsWithRevocation = () => Number(sqlValue(`select count(*) from oc_jobs where class like '%RevokeGroupSessionsJob' and argument in (${groups.map((group) => `'${JSON.stringify({ groupId: group })}'`).join(',')})`))
+const folderRevocationJobs = () => Number(sqlValue("select count(*) from oc_jobs where class like '%RevokeFolderSessionsJob'"))
 
 // The folder the pads are in: one, as seed-pads.mjs makes it with
 // --per-folder at least --pads.
@@ -75,6 +76,7 @@ const name = folder.split('/').pop()
 async function trashAndRestore() {
 	const trash = await measured('DELETE', `${dav}/${folder}`, {}, [204])
 	const revoking = groupsWithRevocation()
+	const folderJobs = folderRevocationJobs()
 	// The trash names the folder after its name and when it was deleted.
 	const listing = await request(target, 'PROPFIND', `remote.php/dav/trashbin/${encodeURIComponent(target.user)}/trash`, { headers: { Depth: '1' } })
 	const item = [...(listing.body.text ?? '').matchAll(/<d:href>[^<]*\/trash\/([^<]+?)\/?<\/d:href>/g)].map((m) => decodeURIComponent(m[1])).find((entry) => entry.startsWith(`${name}.d`))
@@ -85,7 +87,7 @@ async function trashAndRestore() {
 		Destination: `${target.base}/remote.php/dav/trashbin/${encodeURIComponent(target.user)}/restore/${encodeURIComponent(name)}`,
 	// WebDAV answers a MOVE with 201, or 204 where the target was there.
 	}, [201, 204])
-	return { trash: { ...trash, groups: groups.length, groupsWithRevocationJob: revoking }, restore }
+	return { trash: { ...trash, groups: groups.length, groupsWithRevocationJob: revoking, folderRevocationJobs: folderJobs }, restore }
 }
 
 const report = {

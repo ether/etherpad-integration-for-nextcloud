@@ -110,10 +110,12 @@ through the admin's pending pad check until no row waits, a run takes
 none, or 50 runs are done; each run says how many rows are left.
 `trash-folder.mjs` puts a folder of opened pads in the trash and restores
 it. Both report the time of each request and the Etherpad calls in it.
-A folder put in the trash queues a `RevokeGroupSessionsJob` for each of
-its groups, and only cron runs them, which the stack has none of: they
-stay in `oc_jobs`, one for each group, and `trash-folder.mjs` reports how
-many of its folder's groups have one.
+A folder put in the trash queues a `RevokeGroupSessionsJob` for each group
+its walk reached, 100 at most, and past those a `RevokeFolderSessionsJob`
+that finds the rest. Only cron runs them, which the stack has none of: they
+stay in `oc_jobs`, and `trash-folder.mjs` reports how many of its folder's
+groups have a job, and how many folder jobs wait. Past 100 pads, fewer
+groups have one than the folder holds, and that loses none.
 
 ## Large tables
 

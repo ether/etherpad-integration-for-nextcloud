@@ -50,11 +50,12 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$mimeTypes->method('getId')->with('httpd/unix-directory')->willReturn(self::DIRECTORY);
 		$pads = new ProtectedPadsOfNode($table, $mimeTypes, $this->createMock(LoggerInterface::class));
 
-		$this->assertSame(['pad-11', 'pad-21', 'pad-31'], $pads->of($this->folder(10)));
-		$this->assertSame(['pad-31'], $pads->of($this->folder(30)));
-		$this->assertSame(['pad-41'], $pads->of($this->file(41)));
-		$this->assertSame([], $pads->of($this->file(12)), 'a public pad');
-		$this->assertSame([], $pads->of($this->file(99)), 'a file without a row');
+		$this->assertSame(['pad-11', 'pad-21', 'pad-31'], $pads->of($this->folder(10))->pads);
+		$this->assertSame(['pad-31'], $pads->of($this->folder(30))->pads);
+		$this->assertSame(['pad-41'], $pads->of($this->file(41))->pads);
+		$this->assertSame([], $pads->of($this->file(12))->pads, 'a public pad');
+		$this->assertSame([], $pads->of($this->file(99))->pads, 'a file without a row');
+		$this->assertSame(1, end($table->limits), 'a file has one row at most');
 	}
 
 	/**
@@ -69,7 +70,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
 		$mimeTypes->expects($this->never())->method('getId');
 
-		$this->assertSame([], (new ProtectedPadsOfNode($table, $mimeTypes, $this->createMock(LoggerInterface::class)))->of($this->folder(10)));
+		$this->assertSame([], (new ProtectedPadsOfNode($table, $mimeTypes, $this->createMock(LoggerInterface::class)))->of($this->folder(10))->pads);
 	}
 
 	/**
@@ -80,9 +81,11 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$table = $this->folderOfPads(150);
 		$logger = $this->createMock(LoggerInterface::class);
 		// The line counts the pads found, one past those taken.
-		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 1));
+		$logger->expects($this->once())->method('info')->with('A folder being deleted holds more than a delete takes the sessions of.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['pads'] === 101 && $context['folders'] === 1));
 
-		$pads = $this->walk($table, $logger)->of($this->folder(10));
+		$found = $this->walk($table, $logger)->of($this->folder(10));
+		$pads = $found->pads;
+		$this->assertTrue($found->stoppedShort);
 
 		$this->assertCount(100, $pads);
 		$this->assertLessThanOrEqual(101, max($table->returned), 'no query returns more than one past the room');
@@ -104,7 +107,9 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 2));
 
-		$this->assertCount(100, $this->walk(new InMemoryBindingTable($rows, $cached), $logger)->of($this->folder(10)));
+		$found = $this->walk(new InMemoryBindingTable($rows, $cached), $logger)->of($this->folder(10));
+		$this->assertCount(100, $found->pads);
+		$this->assertTrue($found->stoppedShort);
 	}
 
 	/**
@@ -126,7 +131,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 501));
 
-		$this->assertCount(100, $this->walk($table, $logger)->of($this->folder(10)));
+		$this->assertCount(100, $this->walk($table, $logger)->of($this->folder(10))->pads);
 		$this->assertCount(4, $table->returned, 'the look at the table, both queries of the first level, the pads of the first chunk');
 	}
 
@@ -134,7 +139,9 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method('info');
 
-		$this->assertCount(100, $this->walk($this->folderOfPads(100), $logger)->of($this->folder(10)));
+		$found = $this->walk($this->folderOfPads(100), $logger)->of($this->folder(10));
+		$this->assertCount(100, $found->pads);
+		$this->assertFalse($found->stoppedShort);
 	}
 
 	/** Folder 10 with $count files of protected pads in it. */
@@ -167,7 +174,10 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['folders'] === 10));
 
-		$this->tenFolderWalk($table, $logger)->of($this->folder(10));
+		$found = $this->tenFolderWalk($table, $logger)->of($this->folder(10));
+
+		$this->assertSame([], $found->pads);
+		$this->assertTrue($found->stoppedShort, 'a walk stopped short with no pad found says so too');
 
 		$this->assertLessThanOrEqual(10, max($table->returned), 'no query returns more than one past the room');
 		// The look at the table, then pads and folders of the first level, and only pads of the second.
@@ -190,7 +200,9 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['folders'] === 10));
 
-		$this->assertSame([], $this->tenFolderWalk($table, $logger)->of($this->folder(10)));
+		$found = $this->tenFolderWalk($table, $logger)->of($this->folder(10));
+		$this->assertSame([], $found->pads);
+		$this->assertTrue($found->stoppedShort);
 	}
 
 	public function testATreeThatFitsTheWalkExactlyIsWalkedWhole(): void {
@@ -203,7 +215,9 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method('info');
 
-		$this->assertSame(['pad-200'], $this->tenFolderWalk($table, $logger)->of($this->folder(10)));
+		$found = $this->tenFolderWalk($table, $logger)->of($this->folder(10));
+		$this->assertSame(['pad-200'], $found->pads);
+		$this->assertFalse($found->stoppedShort);
 	}
 
 	/** @return array<string,mixed> */
