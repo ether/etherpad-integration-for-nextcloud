@@ -78,7 +78,9 @@ run has to do, and its log says why:
 
 - A push that changes nothing the suite runs on starts no suite, if the run
   of the commit before passed. Otherwise it runs: a push right after another
-  cancels that one's run, and nothing else would test its code.
+  cancels that one's run, and nothing else would test its code. That passed
+  run merged an older base if the base has moved since, as with any pull
+  request nobody pushes to: GitHub starts no run for the base moving.
 - The cases tagged `@slow` run only where the pull request touches what they
   hold (`SLOW_PATHS`), and always at night. A new case that takes a minute or
   more gets the tag; `tests/js/e2e-ci-scope.test.js` holds the list to files

@@ -44,6 +44,7 @@ export const SLOW_PATHS = [
 	'lib/Service/EtherpadClient.php',
 	'lib/Service/GoneFileSweep.php',
 	'lib/Service/ManagedPadLifecycle.php',
+	'lib/Service/PadSessionService.php',
 	'lib/Service/ProtectedPads*.php',
 	'lib/Service/RunBudget.php',
 	'lib/Service/SessionDeletes.php',

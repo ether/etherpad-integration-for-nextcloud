@@ -50,6 +50,13 @@ jobs:
     name: What this run has to do
     # Reads the previous workflow result. Only this job needs Actions read
     # access; the stack jobs keep Contents read access only.
+    #
+    # It runs the pull request's script with that token, as the workflow itself
+    # comes from the pull request too. On pull_request GitHub limits a fork's
+    # token to reading, and on a public repository that reaches nothing
+    # private. Moved to pull_request_target or a private repository, the
+    # decision and the token belong in base-branch code, with the checkout only
+    # read.
     permissions:
       contents: read
       actions: read
