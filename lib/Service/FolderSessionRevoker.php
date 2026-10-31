@@ -72,11 +72,13 @@ class FolderSessionRevoker {
 			$folder = $this->bindingService->placeOf($folderId);
 			if ($folder === null) {
 				$this->logger->info('A folder deleted has left the file cache; the sessions of the protected pads a delete did not reach expire on their own.', $context);
-				return ['after' => $after, 'ended' => true, 'failed' => false];
+				$result['ended'] = true;
+				return $result;
 			}
 			if ($this->bindingService->anyInFiles([$folderId => $folder])) {
 				$this->logger->info('A folder deleted is back in Files; its protected pads keep their sessions.', $context);
-				return ['after' => $after, 'ended' => true, 'failed' => false];
+				$result['ended'] = true;
+				return $result;
 			}
 			while (!$budget->exhausted()) {
 				$pads = $this->bindingService->activeProtectedPadsAfter($result['after'], self::PAGE);
