@@ -400,8 +400,8 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A public pad under a name this app does not give came in by an Ownpad
-	 * import and may be another installation's: it loses only its row,
+	 * A public pad under a name this app does not give came in by a shortcut
+	 * file and may be another installation's: it loses only its row,
 	 * Etherpad is not asked, and the line names the file, not the pad. A
 	 * group pad under such a name came in past the admin's switch, and goes.
 	 */
