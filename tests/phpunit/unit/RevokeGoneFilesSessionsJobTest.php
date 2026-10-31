@@ -11,7 +11,7 @@ use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-/** Whether one run was enough: back with only what is left, after a minute or backed off, and then given up. */
+/** The batch's argument and what it says; whether a run was enough is ResumingJob's, which RevokeFolderSessionsJobTest holds to its rules. */
 class RevokeGoneFilesSessionsJobTest extends TestCase {
 	private const NOW = 1_000_000;
 
@@ -19,100 +19,76 @@ class RevokeGoneFilesSessionsJobTest extends TestCase {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->never())->method('scheduleAfter');
 
-		$this->start(['left' => [], 'failed' => false], $jobList, ['fileIds' => [1, 2]], [1, 2]);
+		$this->start(['left' => [], 'failed' => false], $jobList, ['groupIds' => ['g.one', 'g.two']], ['g.one', 'g.two']);
 	}
 
-	public function testComesBackAfterAMinuteWithWhatIsLeft(): void {
+	public function testComesBackWithOnlyWhatIsLeft(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['fileIds' => [2]]);
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['groupIds' => ['g.two']]);
 
-		$this->start(['left' => [2], 'failed' => false], $jobList, ['fileIds' => [1, 2]], [1, 2]);
+		$this->start(['left' => ['g.two'], 'failed' => false], $jobList, ['groupIds' => ['g.one', 'g.two']], ['g.one', 'g.two']);
 	}
 
-	/** @return iterable<string, array{array<string,mixed>, int, int}> */
-	public static function backoff(): iterable {
-		yield 'the first, naming no attempt yet' => [[], 60, 1];
-		yield 'the second' => [['attempt' => 1], 300, 2];
-		yield 'the third' => [['attempt' => 2], 900, 3];
-	}
-
-	/** @param array<string,mixed> $attempt */
-	#[\PHPUnit\Framework\Attributes\DataProvider('backoff')]
-	public function testBacksOffAFailureWithoutProgress(array $attempt, int $delay, int $next): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + $delay, ['fileIds' => [1, 2], 'attempt' => $next]);
-
-		$this->start(['left' => [1, 2], 'failed' => true], $jobList, ['fileIds' => [1, 2]] + $attempt, [1, 2]);
-	}
-
-	/** A run its budget ended before it got further backs off too, or the next would do the same, without end. */
+	/** A run that got nowhere backs off, or the next would do the same, without end. */
 	public function testARunThatGotNowhereBacksOff(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['fileIds' => [1], 'attempt' => 1]);
+		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['groupIds' => ['g.one'], 'attempt' => 1]);
 
-		$this->start(['left' => [1], 'failed' => false], $jobList, ['fileIds' => [1]], [1]);
+		$this->start(['left' => ['g.one'], 'failed' => false], $jobList, ['groupIds' => ['g.one']], ['g.one']);
 	}
 
-	public function testProgressStartsTheBackoffOver(): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['fileIds' => [2], 'attempt' => 1]);
-
-		$this->start(['left' => [2], 'failed' => true], $jobList, ['fileIds' => [1, 2], 'attempt' => 2], [1, 2]);
-	}
-
-	public function testGivesUpAfterThreeRetriesWithoutProgress(): void {
+	/** Giving up names how many groups, and one to look for. */
+	public function testGivesUpNamingAGroupToLookFor(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects($this->never())->method('scheduleAfter');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'), ['app' => 'etherpad_nextcloud', 'files' => 2]);
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Gave up'), ['app' => 'etherpad_nextcloud', 'groups' => 2, 'groupId' => 'g.one']);
 
-		$this->start(['left' => [1, 2], 'failed' => true], $jobList, ['fileIds' => [1, 2], 'attempt' => 3], [1, 2], $logger);
+		$this->start(['left' => ['g.one', 'g.two'], 'failed' => true], $jobList, ['groupIds' => ['g.one', 'g.two'], 'attempt' => 3], ['g.one', 'g.two'], $logger);
 	}
 
 	public function testANextRunThatCannotBeQueuedSaysSo(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('database went away'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not queue'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['files'] === 1 && isset($context['error'])));
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('Could not queue'), $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['groups'] === 1 && $context['groupId'] === 'g.two' && isset($context['error'])));
 
-		$this->start(['left' => [2], 'failed' => false], $jobList, ['fileIds' => [1, 2]], [1, 2], $logger);
+		$this->start(['left' => ['g.two'], 'failed' => false], $jobList, ['groupIds' => ['g.one', 'g.two']], ['g.one', 'g.two'], $logger);
 	}
 
 	/** @return iterable<string, array{mixed}> */
 	public static function notArguments(): iterable {
 		yield 'not an array' => ['10'];
-		yield 'no files' => [['attempt' => 1]];
-		yield 'an empty list' => [['fileIds' => []]];
-		yield 'no file id among them' => [['fileIds' => [0, -3, 'x']]];
+		yield 'no groups' => [['attempt' => 1]];
+		yield 'an empty list' => [['groupIds' => []]];
+		yield 'no group among them' => [['groupIds' => ['', 5, [5, 6], null]]];
 	}
 
 	/** @param mixed $argument */
 	#[\PHPUnit\Framework\Attributes\DataProvider('notArguments')]
-	public function testAnArgumentNamingNoFileDoesNothing($argument): void {
+	public function testAnArgumentNamingNoGroupDoesNothing($argument): void {
 		$revoker = $this->createMock(GoneFileSessionRevoker::class);
 		$revoker->expects($this->never())->method('pass');
 
 		$this->run_($revoker, $this->createMock(IJobList::class), $argument);
 	}
 
-	/** Stored job arguments may be malformed: text counts as the number it says, what is no file id is left out, a negative attempt as none. */
-	public function testReadsAMalformedArgument(): void {
+	/** What is no group's id is left out, and what is stays in order. */
+	public function testLeavesOutWhatIsNoGroup(): void {
 		$revoker = $this->createMock(GoneFileSessionRevoker::class);
-		$revoker->expects($this->once())->method('pass')->with([7, 9])->willReturn(['left' => [7, 9], 'failed' => true]);
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects($this->once())->method('scheduleAfter')->with(RevokeGoneFilesSessionsJob::class, self::NOW + 60, ['fileIds' => [7, 9], 'attempt' => 1]);
+		$revoker->expects($this->once())->method('pass')->with(['g.one', 'g.two'])->willReturn(['left' => [], 'failed' => false]);
 
-		$this->run_($revoker, $jobList, ['fileIds' => ['7', 0, 9, -2], 'attempt' => -4]);
+		$this->run_($revoker, $this->createMock(IJobList::class), ['groupIds' => [5, 'g.one', '', [1], 'g.two']]);
 	}
 
 	/**
-	 * @param array{left:list<int>,failed:bool} $pass
+	 * @param array{left:list<string>,failed:bool} $pass
 	 * @param array<string,mixed> $argument
-	 * @param list<int> $fileIds
+	 * @param list<string> $groupIds
 	 */
-	private function start(array $pass, IJobList $jobList, array $argument, array $fileIds, ?LoggerInterface $logger = null): void {
+	private function start(array $pass, IJobList $jobList, array $argument, array $groupIds, ?LoggerInterface $logger = null): void {
 		$revoker = $this->createMock(GoneFileSessionRevoker::class);
-		$revoker->expects($this->once())->method('pass')->with($fileIds)->willReturn($pass);
+		$revoker->expects($this->once())->method('pass')->with($groupIds)->willReturn($pass);
 		$this->run_($revoker, $jobList, $argument, $logger);
 	}
 
