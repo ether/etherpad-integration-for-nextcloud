@@ -18,6 +18,8 @@ use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
+use OCP\Files\Node;
+use OCP\Files\Folder;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -59,10 +61,10 @@ class RevokeSessionsOnDeleteListener implements IEventListener {
 			if ($event instanceof BeforeNodeDeletedEvent) {
 				$node = $event->getNode();
 				// A failed delete of this node may have left its entry here.
-				// It goes before the walk, so a walk that finds nothing, or
-				// throws, leaves nothing of it to revoke.
+				// It goes before the walk, so a walk that finds nothing, or a
+				// file's that throws, leaves nothing of it to revoke.
 				unset($this->pending[$node->getId()]);
-				$found = $this->protectedPads->of($node);
+				$found = $this->walk($node);
 				if ($found->pads !== [] || $found->stoppedShort) {
 					$this->pending[$node->getId()] = $found;
 				}
@@ -85,6 +87,23 @@ class RevokeSessionsOnDeleteListener implements IEventListener {
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
 			]);
+		}
+	}
+
+	/** A folder's walk that fails stops short of everything: the job finds its pads by the rows, without it. */
+	private function walk(Node $node): ProtectedPadsFound {
+		try {
+			return $this->protectedPads->of($node);
+		} catch (\Throwable $e) {
+			if (!$node instanceof Folder) {
+				throw $e;
+			}
+			$this->logger->warning('Could not walk a folder being deleted for its protected pads.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $node->getId(),
+				...SafeError::context($e),
+			]);
+			return new ProtectedPadsFound([], true);
 		}
 	}
 }

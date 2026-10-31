@@ -140,6 +140,38 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 		}
 	}
 
+	/** A folder's walk that throws still hands the folder to the job, which needs no walk; nothing stops the delete. */
+	public function testAFolderWhoseWalkThrowsStillGoesToAJob(): void {
+		$node = $this->createMock(Folder::class);
+		$node->method('getId')->willReturn(7);
+		$pads = $this->createMock(ProtectedPadsOfNode::class);
+		$pads->method('of')->willThrowException(new \RuntimeException('lock wait timeout'));
+		$revoker = $this->createMock(PadSessionRevoker::class);
+		$revoker->expects($this->never())->method('revokeForPads');
+		$folders = $this->createMock(FolderSessionRevoker::class);
+		$folders->expects($this->once())->method('queue')->with(7);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Could not walk a folder being deleted for its protected pads.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 7 && isset($context['error'])));
+		$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $folders, $logger);
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle(new NodeDeletedEvent($node));
+	}
+
+	/** A file's that throws has no folder to look under, and leaves nothing. */
+	public function testAFileWhoseLookUpThrowsQueuesNoJob(): void {
+		$node = $this->createMock(File::class);
+		$node->method('getId')->willReturn(7);
+		$pads = $this->createMock(ProtectedPadsOfNode::class);
+		$pads->method('of')->willThrowException(new \RuntimeException('lock wait timeout'));
+		$folders = $this->createMock(FolderSessionRevoker::class);
+		$folders->expects($this->never())->method('queue');
+		$listener = new RevokeSessionsOnDeleteListener($pads, $this->createMock(PadSessionRevoker::class), $folders, $this->createMock(LoggerInterface::class));
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle(new NodeDeletedEvent($node));
+	}
+
 	/** A walk that reached the end leaves the job out. */
 	public function testAWalkThatReachedTheEndQueuesNoJob(): void {
 		$node = $this->createMock(Folder::class);

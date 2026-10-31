@@ -91,7 +91,7 @@ class FolderSessionRevoker {
 					$groupId = PadId::groupIdOf($padId);
 					if ($groupId !== null && !isset($queued[$groupId]) && self::isUnder($places[$fileId] ?? null, $folder)) {
 						if ($budget->exhausted()) {
-							break 2;
+							break;
 						}
 						if (!$this->groupSessions->queue($groupId)) {
 							$result['failed'] = true;

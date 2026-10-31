@@ -94,6 +94,9 @@ class FolderSessionRevokerTest extends TestCase {
 	 */
 	public function testStopsInAPageWhenTheBudgetIsSpent(): void {
 		[$rows, $cached] = $this->folderOfRows(1000, 3);
+		// A row beside the folder after the one left: the cursor stays before that one.
+		$rows[] = $this->row(1003, 'beside');
+		$cached[] = $this->cached(1003, 'files/1003.pad');
 		$queued = [];
 		$clock = new class extends TestClock {
 			public int $at = 1000;
