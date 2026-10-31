@@ -448,6 +448,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		yield 'a restored pad' => ['r-old-pad-abc123def456'];
 		yield 'a new pad in capitals' => ['Nc-' . str_repeat('A', 24)];
 		yield 'a restored pad in capitals' => ['R-OLD-PAD-ABC123DEF456'];
+		// U+212A, which JavaScript's toLowerCase() takes to a plain k too.
+		yield 'a capital only Unicode lowers to plain ASCII' => ["nc-\u{212A}" . str_repeat('a', 23)];
 	}
 
 	/**

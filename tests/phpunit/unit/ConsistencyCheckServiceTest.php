@@ -162,6 +162,18 @@ class ConsistencyCheckServiceTest extends TestCase {
 		}
 	}
 
+	/** A row another flow changed after it was read marks nothing, and says so: no line, as no word took effect. */
+	public function testARowChangedAfterItWasReadIsNotMarked(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->with(7)->willReturn(new Binding(fileId: 7, padId: 'nc-' . str_repeat('a', 24), accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$bindings->method('isFileGone')->willReturn(true);
+		$bindings->expects($this->once())->method('markGone')->with([7])->willReturn(0);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, (new ConsistencyCheckService(new InMemoryBindingTable([], []), $bindings, $logger))->markVanishedFile(7));
+	}
+
 	/**
 	 * Once the row is gone, nothing is left that can fail before the log
 	 * has the pad's id: the file cache is asked before, and not again. A
