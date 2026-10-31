@@ -669,8 +669,11 @@ test.describe('pads of team folder files deleted for good', () => {
 		try {
 			const paths = ['forgotten', 'deleted', 'rest'].map((label) => `${other}/${uniquePadName(label)}`)
 			const pads: string[] = []
+			let origin = ''
 			for (const [index, path] of paths.entries()) {
-				pads.push(padIdOfPadUrl((await padInTeam(path, index === 1 ? 'protected' : 'public')).padUrl))
+				const { padUrl } = await padInTeam(path, index === 1 ? 'protected' : 'public')
+				origin = new URL(padUrl).origin
+				pads.push(padIdOfPadUrl(padUrl))
 				made.pop()
 			}
 			padIds.push(...pads)
@@ -679,8 +682,7 @@ test.describe('pads of team folder files deleted for good', () => {
 			padIds.push(importedPad)
 			await etherpadApiPost('createPad', { padID: importedPad })
 			const importedPath = `${other}/${uniquePadName('imported')}`
-			await putFileViaDav(importedPath, `[InternetShortcut]\nURL=${new URL((await padInTeam(`${other}/${uniquePadName('origin')}`)).padUrl).origin}/p/${importedPad}\n`)
-			made.pop()
+			await putFileViaDav(importedPath, `[InternetShortcut]\nURL=${origin}/p/${importedPad}\n`)
 			const importedFile = await propfindFileId(importedPath)
 			const bound = await padApiPost(`pads/initialize-by-id/${importedFile}`)
 			expect(bound.status, JSON.stringify(bound.body)).toBe(200)
