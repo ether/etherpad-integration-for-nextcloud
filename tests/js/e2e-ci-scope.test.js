@@ -3,9 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { describe, it, expect } from 'vitest'
-import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
-import { RUNTIME_PATHS, SLOW_PATHS, changedPaths, decide, touches } from '../e2e/ci-scope.mjs'
+import { readFileSync } from 'node:fs'
+import { RUNTIME_PATHS, changedPaths, decide, touches } from '../e2e/ci-scope.mjs'
 import { summary, timesOf } from '../e2e/slowest-tests.mjs'
 
 const push = {
@@ -13,7 +12,6 @@ const push = {
 	action: 'synchronize',
 	pushedFiles: ['docs/architecture.md'],
 	previousConclusion: 'success',
-	prFiles: ['docs/architecture.md'],
 }
 
 describe('whether the suite runs', () => {
@@ -39,32 +37,14 @@ describe('whether the suite runs', () => {
 	})
 })
 
-describe('whether the slow cases run', () => {
-	it('leaves them out of a pull request that touches nothing they hold', () => {
-		const scope = decide({ ...push, pushedFiles: ['src/viewer.js'], prFiles: ['src/viewer.js', 'lib/Controller/EmbedController.php'] })
-		expect(scope).toMatchObject({ run: true, slow: false })
-	})
-
-	it.each(SLOW_PATHS.map((glob) => [glob.replace('**', 'any.txt').replace('*', 'Any')]))('takes them for %s', (file) => {
-		expect(decide({ ...push, prFiles: [file] }).slow).toBe(true)
-	})
-
-	it('goes by the whole pull request, not the push', () => {
-		const scope = decide({ ...push, pushedFiles: ['src/viewer.js'], prFiles: ['src/viewer.js', 'lib/Service/SessionDeletes.php'] })
-		expect(scope.slow).toBe(true)
-	})
-
-	it('takes them when the pull request cannot be told', () => {
-		expect(decide({ ...push, prFiles: null }).slow).toBe(true)
-	})
-
-	it.each(['schedule', 'workflow_dispatch'])('takes everything when started by %s', (event) => {
-		expect(decide({ event })).toMatchObject({ run: true, slow: true })
+describe('what else it says', () => {
+	it.each(['schedule', 'workflow_dispatch'])('runs when started by %s', (event) => {
+		expect(decide({ event }).run).toBe(true)
 	})
 
 	it('says why, so a run\'s log explains itself', () => {
 		expect(decide({ ...push, previousConclusion: 'cancelled' }).why).toContain('cancelled')
-		expect(decide({ ...push, action: 'opened', prFiles: ['src/a.js'] }).why).toContain('without the slow cases')
+		expect(decide(push).why).toContain('the run before passed')
 	})
 })
 
@@ -76,28 +56,16 @@ describe('the paths', () => {
 	})
 
 	it('match a star within a folder, and two stars across them', () => {
-		expect(touches(['lib/Service/GroupSessionRevoker.php'], ['lib/Service/*SessionRevoker.php'])).toBe(true)
-		expect(touches(['lib/Service/Sub/GroupSessionRevoker.php'], ['lib/Service/*SessionRevoker.php'])).toBe(false)
-		expect(touches(['tests/e2e/docker/a/b.sh'], ['tests/e2e/docker/**'])).toBe(true)
-		expect(touches(['lib/Service/SessionDeletesXphp'], ['lib/Service/SessionDeletes.php'])).toBe(false)
+		expect(touches(['lib/a/b.php'], ['lib/*/b.php'])).toBe(true)
+		expect(touches(['lib/a/c/b.php'], ['lib/*/b.php'])).toBe(false)
+		expect(touches(['lib/a/c/b.php'], ['lib/**'])).toBe(true)
+		expect(touches(['scripts/app-file-excludesXsh'], ['scripts/app-file-excludes.sh'])).toBe(false)
 	})
 
 	it('are the ones e2e.yml starts on', () => {
 		const workflow = readFileSync('.github/workflows/e2e.yml', 'utf8')
 		const block = workflow.slice(workflow.indexOf('paths:'), workflow.indexOf('workflow_dispatch:'))
 		expect([...block.matchAll(/^\s+- '([^']+)'$/gm)].map((match) => match[1])).toEqual(RUNTIME_PATHS)
-	})
-
-	// A file renamed would otherwise take the cases out in silence.
-	it.each(SLOW_PATHS)('%s names a file there is', (glob) => {
-		const files = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).split('\n')
-		expect(touches(files, [glob])).toBe(true)
-	})
-
-	it('hold the cases tagged slow, and nothing else is', () => {
-		const tagged = readdirSync('tests/e2e/specs').filter((spec) => readFileSync(`tests/e2e/specs/${spec}`, 'utf8').includes('@slow'))
-		expect(tagged).toEqual(['pad-gone-for-good.spec.ts'])
-		expect(touches([`tests/e2e/specs/${tagged[0]}`], SLOW_PATHS)).toBe(true)
 	})
 })
 

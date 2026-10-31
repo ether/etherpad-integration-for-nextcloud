@@ -4,11 +4,9 @@
  */
 
 /**
- * What a pull request's e2e run has to do, to spare the shared runners what
- * tells nothing new: whether the suite runs at all for this push, and whether
- * it takes the cases tagged `@slow`. Whatever cannot be told counts as "yes":
- * a run too many costs minutes, a run too few hides a failure. The nightly run
- * takes everything.
+ * Whether a pull request's push has to run the e2e suite, to spare the shared
+ * runners what tells nothing new. Whatever cannot be told counts as "yes": a
+ * run too many costs minutes, a run too few hides a failure.
  *
  * Usage, from e2e.yml: node tests/e2e/ci-scope.mjs
  */
@@ -27,34 +25,6 @@ export const RUNTIME_PATHS = [
 	'tests/e2e/**',
 	'scripts/app-file-excludes.sh',
 	'package.json',
-	'package-lock.json',
-	'.github/workflows/e2e.yml',
-]
-
-/** What the `@slow` cases hold: deleting for good, revoking sessions, the jobs, and how the suite runs. */
-export const SLOW_PATHS = [
-	'lib/AppInfo/Application.php',
-	'lib/BackgroundJob/Revoke*.php',
-	'lib/BackgroundJob/ResumingJob.php',
-	'lib/BackgroundJob/SessionSweepJob.php',
-	'lib/Listeners/GoneFilesListener.php',
-	'lib/Listeners/RevokeSessions*.php',
-	'lib/Service/*SessionRevoker.php',
-	'lib/Service/BindingService.php',
-	'lib/Service/EtherpadClient.php',
-	'lib/Service/GoneFileSweep.php',
-	'lib/Service/ManagedPadLifecycle.php',
-	'lib/Service/PadSessionService.php',
-	'lib/Service/ProtectedPads*.php',
-	'lib/Service/RunBudget.php',
-	'lib/Service/SessionDeletes.php',
-	'lib/Util/EtherpadErrorClassifier.php',
-	'lib/Util/PadId.php',
-	'appinfo/**',
-	'tests/e2e/specs/pad-gone-for-good.spec.ts',
-	'tests/e2e/fixtures/**',
-	'tests/e2e/docker/**',
-	'tests/e2e/playwright.config.ts',
 	'package-lock.json',
 	'.github/workflows/e2e.yml',
 ]
@@ -84,32 +54,27 @@ export const touches = (files, globs) => {
  * @param {string} [scope.action] what happened to the pull request
  * @param {?string[]} [scope.pushedFiles] what this push changed; null when that cannot be told
  * @param {?string} [scope.previousConclusion] how the e2e run of the commit before ended; null without one
- * @param {?string[]} [scope.prFiles] what the whole pull request changes; null when that cannot be told
- * @returns {{run: boolean, slow: boolean, why: string}}
+ * @returns {{run: boolean, why: string}}
  */
-export const decide = ({ event, action, pushedFiles = null, previousConclusion = null, prFiles = null }) => {
+export const decide = ({ event, action, pushedFiles = null, previousConclusion = null }) => {
 	if (event !== 'pull_request') {
-		return { run: true, slow: true, why: `Started by ${event}` }
+		return { run: true, why: `Started by ${event}` }
 	}
-	// The whole pull request, not the push: the next push may touch something
-	// else, and the cases still have to hold what the pull request changed.
-	const slow = prFiles === null || touches(prFiles, SLOW_PATHS)
-	const slowWhy = slow ? 'with the slow cases' : 'without the slow cases: this pull request touches nothing they hold'
 	if (action !== 'synchronize') {
-		return { run: true, slow, why: `The pull request was ${action}; ${slowWhy}` }
+		return { run: true, why: `The pull request was ${action}` }
 	}
 	if (pushedFiles === null) {
-		return { run: true, slow, why: `What this push changed cannot be told; ${slowWhy}` }
+		return { run: true, why: 'What this push changed cannot be told' }
 	}
 	if (touches(pushedFiles, RUNTIME_PATHS)) {
-		return { run: true, slow, why: `This push changes what the suite runs on; ${slowWhy}` }
+		return { run: true, why: 'This push changes what the suite runs on' }
 	}
 	// The new run has cancelled one still going, so without this a push of
 	// tests right after one of code would leave that code untested.
 	if (previousConclusion !== 'success') {
-		return { run: true, slow, why: `The run before ended as ${previousConclusion ?? 'none'}, so nothing vouches for this commit; ${slowWhy}` }
+		return { run: true, why: `The run before ended as ${previousConclusion ?? 'none'}, so nothing vouches for this commit` }
 	}
-	return { run: false, slow, why: 'This push changes nothing the suite runs on, and the run before passed' }
+	return { run: false, why: 'This push changes nothing the suite runs on, and the run before passed' }
 }
 
 /**
@@ -146,9 +111,6 @@ const pushedFilesOf = (repository, before, after) => {
 const previousConclusionOf = (repository, before) =>
 	gh(`repos/${repository}/actions/workflows/e2e.yml/runs?head_sha=${before}&event=pull_request&per_page=1`).workflow_runs?.[0]?.conclusion ?? null
 
-/** The merge GitHub made: its first parent is the base it merges onto. Both names of a file renamed. */
-const prFilesOf = () => execFileSync('git', ['diff', '--name-only', '--no-renames', 'HEAD^1', 'HEAD'], { encoding: 'utf8' }).split('\n').filter(Boolean)
-
 /**
  * @template T
  * @param {() => T} answer
@@ -165,13 +127,12 @@ const attempt = (answer) => {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
 	const { EVENT: event = '', ACTION: action, REPOSITORY: repository = '', BEFORE: before = '', AFTER: after = '', GITHUB_OUTPUT: output = '' } = process.env
 	const synchronize = event === 'pull_request' && action === 'synchronize'
-	const { run, slow, why } = decide({
+	const { run, why } = decide({
 		event,
 		action,
 		pushedFiles: synchronize ? attempt(() => pushedFilesOf(repository, before, after)) : null,
 		previousConclusion: synchronize ? attempt(() => previousConclusionOf(repository, before)) : null,
-		prFiles: event === 'pull_request' ? attempt(prFilesOf) : null,
 	})
-	console.log(`${why}: run=${run}, slow=${slow}.`)
-	appendFileSync(output, `run=${run}\nslow=${slow}\n`)
+	console.log(`${why}: run=${run}.`)
+	appendFileSync(output, `run=${run}\n`)
 }

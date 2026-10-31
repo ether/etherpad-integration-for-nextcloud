@@ -73,27 +73,23 @@ newest on Etherpad 3, each split over two shards. Each shard has its own
 stack; the tests of a shard share it, one after the other. The nightly run
 takes every supported major, and Etherpad 2 on the newest too.
 
-To spare the shared runners, `ci-scope.mjs` decides in a pull request what a
-run has to do, and its log says why:
+To spare the shared runners, `ci-scope.mjs` decides whether a push of a pull
+request runs the suite at all, and its log says why. A push that changes
+nothing the suite runs on starts no suite, if the run of the commit before
+passed. Otherwise it runs: a push right after another cancels that one's run,
+and nothing else would test its code. That passed run merged an older base if
+the base has moved since, as with any pull request nobody pushes to: GitHub
+starts no run for the base moving.
 
-- A push that changes nothing the suite runs on starts no suite, if the run
-  of the commit before passed. Otherwise it runs: a push right after another
-  cancels that one's run, and nothing else would test its code. That passed
-  run merged an older base if the base has moved since, as with any pull
-  request nobody pushes to: GitHub starts no run for the base moving.
-- The cases tagged `@slow` run only where the pull request touches what they
-  hold (`SLOW_PATHS`), and always at night. A new case that takes a minute or
-  more gets the tag; `tests/js/e2e-ci-scope.test.js` holds the list to files
-  that exist.
+Cases that wait for background jobs do not wait for a job's due time: a query
+removes it (`fixtures/background-jobs.ts`), and `cron.php` runs the jobs as
+ever. Nightly runs set `E2E_REAL_JOB_WAIT=1` to retain scheduled delays. Set it
+explicitly for throwaway targets outside the Docker stack, whose database the
+helper cannot reach.
 
-Those cases do not wait for a job's due time: a query removes it
-(`fixtures/background-jobs.ts`), and `cron.php` runs the jobs as ever. Nightly
-runs set `E2E_REAL_JOB_WAIT=1` to retain scheduled delays. Set it explicitly
-for throwaway targets outside the Docker stack, whose database the helper
-cannot reach.
-
-Each job lists its slowest tests in its summary, and keeps
-`e2e-results.json` as an artifact for a week.
+Each job lists its slowest tests in its summary, and keeps `e2e-results.json`
+as an artifact for a week. Every test runs on every run, so that table is what
+shows a new case costing too much: look at it when adding one.
 
 The `setup` project logs in once per account and saves the sessions to
 `tests/e2e/.auth/` (gitignored); every spec reuses the stored

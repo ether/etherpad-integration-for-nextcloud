@@ -286,7 +286,7 @@ test.describe('pads of files deleted for good', () => {
 	}
 
 	/** Room for making the fixtures on top of what jobsTakeTheSessionsOf() waits, so it is what says why a case failed. */
-	const slowCaseTimeout = (E2E.realJobWait ? 15 : 7) * 60_000
+	const jobWaitTimeout = (E2E.realJobWait ? 15 : 7) * 60_000
 
 	/** HTTP calls to cron.php exercise Nextcloud's background-job runner, until none of the groups holds a session. */
 	const jobsTakeTheSessionsOf = async (groups: string[]): Promise<void> => {
@@ -313,9 +313,9 @@ test.describe('pads of files deleted for good', () => {
 	 */
 	const deletingBackOn = (): Promise<void> => setAppConfig('delete_pad_with_file', 'yes')
 
-	test('a folder past what a delete reaches loses its sessions in the background', { tag: '@slow' }, async () => {
+	test('a folder past what a delete reaches loses its sessions in the background', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
-		test.setTimeout(slowCaseTimeout)
+		test.setTimeout(jobWaitTimeout)
 		const folder = uniqueName('gone-sessions-past')
 		try {
 			const groups = await padsPastTheWalk(folder)
@@ -335,10 +335,10 @@ test.describe('pads of files deleted for good', () => {
 	 * through the deleted folder. Disabling pad deletion ensures that this
 	 * test cannot pass merely because the sweep deletes its group.
 	 */
-	test('a folder deleted for good loses its sessions with deleting off', { tag: '@slow' }, async () => {
+	test('a folder deleted for good loses its sessions with deleting off', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
 		test.skip(await misnumbersFolderFiles(), misnumbered)
-		test.setTimeout(slowCaseTimeout)
+		test.setTimeout(jobWaitTimeout)
 		const key = 'delete_pad_with_file'
 		const folder = uniqueName('gone-sessions-for-good')
 		try {
@@ -578,9 +578,9 @@ test.describe('pads of files deleted for good', () => {
 	 * files, or the job finds the file still in Files and ends. Deleting off
 	 * keeps the sweep from passing this by taking the group.
 	 */
-	test('a deleted account takes the sessions of those its pads were shared with', { tag: '@slow' }, async () => {
+	test('a deleted account takes the sessions of those its pads were shared with', async () => {
 		test.skip(!E2E.throwawayStack, 'It runs whatever jobs the instance has waiting.')
-		test.setTimeout(slowCaseTimeout)
+		test.setTimeout(jobWaitTimeout)
 		const key = 'delete_pad_with_file'
 		const owner = await createAccount(uniqueName('gone-sessions-owner'))
 		const sharee = await createAccount(uniqueName('gone-sessions-sharee'))

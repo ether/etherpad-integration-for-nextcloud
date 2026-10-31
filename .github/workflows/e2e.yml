@@ -62,12 +62,9 @@ jobs:
       actions: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
-      slow: ${{ steps.decide.outputs.slow }}
     steps:
-      # Fetch the merge commit's parents so the scope check can diff against its base.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
           persist-credentials: false
 
       - name: Decide from what changed
@@ -86,7 +83,7 @@ jobs:
     needs: decide
     if: needs.decide.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # Past three attempts of a slow case that hangs, at night with its real wait.
+    # Past three attempts of a case that waits for jobs and hangs, at night with its real wait.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 30 }}
     strategy:
       fail-fast: false
@@ -163,14 +160,8 @@ jobs:
         # fetch, and the browser-side exemption for the per-run CA.
         env:
           SHARD: ${{ matrix.shard }}
-          SLOW: ${{ needs.decide.outputs.slow }}
           E2E_REAL_JOB_WAIT: ${{ github.event_name == 'schedule' && '1' || '' }}
-        run: |
-          args=("--shard=$SHARD/2")
-          if [[ "$SLOW" != true ]]; then
-            args+=(--grep-invert @slow)
-          fi
-          bash tests/e2e/docker/run-suite.sh "${args[@]}"
+        run: bash tests/e2e/docker/run-suite.sh "--shard=$SHARD/2"
 
       # What Nextcloud and its other apps logged in the browser fails no
       # test; grouped on the run's page, the noise a new release brings
