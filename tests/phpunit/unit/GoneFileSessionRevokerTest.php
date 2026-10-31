@@ -169,7 +169,7 @@ class GoneFileSessionRevokerTest extends TestCase {
 	private function passing(array &$queued, ?string $refuses = null, ?TestClock $clock = null, ?callable $onQueue = null): GoneFileSessionRevoker {
 		$clock ??= new FixedClock(self::NOW);
 		$groups = $this->createMock(GroupSessionRevoker::class);
-		$groups->method('queue')->willReturnCallback(static function (string $groupId) use (&$queued, $refuses, $onQueue): bool {
+		$groups->method('queueUnlessWaiting')->willReturnCallback(static function (string $groupId) use (&$queued, $refuses, $onQueue): bool {
 			if ($groupId === $refuses) {
 				return false;
 			}

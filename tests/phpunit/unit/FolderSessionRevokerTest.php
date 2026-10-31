@@ -172,7 +172,7 @@ class FolderSessionRevokerTest extends TestCase {
 			return [11 => 'g.one$p-11'];
 		});
 		$groups = $this->createMock(GroupSessionRevoker::class);
-		$groups->expects($this->once())->method('queue')->with('g.one')->willReturn(true);
+		$groups->expects($this->once())->method('queueUnlessWaiting')->with('g.one')->willReturn(true);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with('Could not look through the rows for a deleted folder\'s protected pads.', $this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === self::FOLDER && isset($context['error'])));
 		$clock = new FixedClock();
@@ -316,7 +316,7 @@ class FolderSessionRevokerTest extends TestCase {
 	private function revoker(InMemoryBindingTable $table, array &$queued, ?string $refuses = null, ?TestClock $clock = null, ?callable $onQueue = null, ?LoggerInterface $logger = null): FolderSessionRevoker {
 		$clock ??= new FixedClock();
 		$groups = $this->createMock(GroupSessionRevoker::class);
-		$groups->method('queue')->willReturnCallback(static function (string $groupId) use (&$queued, $refuses, $onQueue): bool {
+		$groups->method('queueUnlessWaiting')->willReturnCallback(static function (string $groupId) use (&$queued, $refuses, $onQueue): bool {
 			if ($groupId === $refuses) {
 				return false;
 			}

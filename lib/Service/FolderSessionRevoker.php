@@ -96,7 +96,7 @@ class FolderSessionRevoker {
 						if (count($queued) >= self::MAX_GROUPS_PER_PASS || $budget->exhausted()) {
 							break 2;
 						}
-						if (!$this->groupSessions->queue($groupId)) {
+						if (!$this->groupSessions->queueUnlessWaiting($groupId)) {
 							$result['failed'] = true;
 							break 2;
 						}

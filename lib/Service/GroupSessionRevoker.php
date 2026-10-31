@@ -88,6 +88,22 @@ class GroupSessionRevoker {
 	}
 
 	/**
+	 * As queue(), for a job that finds groups after a delete has queued them:
+	 * it leaves a first pass waiting where it is. Moved, the row misses the
+	 * cron run it was due in, and waits for the next.
+	 */
+	public function queueUnlessWaiting(string $groupId): bool {
+		try {
+			if ($this->jobList->has(RevokeGroupSessionsJob::class, ['groupId' => $groupId])) {
+				return true;
+			}
+		} catch (\Throwable) {
+			// No answer either way: queue() says so if the job list still fails.
+		}
+		return $this->queue($groupId);
+	}
+
+	/**
 	 * One pass over the group's live sessions, the latest to expire first,
 	 * within a run's budget and MAX_PER_RUN.
 	 *

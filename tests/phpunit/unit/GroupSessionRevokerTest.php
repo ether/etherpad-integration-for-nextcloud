@@ -50,6 +50,32 @@ class GroupSessionRevokerTest extends TestCase {
 		$this->revoker(jobList: $jobList)->queue(self::GROUP);
 	}
 
+	/** A pass already waiting stays where it is: moved, it would miss the cron run it was due in. */
+	public function testLeavesAWaitingPassWhereItIs(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::once())->method('has')->with(RevokeGroupSessionsJob::class, ['groupId' => self::GROUP])->willReturn(true);
+		$jobList->expects(self::never())->method('scheduleAfter');
+
+		self::assertTrue($this->revoker(jobList: $jobList)->queueUnlessWaiting(self::GROUP));
+	}
+
+	public function testQueuesAPassWhereNoneWaits(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(false);
+		$jobList->expects(self::once())->method('scheduleAfter')->with(RevokeGroupSessionsJob::class, FixedClock::NOW + 60, ['groupId' => self::GROUP]);
+
+		self::assertTrue($this->revoker(jobList: $jobList)->queueUnlessWaiting(self::GROUP));
+	}
+
+	/** A job list that gives no answer may still take the row; one that does not either says so through queue(). */
+	public function testAJobListThatCannotSayStillQueues(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willThrowException(new \RuntimeException('database gone'));
+		$jobList->expects(self::once())->method('scheduleAfter');
+
+		self::assertTrue($this->revoker(jobList: $jobList)->queueUnlessWaiting(self::GROUP));
+	}
+
 	public function testAJobListThatFailsFailsNoDelete(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('database gone'));

@@ -91,7 +91,7 @@ class GoneFileSessionRevoker {
 				$result['left'] = array_slice($groupIds, $index);
 				break;
 			}
-			if (!$this->groupSessions->queue($groupId)) {
+			if (!$this->groupSessions->queueUnlessWaiting($groupId)) {
 				$result = ['left' => array_slice($groupIds, $index), 'failed' => true];
 				break;
 			}

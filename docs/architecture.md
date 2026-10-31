@@ -432,7 +432,7 @@ times stand for that machine, the ratios for any:
   group, the job above: a full pass, about two calls to Etherpad, and a
   second look that ends at once where the sweep has taken the group by then.
   A file deleted past the trash has that group queued by its request too,
-  and the batch moves its first pass back by a minute at most.
+  and the batch leaves that pass where it is, for one more query.
   A trash of a thousand protected pads emptied is about two thousand calls
   over a quarter of an hour, though most of their sessions went when they
   moved to the trash: which ones did only Etherpad can say, for the same call.
