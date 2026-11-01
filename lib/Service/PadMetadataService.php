@@ -183,9 +183,8 @@ class PadMetadataService {
 	 * or edited file's text cannot. A row that cannot be read stops the answer
 	 * rather than pass for a file with no pad.
 	 *
-	 * Being found does not make a file readable: File Access Control takes the
-	 * read permission from a file it blocks and leaves it found. Such a file
-	 * reports what its text would, which is nothing, as that read is refused.
+	 * File Access Control can leave a blocked file found without read
+	 * permission. Its row must not give out what reading the file would deny.
 	 *
 	 * @see https://github.com/nextcloud/files_accesscontrol/blob/stable35/lib/CacheWrapper.php
 	 *
