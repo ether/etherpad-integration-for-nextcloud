@@ -608,6 +608,20 @@ class BindingServiceTest extends TestCase {
 		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
 	}
 
+	/** In any state, as the file is here; not in a mode no open would accept. */
+	public function testPadOfFileIsTheRowToReport(): void {
+		$bindings = new BindingService(new InMemoryBindingTable([
+			['file_id' => 1, 'pad_id' => 'pad-1', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 0],
+			['file_id' => 2, 'pad_id' => 'pad-2', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => null, 'updated_at' => 0],
+			['file_id' => 3, 'pad_id' => 'pad-3', 'access_mode' => 'weird', 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 0],
+		]), new FixedClock());
+
+		$this->assertSame('pad-1', $bindings->padOfFile(1)?->padId);
+		$this->assertSame('pad-2', $bindings->padOfFile(2)?->padId);
+		$this->assertNull($bindings->padOfFile(3));
+		$this->assertNull($bindings->padOfFile(4));
+	}
+
 	/** The protected pads of the files named, in any state: past five hundred files too, with each result closed. */
 	public function testFindsTheProtectedPadsOfFilesInAnyState(): void {
 		$rows = [

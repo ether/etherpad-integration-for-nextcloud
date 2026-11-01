@@ -207,7 +207,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadSessionController::initialize`
   - Params: `file=/path/file.pad`
   - Purpose: explicit frontmatter initialization for empty/legacy `.pad` files.
-  - Initialising writes the file, whether it is empty or a legacy shortcut: a user who may not change it - a reader of a read-only share - gets `403` with "Only someone who may edit this .pad file can do that.", before a pad, group or binding is made. A file initialised already answers as before, to anyone who can read it.
+  - Initialising writes the file, whether it is empty or a legacy shortcut: a user who may not change it - a reader of a read-only share - gets `403` with "Only someone who may edit this .pad file can do that.", before a pad, group or binding is made. A file initialised already answers `already_initialized` to anyone who can read it, with `pad_id` and `access_mode` as `meta-by-id` has them.
 
 - `POST /api/v1/pads/initialize-by-id/{fileId}`
   - Controller: `PadSessionController::initializeById`
@@ -217,7 +217,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `GET /api/v1/pads/meta-by-id/{fileId}`
   - Controller: `PadSessionController::metaById`
   - Purpose: read-only metadata endpoint for external UIs that need stable file context without triggering open/session bootstrap.
-  - `pad_id`, `access_mode` and the addresses of a pad on this server come from the file's row, not its text. A file with no row, such as a copy, answers them empty, and Etherpad is not asked. `resolve` and an `initialize` that finds the file initialized do the same.
+  - `pad_id`, `access_mode` and the addresses of a pad on this server come from the file's row, not its text. A file with no row, such as a copy, answers them empty, and Etherpad is not asked. A reader who may not write the file gets a public pad's read-only address and no `pad_id`, which would edit it, and a protected pad's `pad_id` and no address. A row that cannot be read is an error. `resolve` and an `initialize` that finds the file initialized do the same.
   - Result includes:
     - `is_pad`
     - `is_pad_mime`
@@ -478,9 +478,9 @@ solely by the separate external-pad policy, not by these two settings.
 
 - `viewer_url`: URL for viewer redirect.
 - `embed_url`: URL for the minimal authenticated embed page (`/embed/by-id/{fileId}`).
-- `pad_id`: Etherpad pad ID.
+- `pad_id`: Etherpad pad ID. Empty in `meta-by-id` and an `initialize` of a file with no row, and for a reader of a public pad.
 - `pad_url`: preferred target URL for public/external pads.
-- `access_mode`: `public` or `protected`.
+- `access_mode`: `public` or `protected`. Empty in `meta-by-id`, `resolve` and an `initialize` of a file with no row.
 - `status` (sync): `updated`, `unchanged`, `locked` or `deferred`; `POST /api/v1/pads/sync/{fileId}` above says what `updated`, `locked` and `deferred` carry.
 - `status` (sync-status): `synced`, `out_of_sync`, or `unavailable` with `reason: external_no_revision` for a pad on another server. `in_sync` is always there, `null` for `unavailable`.
 - `snapshot_rev` (sync, sync-status): the revision the `.pad` holds – the Etherpad revision for an own pad, the app's own count of written snapshots for a pad on another server. `current_rev` (sync-status, and a sync that answers `unchanged` for an own pad): the pad's revision in Etherpad.

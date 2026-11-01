@@ -87,6 +87,15 @@ class BindingService {
 		return $this->findByFileId($fileId)?->padId === $padId;
 	}
 
+	/**
+	 * The row that says which pad a file has, to report it: in any state, as
+	 * the file is here, and not one whose mode no open would accept either.
+	 */
+	public function padOfFile(int $fileId): ?Binding {
+		$binding = $this->findByFileId($fileId);
+		return in_array($binding?->accessMode, [self::ACCESS_PUBLIC, self::ACCESS_PROTECTED], true) ? $binding : null;
+	}
+
 	public function findByPadId(string $padId, ?string $state = null): ?Binding {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')

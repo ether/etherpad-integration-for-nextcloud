@@ -182,6 +182,7 @@ class PadInitializationServiceTest extends TestCase {
 	public function testInitializeReturnsExistingFrontmatter(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getContent')->willReturn('content');
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -208,7 +209,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with(42)->willReturn(new Binding(42, 'g.ABC$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));
+		$bindingService->method('padOfFile')->with(42)->willReturn(new Binding(42, 'g.ABC$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));
 
 		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $bindingService))
 			->initializeById('alice', 42);
@@ -220,40 +221,48 @@ class PadInitializationServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 	}
 
-	/** @return iterable<string, array{?Binding, string, string}> */
+	/** @return iterable<string, array{?Binding, bool, string, string}> */
 	public static function rows(): iterable {
-		yield 'no row: a copy names a pad that is not its own' => [null, '', ''];
-		yield 'a row naming another pad, in another mode' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE), 'g.NEW$pad', BindingService::ACCESS_PROTECTED];
+		yield 'no row: a copy names a pad that is not its own' => [null, true, '', ''];
+		yield 'a row naming another pad, in another mode' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE), true, 'g.NEW$pad', BindingService::ACCESS_PROTECTED];
+		yield 'a public pad for a reader: its id edits it' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE), false, '', BindingService::ACCESS_PUBLIC];
 	}
 
 	/** The file's text names a pad; the row says which is the file's. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('rows')]
-	public function testAnInitializedFileReportsWhatItsRowNames(?Binding $row, string $padId, string $accessMode): void {
+	public function testAnInitializedFileReportsWhatItsRowNames(?Binding $row, bool $mayWrite, string $padId, string $accessMode): void {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with(42)->willReturn($row);
+		$bindingService->method('padOfFile')->with(42)->willReturn($row);
 
-		$result = $this->initializedFile(isExternal: false, bindingService: $bindingService);
+		$result = $this->initializedFile(isExternal: false, bindingService: $bindingService, mayWrite: $mayWrite);
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
 		$this->assertSame($padId, $result->padId);
 		$this->assertSame($accessMode, $result->accessMode);
 	}
 
-	/** A pad on another server has no row to ask. */
+	/** A pad on another server has no row, and its text to go by. */
 	public function testAnExternalPadReportsWhatItsFileNames(): void {
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('findByFileId');
-
-		$result = $this->initializedFile(isExternal: true, bindingService: $bindingService);
+		$result = $this->initializedFile(isExternal: true, bindingService: $this->createMock(BindingService::class));
 
 		$this->assertSame('g.OLD$pad', $result->padId);
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 	}
 
-	private function initializedFile(bool $isExternal, BindingService $bindingService): PadInitializationResult {
+	/** Not an answer that the file has no pad. */
+	public function testARowThatCannotBeReadStopsTheAnswer(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('padOfFile')->willThrowException(new \RuntimeException('database went away'));
+
+		$this->expectExceptionMessage('database went away');
+		$this->initializedFile(isExternal: false, bindingService: $bindingService);
+	}
+
+	private function initializedFile(bool $isExternal, BindingService $bindingService, bool $mayWrite = true): PadInitializationResult {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
 		$file->method('getContent')->willReturn('content');
+		$file->method('isUpdateable')->willReturn($mayWrite);
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
 		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Existing.pad');

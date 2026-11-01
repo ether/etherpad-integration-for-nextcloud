@@ -178,50 +178,80 @@ class PadMetadataService {
 		);
 	}
 
-	/** @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string} */
+	/**
+	 * What a file reports of its pad. The row says which pad that is: the
+	 * file's text is whatever anyone who can write it wrote, and a copy names
+	 * the original's pad. A row that cannot be read stops the answer rather
+	 * than pass for a file with no pad.
+	 *
+	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
+	 */
 	private function readPadMetadata(File $node, int $fileId, string $absolutePath, bool $retryLockedRead, string $logMessage): array {
+		$binding = $this->bindingService->padOfFile($fileId);
+		return $binding !== null
+			? $this->metadataFromRow($binding, $node, $fileId, $absolutePath, $logMessage)
+			: $this->metadataOfExternalPad($node, $fileId, $absolutePath, $retryLockedRead, $logMessage);
+	}
+
+	/**
+	 * Addresses as the open path has them. This asks the same question, and
+	 * with the same caveat: whether the file is writable, not what the share
+	 * granted. Without write permission a protected pad has no address, and a
+	 * public pad's is Etherpad's read-only view or none: never the editable
+	 * one, which a failed lookup must not bring back.
+	 *
+	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
+	 */
+	private function metadataFromRow(Binding $binding, File $node, int $fileId, string $absolutePath, string $logMessage): array {
+		$accessMode = $binding->accessMode;
+		$padUrl = '';
+		$publicOpenUrl = '';
+		$mayWrite = false;
+		try {
+			$mayWrite = $node->isUpdateable();
+			$isPublic = $accessMode === BindingService::ACCESS_PUBLIC;
+			if ($mayWrite) {
+				$padUrl = $this->etherpadClient->buildPadUrl($binding->padId);
+				$publicOpenUrl = $isPublic ? $padUrl : '';
+			} elseif ($isPublic) {
+				$publicOpenUrl = $this->readOnlyOpenUrl($binding->padId);
+				$padUrl = $publicOpenUrl;
+			}
+		} catch (\Throwable $e) {
+			$this->logSkippedMetadata($logMessage, $fileId, $absolutePath, $e);
+		}
+
+		return [
+			'access_mode' => $accessMode,
+			'is_external' => false,
+			'pad_id' => $binding->padIdFor($mayWrite),
+			'pad_url' => $padUrl,
+			'public_open_url' => $publicOpenUrl,
+		];
+	}
+
+	/**
+	 * A file with no row has a pad only on another server, which its text
+	 * names. An address that does not pass the check is no address.
+	 *
+	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
+	 */
+	private function metadataOfExternalPad(File $node, int $fileId, string $absolutePath, bool $retryLockedRead, string $logMessage): array {
 		$accessMode = '';
 		$isExternal = false;
-		$publicOpenUrl = '';
-		$padUrl = '';
 		$padId = '';
-
+		$url = '';
 		try {
 			$content = $retryLockedRead
 				? $this->lockRetryService->readContentWithOpenLockRetry($node)
 				: (string)$node->getContent();
 			$pad = $this->padFileService->readPad((string)$content);
-			$isExternal = $pad->isExternal;
-			// A file's own pad comes from its row, not its text, which anyone
-			// who can write the file wrote: a copy names the original's pad.
-			// With no row there is no pad to report, or to ask Etherpad about.
-			$binding = $isExternal ? null : $this->bindingService->findByFileId($fileId);
-			if (!$isExternal && $binding === null) {
-				return self::noPadMetadata();
-			}
-			$padId = $binding?->padId ?? $pad->padId;
-			$accessMode = $binding?->accessMode ?? $pad->accessMode;
-			$padUrl = $padId === $pad->padId ? $pad->padUrl() : '';
-
-			if ($accessMode === BindingService::ACCESS_PUBLIC) {
-				// The same question the open path asks, and the same caveat:
-				// this is whether the file is writable, not what the share
-				// granted. Answering it in one service and not the other
-				// would leave the rule true of one endpoint and claimed of
-				// both.
-				if ($node->isUpdateable()) {
-					$publicOpenUrl = $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
-					if ($publicOpenUrl !== '') {
-						$padUrl = $publicOpenUrl;
-					}
-				} else {
-					// No fall-through to the stored address. Without a
-					// read-only URL there is no address this share may be
-					// given, and leaving the editable one in `pad_url` would
-					// hand it over precisely when the lookup that was meant
-					// to avoid that has failed.
-					$publicOpenUrl = $this->resolveReadOnlyOpenUrl($padId, $padUrl, $isExternal);
-					$padUrl = $publicOpenUrl;
+			if ($pad->isExternal) {
+				$accessMode = $pad->accessMode;
+				$isExternal = true;
+				$padId = $pad->padId;
+				if ($accessMode === BindingService::ACCESS_PUBLIC) {
+					$url = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($pad->padUrl())['pad_url'];
 				}
 			}
 		} catch (LockedException $e) {
@@ -237,31 +267,19 @@ class PadMetadataService {
 			'access_mode' => $accessMode,
 			'is_external' => $isExternal,
 			'pad_id' => $padId,
-			'pad_url' => $padUrl,
-			'public_open_url' => $publicOpenUrl,
+			'pad_url' => $url,
+			'public_open_url' => $url,
 		];
-	}
-
-	/** @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string} */
-	private static function noPadMetadata(): array {
-		return ['access_mode' => '', 'is_external' => false, 'pad_id' => '', 'pad_url' => '', 'public_open_url' => ''];
 	}
 
 	/**
 	 * What a share without write permission is told a public pad's address
-	 * is: Etherpad's read-only view.
-	 *
-	 * Presentation rather than enforcement — a public pad is editable by
-	 * anyone holding its id, and its id is in the `.pad` file the recipient
-	 * may read. It is still the address that matches what the share says,
-	 * and an unreachable pad server means no address at all rather than the
+	 * is: Etherpad's read-only view. Presentation rather than enforcement,
+	 * as the `.pad` file the recipient may read may hold the id. An
+	 * unreachable pad server means no address at all rather than the
 	 * editable one.
 	 */
-	private function resolveReadOnlyOpenUrl(string $padId, string $padUrl, bool $isExternal): string {
-		if ($isExternal || $padId === '') {
-			return $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
-		}
-
+	private function readOnlyOpenUrl(string $padId): string {
 		try {
 			return $this->etherpadClient->getReadOnlyPadUrl($padId);
 		} catch (\Throwable $e) {
@@ -271,17 +289,6 @@ class PadMetadataService {
 			]);
 			return '';
 		}
-	}
-
-	private function resolvePublicOpenUrl(string $padId, string $padUrl, bool $isExternal): string {
-		if ($isExternal && $padUrl !== '') {
-			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($padUrl);
-			return (string)$normalized['pad_url'];
-		}
-		if ($padId !== '') {
-			return $this->etherpadClient->buildPadUrl($padId);
-		}
-		return '';
 	}
 
 	private function logSkippedMetadata(string $message, int $fileId, string $absolutePath, \Throwable $e): void {

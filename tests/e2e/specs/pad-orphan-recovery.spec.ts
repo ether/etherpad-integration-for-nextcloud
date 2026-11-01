@@ -139,9 +139,18 @@ test.describe('a copy of a .pad file and sync', () => {
 				expect(original.body, 'the original should report its pad').toMatchObject({ access_mode: accessMode, is_external: false })
 				expect((original.body as { pad_id?: string }).pad_id).not.toBe('')
 
-				const answer = await padApiGet(`pads/meta-by-id/${await propfindFileId(copy)}`)
-				expect(answer.status, JSON.stringify(answer.body)).toBe(200)
-				expect(answer.body).toMatchObject({ is_pad: true, pad_id: '', access_mode: '', pad_url: '', public_open_url: '' })
+				const copyId = await propfindFileId(copy)
+				const meta = await padApiGet(`pads/meta-by-id/${copyId}`)
+				expect(meta.status, JSON.stringify(meta.body)).toBe(200)
+				expect(meta.body).toMatchObject({ is_pad: true, pad_id: '', access_mode: '', pad_url: '', public_open_url: '' })
+
+				const resolved = await padApiGet(`pads/resolve?fileId=${copyId}`)
+				expect(resolved.status, JSON.stringify(resolved.body)).toBe(200)
+				expect(resolved.body).toMatchObject({ is_pad: true, access_mode: '', public_open_url: '' })
+
+				const initialized = await padApiPost(`pads/initialize-by-id/${copyId}`)
+				expect(initialized.status, JSON.stringify(initialized.body)).toBe(200)
+				expect(initialized.body).toMatchObject({ status: 'already_initialized', pad_id: '', access_mode: '' })
 			} finally {
 				await deleteViaDav(copy).catch(() => {})
 				await deleteViaDav(source).catch(() => {})

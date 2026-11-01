@@ -190,7 +190,7 @@ final class SensitiveMethods {
 			// The managed document it writes, and what the file holds, as strings.
 			'writeOrTakeBackTheRow', 'namesAnotherPad',
 		],
-		\OCA\EtherpadNextcloud\Service\PadMetadataService::class => ['resolvePublicOpenUrl', 'resolveReadOnlyOpenUrl'],
+		\OCA\EtherpadNextcloud\Service\PadMetadataService::class => ['readOnlyOpenUrl'],
 		\OCA\EtherpadNextcloud\Service\PadMeta::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PadResolution::class => ['__construct'],
 	];

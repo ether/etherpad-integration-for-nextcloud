@@ -49,6 +49,14 @@ final class Binding {
 	}
 
 	/**
+	 * The pad's id, as reported to someone who may or may not write the file.
+	 * A public pad's id is its editable address, so a reader does not get it.
+	 */
+	public function padIdFor(bool $mayWrite): string {
+		return $mayWrite || $this->accessMode !== BindingService::ACCESS_PUBLIC ? $this->padId : '';
+	}
+
+	/**
 	 * No run has tried this row since the file was seen deleted for good:
 	 * updated_at is still at deleted_at. Asked of rows the sweep takes,
 	 * which it finds by their deleted_at; every version that writes
