@@ -23,20 +23,19 @@ happens to the pad itself when its file goes is in
 
 | What happens | Whose sessions end | When |
 |---|---|---|
-| A logout | Every session of that user, in other browsers too. | In the request, up to 25 deletes within two seconds; what is left expires. |
-| An account deleted | The account's own, as for a logout, as the delete starts. Those of the people its pads were shared with too. | The account's in the request; the others by a background job. |
-| A file moved to the trash, or deleted past it | Every session of the pad's group, whoever it was issued to. | In the request, up to 100 deletes within two seconds; the rest by a background job, usually within minutes. |
+| A logout | Every session of that user, in other browsers too. | In the request; what is left expires. |
+| An account deleted | Its own, like a logout, and those of everyone its pads were shared with. | Its own in the request, as the delete starts; the others by a background job. |
+| A file moved to the trash, or deleted past it | Every session of the pad's group, whoever it was issued to. | In the request; the rest by a background job, usually within minutes. |
 | A folder with more than 100 protected pads deleted | As above, for every pad in it. | The first 100 pads found in the request; the others by a background job, usually within minutes under a system cron. |
 | A file seen deleted for good, whatever `delete_pad_with_file` says | As above. | By a background job, usually within minutes; thousands of pads going at once take longer. |
 | A share revoked, a permission downgraded, an account disabled, a public link deleted | None. | At `validUntil`. |
 
 A revoked session stops working at once: Etherpad refuses the holder's next
-change. A restore gives nothing back: the next open makes a new session. A
-group keeps its sessions while a bound file is in Files, or while it holds a
-pad without a binding ("Revoking").
+change. A restore gives back nothing already revoked: the next open makes a
+new session. A group keeps its sessions while a bound file is in Files, or
+while it holds a pad without a binding ("Revoking").
 
-Remaining sessions expire within six hours, unless the pad goes first. That
-happens when:
+Sessions are left to expire, within six hours unless the pad goes first, when:
 
 - a job could not be queued;
 - a run gives up;
@@ -56,9 +55,9 @@ happens when:
 
 Every open makes a new session, except on a public link ("Public links").
 Etherpad re-checks `validUntil` on every socket message and keeps the session
-id it was handed when the pad connected - read in 2.7.3, 3.0.0 and 3.3.3 - so
-a session that expires mid-edit rejects the next keystroke, and no later
-cookie reaches that socket.
+id it was handed when the pad connected, so a session that expires mid-edit
+rejects the next keystroke, and no later cookie reaches that socket. Read in
+2.7.3, 3.0.0 and 3.3.3.
 
 ### Why the cookie carries more than one session
 
@@ -96,17 +95,18 @@ cases, and only one of them is harmless:
   carrying it would let the next person to log in keep their pad until it
   expired.
 
-Since nothing here can tell those apart, both are dropped. On a public share
-the session listing is not asked for at all: there the author is a visitor of
-a link, or the link itself, and Etherpad deletes no sessions, so a link opened
-in a loop would make every open download its pile.
+Since nothing here can tell those apart, both are dropped.
+
+On a public share the listing is not asked for at all. There the author is a
+link's visitor, or the link itself, and Etherpad deletes no sessions; a link
+opened in a loop would make every open download its pile.
 
 ### What this accepts
 
 **One exposure yields every open pad.** Where the cookie names the shared
-parent domain, script on any host under it - the cookie cannot be `HttpOnly`
-before Etherpad 3.0.0 - gets every protected pad the user has open. That
-domain is how the open request can read the cookie at all, and how it reaches
+parent domain, script on any host under it gets every protected pad the user
+has open. Before Etherpad 3.0.0 the cookie cannot be `HttpOnly`. That domain
+is how the open request can read the cookie at all, and how it reaches
 Etherpad, so it cannot be narrowed.
 
 ### The author
@@ -127,9 +127,9 @@ mapping again and retries. Other session-creation errors fail the open.
 The cached id remains available either way, so a later logout can still find
 and revoke the user's sessions. No table of the app's own is involved:
 sessions belong to an Etherpad author, the author is cached per uid, and
-`listSessionsOfAuthor` answers the rest. An emptied cache cannot be told from
-a user who never opened a protected pad, and a logout after a brief outage
-would revoke nothing.
+`listSessionsOfAuthor` answers the rest. If a failed open dropped the id, an
+emptied cache could not be told from a user who never opened a protected pad,
+and a logout after a brief outage would revoke nothing. So the id stays.
 
 ## Revoking
 
@@ -170,11 +170,11 @@ it removes (`RevokeSessionsOnDeleteListener`): the trash keeps the pad, and a
 session would keep giving access to it. Nothing here stops the delete.
 
 The pads are found before the delete (`BeforeNodeDeletedEvent`): a file's own
-row, or every active protected row under a folder, by walking down the file
-cache's `parent` index one level at a time (`ProtectedPadsOfNode`), whatever
-the files are called. There is no walk at all when the instance has no active
-protected pad. The walk runs in the delete's request and stops past 100 pads
-or at 10,000 folders, with an `info` line.
+row, or every active protected row under a folder. The folder is walked down
+the file cache's `parent` index one level at a time, whatever the files are
+called (`ProtectedPadsOfNode`). There is no walk at all when the instance has
+no active protected pad. The walk runs in the delete's request and stops past
+100 pads or at 10,000 folders, with an `info` line.
 
 The sessions are revoked once the delete is done (`NodeDeletedEvent`). If the
 delete fails, for example on a file locked by a sync, no session goes. For
@@ -204,12 +204,13 @@ too is the job's to judge.
 file is outside Files**, either in a trash or absent from the file cache
 (`BindingService::anyInFiles()`).
 
-A file restored to Files keeps the group's sessions: whoever opens it gets a
-session that is theirs to keep. A pad without a binding also prevents
-revocation: a legacy Ownpad group may contain pads the app does not own.
+What the job has not revoked by the time a bound file is back in Files stays,
+and whoever opens the file gets a session of their own; what was revoked
+already is not given back. A pad without a binding also prevents revocation: a
+legacy Ownpad group may contain pads the app does not own.
 
-In Files means reachable under a user's `files/`. A trash does not count, and
-neither does a share's mount: its row outlives the shared file's move.
+In Files means reachable under a user's `files/`: a trash does not count, nor
+a share's mount, whose row outlives the file's move.
 `BindingService::anyInFiles()` has the details.
 
 The first pass is scheduled one minute after the delete. After a pass finds no
@@ -224,9 +225,9 @@ protect sessions issued after a restore or through a newly added mount, such
 as a team folder joined. File and mount lookups run in batches of 500.
 
 The passes are paced as the collector's are (`SessionSweepJob`): back a minute
-later while there is more, backed off after a failure (one, five and fifteen
-minutes), then remaining sessions expire naturally, with a warning that says
-so.
+later while there is more. A failed pass is retried after one, five and
+fifteen minutes; after the third the job stops with a warning, and what is
+left expires on its own.
 
 ### What a delete did not reach
 
@@ -256,18 +257,16 @@ blocks no other, up to twenty failed or refused deletions in a row and fifty
 in a run.
 
 A failure that reads as Etherpad unreachable counts towards an outage: in a
-background run only when Etherpad then does not answer at all, as
-`GoneFileSweep` reads one (`EtherpadClientException::isEtherpadUnreachable()`,
-`ManagedPadLifecycle::answers()`), in a request at once
-(`RunBudget::forRequest()`). Five with no successful deletion or group listing
-between them end the run.
+request at once, in a background run only when Etherpad then does not answer
+at all. Five with no successful deletion or group listing between them end the
+run (`EtherpadClientException::isEtherpadUnreachable()`,
+`ManagedPadLifecycle::answers()`, `RunBudget::forRequest()`).
 
 ## Known gaps
 
-**Most ends of access revoke nothing.** A lost share, a downgrade, a disabled
-account or a deleted link wait for expiry; the table above lists what does end
-them. Covering them one event at a time means enumerating every way access can
-end, and that list has no natural end. A public link in particular opens under
+**Losing access any other way revokes nothing** (the table's last row).
+Covering those one event at a time means enumerating every way access can end,
+and that list has no natural end. A public link in particular opens under
 authors of its own, each visitor's kept only in their session and the link's
 never cached, so there is nothing to look the sessions up by. The direction
 that does close them is the other one: short sessions that have to be renewed
@@ -289,9 +288,10 @@ revocation catches it, through the job's passes above.
 
 **Two Nextclouds pointed at one Etherpad share an author.** The mapper is
 `nc:<uid>`, which Etherpad stores globally, so one instance's logout can end
-the other's sessions. Naming it per instance needs a migration - the mapper is
-asked for on every open, so changing its shape re-issues an author for every
-existing user and orphans their live sessions - and is not done here.
+the other's sessions. The mapper is asked for on every open, so changing its
+shape re-issues an author for every existing user and orphans their live
+sessions. Naming it per instance therefore needs a migration, and is not done
+here.
 
 ## Collecting expired sessions
 
@@ -312,15 +312,16 @@ A public link's open that made a session queues a sweep of the group
 sessions through `listSessionsOfGroup`, at most hourly while some are live.
 That also keeps short the listing a delete's revoke reads. A visitor's author
 is collected this way only, so a link's visitors queue one sweep. The link's
-own author also gets its own: a group can hold more than a run can list.
+own author gets a sweep of its own as well, because a group can hold more
+sessions than one run can list.
 
 The id is also all that is stored. A public link's uid -
 `public-share:<token>`, or `public-share:<token>:<visitor>` for a visitor -
 carries the credential from the share URL, and job arguments are persisted and
 printed by `occ`.
 
-**Listing limits.** A listing is read up to 4 MiB, tens of thousands of
-sessions, rather than whole into a job's memory; a revoke's listing is read
+**Listing limits.** A sweep's listing is read up to 4 MiB, tens of thousands
+of sessions, rather than whole into a job's memory; a revoke's listing is read
 whole. An author's index past the cap shrinks only through the sweeps of
 groups a public link is opened for, or as a pad's group is deleted for good. A
 timeout below the cap points at how fast Etherpad's database answers.
@@ -375,12 +376,12 @@ visitor opens as an author of their own, `nc:public-share:<token>:<visitor>`
   Etherpad no longer has is asked for anew.
 - The app gives a visitor no name. Etherpad lets them set one, which stays on
   their author; a name given on every open would overwrite it.
-- A link has at most 250 visitors of their own an hour, each counted in every
-  hour they open it, as a request without the session cookie is a new visitor,
-  and each makes an author Etherpad never deletes. Any past the count open as
-  the link itself, `nc:public-share:<token>`, named "Public share", one author
-  for all of them. Writing works the same, only the colours are shared, and
-  the log says so once an hour for the link.
+- A request without the session cookie is a new visitor, and each visitor
+  makes an author Etherpad never deletes. So a link has at most 250 visitors
+  of their own an hour, and a visitor is counted in every hour they open it.
+  Any past the count open as the link itself, `nc:public-share:<token>`, named
+  "Public share", one author for all of them. Writing works the same, only the
+  colours are shared, and the log says so once an hour for the link.
 - Counting takes a memory cache. With only a local one (APCu), the count holds
   for each web server on its own; without one, or while it fails, a visitor
   not yet counted this hour opens as the link. The keys carry an HMAC of the
@@ -408,11 +409,11 @@ group for up to one hour:
   keeps nothing and fails no open, and the log says so, since each open then
   makes a session again.
 - The cache only points; Etherpad decides. A kept session is handed out only
-  once Etherpad confirms that it exists - one revoked with the file's trash
-  does not - that it belongs to the opener's author for the pad's group, and
-  that it runs at least as long as a new one would, less the time it is kept.
-  A session is kept for an hour. It lasts three, so a visitor can write for at
-  least two.
+  once Etherpad confirms that it exists, that it belongs to the opener's
+  author for the pad's group, and that it runs at least as long as a new one
+  would, less the time it is kept. A session revoked with the file's trash
+  does not pass. A session is kept for an hour. It lasts three, so a visitor
+  can write for at least two.
 - If Etherpad's answer about a kept session cannot be read, the app logs it
   and makes a new one per open. A check that times out fails the open, as
   making one would only wait out another.
