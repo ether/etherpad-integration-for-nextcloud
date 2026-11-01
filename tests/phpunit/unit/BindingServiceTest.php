@@ -611,9 +611,9 @@ class BindingServiceTest extends TestCase {
 	/** In any state, as the file is here; not in a mode no open would accept. */
 	public function testPadOfFileIsTheRowToReport(): void {
 		$bindings = new BindingService(new InMemoryBindingTable([
-			['file_id' => 1, 'pad_id' => 'pad-1', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 0],
-			['file_id' => 2, 'pad_id' => 'pad-2', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => null, 'updated_at' => 0],
-			['file_id' => 3, 'pad_id' => 'pad-3', 'access_mode' => 'weird', 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 0],
+			self::bindingRow(1, 'pad-1', BindingService::STATE_ACTIVE),
+			self::bindingRow(2, 'pad-2', BindingService::STATE_PENDING_DELETE, BindingService::ACCESS_PROTECTED),
+			self::bindingRow(3, 'pad-3', BindingService::STATE_ACTIVE, 'weird'),
 		]), new FixedClock());
 
 		$this->assertSame('pad-1', $bindings->padOfFile(1)?->padId);

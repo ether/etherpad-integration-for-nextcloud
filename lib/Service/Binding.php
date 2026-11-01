@@ -49,10 +49,9 @@ final class Binding {
 	}
 
 	/**
-	 * The pad's id, as the metadata answers report it to someone who may or
-	 * may not write the file. A public pad's id is its editable address, so
-	 * they do not name it to a reader. Presentation rather than enforcement:
-	 * the file a reader may read usually holds the id.
+	 * The pad's id for the metadata answers. A reader does not get a public
+	 * pad's, as the id edits it. Presentation rather than enforcement: the
+	 * file a reader may read usually holds the id.
 	 */
 	public function padIdFor(bool $mayWrite): string {
 		return $mayWrite || $this->accessMode !== BindingService::ACCESS_PUBLIC ? $this->padId : '';

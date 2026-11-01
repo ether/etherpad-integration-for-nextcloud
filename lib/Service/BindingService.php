@@ -88,8 +88,8 @@ class BindingService {
 	}
 
 	/**
-	 * The row that says which pad a file has, to report it: in any state, as
-	 * the file is here, and not one whose mode no open would accept either.
+	 * The row to report a file's pad from: public or protected, in any state.
+	 * One waiting to go still names the pad of a file that is here.
 	 */
 	public function padOfFile(int $fileId): ?Binding {
 		$binding = $this->findByFileId($fileId);

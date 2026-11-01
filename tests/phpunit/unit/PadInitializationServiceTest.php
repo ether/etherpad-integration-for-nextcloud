@@ -179,52 +179,11 @@ class PadInitializationServiceTest extends TestCase {
 			->initializeById('alice', 42);
 	}
 
-	public function testInitializeReturnsExistingFrontmatter(): void {
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn(42);
-		$file->method('isUpdateable')->willReturn(true);
-		$file->method('getContent')->willReturn('content');
-
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Existing.pad');
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')
-			->with('content')
-			->willReturn(new ParsedPadFile(
-				frontmatter: [
-					'pad_id' => 'g.ABC$pad',
-					'access_mode' => BindingService::ACCESS_PUBLIC,
-				],
-				body: '',
-				padId: 'g.ABC$pad',
-				accessMode: BindingService::ACCESS_PUBLIC,
-				padUrl: '',
-				isExternal: false,
-				snapshotRev: -1,
-			));
-
-		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
-
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('padOfFile')->with(42)->willReturn(new Binding(42, 'g.ABC$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));
-
-		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $bindingService))
-			->initializeById('alice', 42);
-
-		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
-		$this->assertSame('/Existing.pad', $result->file);
-		$this->assertSame(42, $result->fileId);
-		$this->assertSame('g.ABC$pad', $result->padId);
-		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
-	}
-
 	/** @return iterable<string, array{?Binding, bool, string, string}> */
 	public static function rows(): iterable {
 		yield 'no row: a copy names a pad that is not its own' => [null, true, '', ''];
 		yield 'a row naming another pad, in another mode' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE), true, 'g.NEW$pad', BindingService::ACCESS_PROTECTED];
+		yield 'a public pad for a writer' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE), true, 'g.NEW$pad', BindingService::ACCESS_PUBLIC];
 		yield 'a public pad for a reader: its id edits it' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE), false, '', BindingService::ACCESS_PUBLIC];
 	}
 

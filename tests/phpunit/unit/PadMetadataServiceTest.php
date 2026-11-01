@@ -16,58 +16,12 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadMetadataServiceTest extends TestCase {
-	public function testMetaByIdReturnsExternalPublicPadMetadata(): void {
-		$file = $this->createConfiguredMock(File::class, [
-			'getId' => 138,
-			'getName' => 'External.pad',
-			'getMimeType' => 'application/x-etherpad-nextcloud',
-		]);
-
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/External.pad');
-		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
-		$lockRetryService->method('readContentWithOpenLockRetry')->with($file)->willReturn('frontmatter');
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
-			frontmatter: [
-				'pad_id' => 'ext.remote',
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-			],
-			body: '',
-			padId: 'ext.remote',
-			accessMode: BindingService::ACCESS_PUBLIC,
-			padUrl: 'https://pad.example.test/p/External',
-			isExternal: true,
-			snapshotRev: -1,
-		));
-
-		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
-		$fetcher->method('normalizeAndValidateExternalPublicPadUrl')
-			->with('https://pad.example.test/p/External')
-			->willReturn(['pad_url' => 'https://pad.example.test/p/External']);
-
-		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, lockRetryService: $lockRetryService, externalPadExportFetcher: $fetcher)
-			->metaById('alice', 138);
-
-		$this->assertTrue($result->isPad);
-		$this->assertTrue($result->isPadMime);
-		$this->assertSame(138, $result->fileId);
-		$this->assertSame('External.pad', $result->name);
-		$this->assertSame('/External.pad', $result->path);
-		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
-		$this->assertTrue($result->isExternal);
-		$this->assertSame('ext.remote', $result->padId);
-		$this->assertSame('https://pad.example.test/p/External', $result->padUrl());
-		$this->assertSame('https://pad.example.test/p/External', $result->publicOpenUrl());
-	}
-
 	/** A file the format refuses still answers as a pad, with nothing of a pad it cannot name. */
 	public function testResolveAnswersAFileItCannotReadWithoutItsPad(): void {
 		$file = $this->createConfiguredMock(File::class, [
@@ -103,46 +57,12 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame(404, $result->fileId);
 	}
 
-	public function testResolveReturnsPublicOpenUrlForInternalPublicPad(): void {
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('buildPadUrl')->with('g.ABC$pad')->willReturn('https://pad.example.test/p/g.ABC$pad');
-
-		$result = $this->namingAPublicPad(true, $etherpadClient, $this->boundTo(138, new Binding(138, 'g.ABC$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)))
-			->resolve('alice', 138);
-
-		$this->assertTrue($result->isPad);
-		$this->assertTrue($result->isPadMime);
-		$this->assertSame(138, $result->fileId);
-		$this->assertSame('/Named.pad', $result->path);
-		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
-		$this->assertFalse($result->isExternal);
-		$this->assertSame('https://pad.example.test/p/g.ABC$pad', $result->publicOpenUrl());
-	}
-
-	/**
-	 * This endpoint hands out an address, and for a public pad the address
-	 * is the whole of the access — so it has to ask the same question the
-	 * open path asks, or the rule holds for one endpoint and is claimed of
-	 * both.
-	 */
-	public function testResolveGivesAReadOnlyShareTheReadOnlyUrl(): void {
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->never())->method('buildPadUrl');
-		$etherpadClient->method('getReadOnlyPadUrl')->with('g.ABC$pad')
-			->willReturn('https://pad.example.test/p/r.readonlyid');
-
-		$result = $this->namingAPublicPad(false, $etherpadClient, $this->boundTo(138, new Binding(138, 'g.ABC$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)))
-			->resolve('alice', 138);
-
-		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl());
-	}
-
 	/**
 	 * A failed read-only lookup must not fall back to the editable address.
 	 * That is the moment the withholding matters most: the call meant to
 	 * avoid handing it over is the one that just failed.
 	 */
-	public function testResolveGivesNoUrlWhenTheReadOnlyLookupFails(): void {
+	public function testAFailedReadOnlyLookupGivesNoAddress(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('buildPadUrl');
 		$etherpadClient->method('getReadOnlyPadUrl')
@@ -157,34 +77,54 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame('', $result->padUrl(), 'and the editable one must not survive as the answer');
 	}
 
-	/**
-	 * A copy names the original's pad, and a hand-written file any pad: with
-	 * no row the file has none, whether it may be written or only read, and
-	 * Etherpad is not asked about the one it names.
-	 *
-	 * @return iterable<string, array{bool}>
-	 */
+	/** @return iterable<string, array{bool}> */
 	public static function writable(): iterable {
 		yield 'a file that may be written' => [true];
 		yield 'a file that may only be read' => [false];
 	}
 
+	/**
+	 * A copy names the original's pad, and a hand-written file any pad: with
+	 * no row the file has none, whether it may be written or only read, and
+	 * Etherpad is not asked about the one it names.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('writable')]
 	public function testAFileWithNoRowAnswersNoPad(bool $updateable): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('buildPadUrl');
 		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
+		$service = $this->namingAPublicPad($updateable, $etherpadClient, $this->boundTo(138, null));
 
-		$result = $this->namingAPublicPad($updateable, $etherpadClient, $this->boundTo(138, null))->resolve('alice', 138);
-
+		$result = $service->resolve('alice', 138);
 		$this->assertTrue($result->isPad);
 		$this->assertSame(['', false, ''], [$result->accessMode, $result->isExternal, $result->publicOpenUrl()]);
+
+		$meta = $service->metaById('alice', 138);
+		$this->assertSame(['', '', ''], [$meta->padId, $meta->padUrl(), $meta->accessMode]);
 	}
 
-	public function testMetaOfAFileWithNoRowNamesNoPad(): void {
-		$meta = $this->namingAPublicPad(true, $this->createMock(EtherpadClient::class), $this->boundTo(138, null))->metaById('alice', 138);
+	/**
+	 * File Access Control leaves a blocked file found, without its read
+	 * permission: the row must not hand out what the file's own read refuses.
+	 */
+	public function testAFileThatMayNotBeReadReportsNoPad(): void {
+		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad', 'isReadable' => false, 'isUpdateable' => false]);
+		$file->method('getContent')->willThrowException(new NotPermittedException());
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->method('readContentWithOpenLockRetry')->willThrowException(new NotPermittedException());
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('buildPadUrl');
+		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('padOfFile')->willReturn(new Binding(138, 'g.OLD$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));
+		$service = $this->buildService(userNodeResolver: $this->finding($file), lockRetryService: $lockRetryService, etherpadClient: $etherpadClient, bindingService: $bindingService);
 
-		$this->assertSame(['', '', ''], [$meta->padId, $meta->padUrl(), $meta->accessMode]);
+		$meta = $service->metaById('alice', 138);
+		$this->assertTrue($meta->isPad);
+		$this->assertSame(['', '', '', ''], [$meta->padId, $meta->accessMode, $meta->padUrl(), $meta->publicOpenUrl()]);
+
+		$result = $service->resolve('alice', 138);
+		$this->assertSame(['', false, ''], [$result->accessMode, $result->isExternal, $result->publicOpenUrl()]);
 	}
 
 	/** Not an answer that the file has no pad: a client would act on that. */
@@ -203,11 +143,20 @@ class PadMetadataServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->with('g.NEW$pad')->willReturn('https://pad.example.test/p/g.NEW$pad');
 
-		$meta = $this->namingAPublicPad(true, $etherpadClient, $this->boundTo(138, new Binding(138, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)))->metaById('alice', 138);
+		$service = $this->namingAPublicPad(true, $etherpadClient, $this->boundTo(138, new Binding(138, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)));
 
+		$meta = $service->metaById('alice', 138);
 		$this->assertSame(['g.NEW$pad', BindingService::ACCESS_PUBLIC], [$meta->padId, $meta->accessMode]);
 		$this->assertSame('https://pad.example.test/p/g.NEW$pad', $meta->publicOpenUrl());
 		$this->assertSame('https://pad.example.test/p/g.NEW$pad', $meta->padUrl());
+
+		$result = $service->resolve('alice', 138);
+		$this->assertTrue($result->isPad);
+		$this->assertTrue($result->isPadMime);
+		$this->assertSame([138, '/Named.pad'], [$result->fileId, $result->path]);
+		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
+		$this->assertFalse($result->isExternal);
+		$this->assertSame('https://pad.example.test/p/g.NEW$pad', $result->publicOpenUrl());
 	}
 
 	/** A public pad's id edits it, and the file may not even name it: a reader gets the read-only address of the row's pad, and no id. */
@@ -216,11 +165,14 @@ class PadMetadataServiceTest extends TestCase {
 		$etherpadClient->expects($this->never())->method('buildPadUrl');
 		$etherpadClient->method('getReadOnlyPadUrl')->with('g.NEW$pad')->willReturn('https://pad.example.test/p/r.readonly');
 
-		$meta = $this->namingAPublicPad(false, $etherpadClient, $this->boundTo(138, new Binding(138, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)))->metaById('alice', 138);
+		$service = $this->namingAPublicPad(false, $etherpadClient, $this->boundTo(138, new Binding(138, 'g.NEW$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)));
 
+		$meta = $service->metaById('alice', 138);
 		$this->assertSame('', $meta->padId);
 		$this->assertSame('https://pad.example.test/p/r.readonly', $meta->publicOpenUrl());
 		$this->assertSame('https://pad.example.test/p/r.readonly', $meta->padUrl());
+
+		$this->assertSame('https://pad.example.test/p/r.readonly', $service->resolve('alice', 138)->publicOpenUrl());
 	}
 
 	/**
@@ -279,10 +231,9 @@ class PadMetadataServiceTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(138);
 		$file->method('getName')->willReturn('Named.pad');
+		$file->method('isReadable')->willReturn(true);
 		$file->method('isUpdateable')->willThrowException(new \RuntimeException('storage gone'));
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		$userNodeResolver = $this->finding($file);
 
 		$meta = $this->buildService(userNodeResolver: $userNodeResolver, bindingService: $this->boundTo(138, new Binding(138, 'g.OLD$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE)))
 			->metaById('alice', 138);
@@ -292,11 +243,9 @@ class PadMetadataServiceTest extends TestCase {
 
 	/** The row settles it, without a read of a file that may be locked or broken. */
 	public function testARowAnswersWithoutReadingTheFile(): void {
-		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad', 'isUpdateable' => true]);
+		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad', 'isReadable' => true, 'isUpdateable' => true]);
 		$file->expects($this->never())->method('getContent');
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		$userNodeResolver = $this->finding($file);
 		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
 		$lockRetryService->expects($this->never())->method('readContentWithOpenLockRetry');
 		$service = $this->buildService(userNodeResolver: $userNodeResolver, lockRetryService: $lockRetryService, bindingService: $this->boundTo(138, new Binding(138, 'g.OLD$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE)));
@@ -311,7 +260,11 @@ class PadMetadataServiceTest extends TestCase {
 
 		$meta = $this->namingAPublicPad(true, $this->createMock(EtherpadClient::class), $this->boundTo(138, null), isExternal: true, fetcher: $fetcher)->metaById('alice', 138);
 
+		$this->assertTrue($meta->isPad);
+		$this->assertTrue($meta->isPadMime);
+		$this->assertSame([138, 'Named.pad', '/Named.pad'], [$meta->fileId, $meta->name, $meta->path]);
 		$this->assertTrue($meta->isExternal);
+		$this->assertSame(BindingService::ACCESS_PUBLIC, $meta->accessMode);
 		$this->assertSame('g.OLD$pad', $meta->padId);
 		$this->assertSame('https://other.example.test/p/remote', $meta->publicOpenUrl());
 		$this->assertSame('https://other.example.test/p/remote', $meta->padUrl());
@@ -353,9 +306,7 @@ class PadMetadataServiceTest extends TestCase {
 	/** Meta waits for a lock, and one that stays is the caller's to hear, not an answer without the pad. */
 	public function testMetaOfALockedFileWithNoRowStops(): void {
 		$file = $this->buildPadNode(138, 'Named.pad', 'frontmatter');
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		$userNodeResolver = $this->finding($file);
 		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
 		$lockRetryService->method('readContentWithOpenLockRetry')->willThrowException(new LockedException('/Named.pad'));
 
@@ -367,9 +318,7 @@ class PadMetadataServiceTest extends TestCase {
 	public function testResolveOfALockedFileWithNoRowAnswersWithoutItsPad(): void {
 		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad']);
 		$file->method('getContent')->willThrowException(new LockedException('/Named.pad'));
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		$userNodeResolver = $this->finding($file);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('debug')->with(
 			'The file gave no complete pad metadata.',
@@ -390,29 +339,25 @@ class PadMetadataServiceTest extends TestCase {
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(frontmatter: [], body: '', padId: 'ext.abc', accessMode: BindingService::ACCESS_PUBLIC, padUrl: 'https://other.example.test/p/abc', isExternal: false, snapshotRev: -1));
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndValidateExternalPublicPadUrl')->willReturn(['pad_url' => 'https://other.example.test/p/abc']);
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($this->buildPadNode(138, 'Named.pad', 'frontmatter'));
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		$userNodeResolver = $this->finding($this->buildPadNode(138, 'Named.pad', 'frontmatter'));
 
 		$meta = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, externalPadExportFetcher: $fetcher, bindingService: $this->boundTo(138, null))->metaById('alice', 138);
 
 		$this->assertSame(['', false, ''], [$meta->padId, $meta->isExternal, $meta->padUrl()]);
 	}
 
-	/** Not only an exception: whatever stops the read, the file still answers as a pad. */
+	/** A parser Error takes the same way out as a format exception. */
 	public function testAnErrorReadingTheFileStillAnswers(): void {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willThrowException(new \Error('bad type'));
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($this->buildPadNode(138, 'Named.pad', 'frontmatter'));
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		$userNodeResolver = $this->finding($this->buildPadNode(138, 'Named.pad', 'frontmatter'));
 
 		$meta = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, bindingService: $this->boundTo(138, null))->metaById('alice', 138);
 
 		$this->assertSame(['', ''], [$meta->padId, $meta->padUrl()]);
 	}
 
-	/** Not only an exception: whatever stops the address, the row's other fields stand. */
+	/** An Error building the address leaves the row's id, and the address empty. */
 	public function testAnErrorBuildingTheAddressStillAnswers(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willThrowException(new \Error('bad type'));
@@ -452,6 +397,13 @@ class PadMetadataServiceTest extends TestCase {
 		));
 
 		return $this->buildService($padFileService, userNodeResolver: $userNodeResolver, lockRetryService: $lockRetryService, etherpadClient: $etherpadClient, externalPadExportFetcher: $fetcher, bindingService: $bindingService, logger: $logger);
+	}
+
+	private function finding(File $file): UserNodeResolver {
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Named.pad');
+		return $userNodeResolver;
 	}
 
 	private function boundTo(int $fileId, ?Binding $row): BindingService {
@@ -669,6 +621,7 @@ class PadMetadataServiceTest extends TestCase {
 			'getName' => $name,
 			'getContent' => $content,
 			'getMimeType' => 'application/x-etherpad-nextcloud',
+			'isReadable' => true,
 			// Whether the file may be written. This endpoint hands out an
 			// address, and for a public pad the address is the access.
 			'isUpdateable' => $updateable,

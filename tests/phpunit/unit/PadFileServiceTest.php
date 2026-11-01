@@ -637,8 +637,9 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService(new FixedClock());
 		$padUrl = 'https://pad.example.test/p/de' . $byte . 'mo';
 
-		$stored = $service->buildInitialDocument(1, 'demo', BindingService::ACCESS_PUBLIC, padUrl: $padUrl);
+		$stored = $service->buildInitialDocument(1, 'ext.demo', BindingService::ACCESS_PUBLIC, padUrl: $padUrl, extraFrontmatter: ['pad_origin' => 'https://pad.example.test', 'remote_pad_id' => 'demo']);
 		$pad = $service->readPad($stored);
+		$this->assertTrue($pad->isExternal);
 		$this->assertSame($padUrl, $pad->externalPadUrl());
 
 		$synced = $service->withExportSnapshot($pad, new PadSnapshot('text', '<p>text</p>', 1));

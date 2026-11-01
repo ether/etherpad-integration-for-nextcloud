@@ -35,6 +35,9 @@ if (!interface_exists(File::class)) {
 		 */
 		public function isUpdateable();
 
+		/** Untyped for the same reason: OCP\Files\FileInfo declares it this way. */
+		public function isReadable();
+
 		// Nextcloud's Template serialises a file, so these are part of the
 		// contract even where the app itself never calls them.
 		public function getEtag(): string;

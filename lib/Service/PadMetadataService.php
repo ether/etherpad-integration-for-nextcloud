@@ -179,15 +179,20 @@ class PadMetadataService {
 	}
 
 	/**
-	 * What a file reports of its pad. The row says which pad that is: the
-	 * file's text is whatever anyone who can write it wrote, and a copy names
-	 * the original's pad. A row that cannot be read stops the answer rather
-	 * than pass for a file with no pad.
+	 * What a file reports of its pad. The row says which pad that is: a copied
+	 * or edited file's text cannot. A row that cannot be read stops the answer
+	 * rather than pass for a file with no pad.
+	 *
+	 * Being found does not make a file readable: File Access Control takes the
+	 * read permission from a file it blocks and leaves it found. Such a file
+	 * reports what its text would, which is nothing, as that read is refused.
+	 *
+	 * @see https://github.com/nextcloud/files_accesscontrol/blob/stable35/lib/CacheWrapper.php
 	 *
 	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
 	 */
 	private function readPadMetadata(File $node, int $fileId, bool $retryLockedRead): array {
-		$binding = $this->bindingService->padOfFile($fileId);
+		$binding = $node->isReadable() ? $this->bindingService->padOfFile($fileId) : null;
 		return $binding !== null
 			? $this->metadataFromRow($binding, $node)
 			: $this->metadataOfExternalPad($node, $fileId, $retryLockedRead);
@@ -231,8 +236,8 @@ class PadMetadataService {
 	}
 
 	/**
-	 * A file with no row has a pad only on another server, which its text
-	 * names. An address that does not pass the checks is no address.
+	 * With no row, only text that names a pad on another server is reported,
+	 * and its address only once it passes the checks.
 	 *
 	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
 	 */
