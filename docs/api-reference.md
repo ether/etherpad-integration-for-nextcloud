@@ -217,7 +217,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `GET /api/v1/pads/meta-by-id/{fileId}`
   - Controller: `PadSessionController::metaById`
   - Purpose: read-only metadata endpoint for external UIs that need stable file context without triggering open/session bootstrap.
-  - `pad_id`, `access_mode` and the addresses of a pad on this server come from the file's row, not its text. A file with no row, such as a copy, answers them empty, and Etherpad is not asked. A reader who may not write the file gets a public pad's read-only address and no `pad_id`, which would edit it, and a protected pad's `pad_id` and no address. A row that cannot be read is an error. `resolve` and an `initialize` that finds the file initialized do the same.
+  - `pad_id`, `access_mode` and the addresses of a pad on this server come from the file's row, not its text. A file with no row, such as a copy, answers them empty, and Etherpad is not asked. A reader who may not write the file gets a public pad's read-only address and no `pad_id`, which would edit it, and a protected pad's `pad_id` and no address. That leaves the `pad_id` out of these answers only: the file a reader may read usually holds it, and an open answers with it. A row that cannot be read is an error. `resolve` and an `initialize` that finds the file initialized do the same.
   - Result includes:
     - `is_pad`
     - `is_pad_mime`
@@ -478,7 +478,7 @@ solely by the separate external-pad policy, not by these two settings.
 
 - `viewer_url`: URL for viewer redirect.
 - `embed_url`: URL for the minimal authenticated embed page (`/embed/by-id/{fileId}`).
-- `pad_id`: Etherpad pad ID. Empty in `meta-by-id` and an `initialize` of a file with no row, and for a reader of a public pad.
+- `pad_id`: Etherpad pad ID. Empty in `meta-by-id` and an `initialize` of a file with no row, and in those two for a reader of a public pad.
 - `pad_url`: preferred target URL for public/external pads.
 - `access_mode`: `public` or `protected`. Empty in `meta-by-id`, `resolve` and an `initialize` of a file with no row.
 - `status` (sync): `updated`, `unchanged`, `locked` or `deferred`; `POST /api/v1/pads/sync/{fileId}` above says what `updated`, `locked` and `deferred` carry.

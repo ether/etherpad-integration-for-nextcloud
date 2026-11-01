@@ -18,6 +18,7 @@ import {
 	deleteShareById,
 	sharedWithMePaths,
 	deleteViaDav,
+	padApiGet,
 	propfindFileId,
 } from '../fixtures/dav'
 import { E2E } from '../fixtures/env'
@@ -80,6 +81,15 @@ test.describe('user-to-user pad share', () => {
 		// 2. As A: grant user B read access via OCS.
 		const share = await createUserReadShare(padName, E2E.secondaryUser!)
 		shareId = share.id
+
+		// As B, who may only read: the read-only address, and not the id that
+		// would edit the pad.
+		const meta = await padApiGet(`pads/meta-by-id/${fileId}`, { uid: E2E.secondaryUser!, password: E2E.secondaryAppPassword! })
+		expect(meta.status, JSON.stringify(meta.body)).toBe(200)
+		expect(meta.body).toMatchObject({ access_mode: 'public', pad_id: '' })
+		const { pad_url: padUrl, public_open_url: publicOpenUrl } = meta.body as { pad_url: string, public_open_url: string }
+		expect(padUrl).toMatch(/\/p\/r\./)
+		expect(publicOpenUrl).toBe(padUrl)
 
 		// 3. As B: separate browser context using the pre-built secondary
 		// session (created by the setup project), open the shared pad.

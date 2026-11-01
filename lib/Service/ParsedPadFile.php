@@ -57,10 +57,6 @@ class ParsedPadFile {
 		return $this->savedText;
 	}
 
-	public function padUrl(): string {
-		return $this->padUrl;
-	}
-
 	/**
 	 * Whether the file names a pad on another Etherpad server: by its
 	 * frontmatter, or by an `ext.` pad id alone, which one with incomplete

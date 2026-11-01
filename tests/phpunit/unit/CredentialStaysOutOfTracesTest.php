@@ -95,7 +95,7 @@ class CredentialStaysOutOfTracesTest extends TestCase {
 			isExternal: true,
 			snapshotRev: 0,
 		);
-		yield 'a file read, with the pad\'s address' => [$parsed, static fn (): array => [$parsed->padUrl()]];
+		yield 'a file read, with the pad\'s address' => [$parsed, static fn (): array => [$parsed->externalPadUrl()]];
 		$meta = new PadMeta(true, 7, 'Notes.pad', '/Notes.pad', isExternal: true, padId: 'ext.pad-1', padUrl: self::CREDENTIAL, publicOpenUrl: self::CREDENTIAL);
 		yield 'a file\'s metadata, with the pad\'s addresses' => [$meta, static fn (): array => [$meta->padUrl(), $meta->publicOpenUrl()]];
 		$resolution = new PadResolution(true, 7, '/Notes.pad', isExternal: true, publicOpenUrl: self::CREDENTIAL);
