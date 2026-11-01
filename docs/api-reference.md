@@ -478,9 +478,9 @@ solely by the separate external-pad policy, not by these two settings.
 
 - `viewer_url`: URL for viewer redirect.
 - `embed_url`: URL for the minimal authenticated embed page (`/embed/by-id/{fileId}`).
-- `pad_id`: Etherpad pad ID. Empty in `meta-by-id` and an `initialize` of a file with no row, and in those two for a reader of a public pad.
+- `pad_id`: Etherpad pad ID. For a pad on this server, `meta-by-id` and an `initialize` that finds the file initialized answer it empty if the file has no row, and for a reader of a public pad.
 - `pad_url`: preferred target URL for public/external pads.
-- `access_mode`: `public` or `protected`. Empty in `meta-by-id`, `resolve` and an `initialize` of a file with no row.
+- `access_mode`: `public` or `protected`. Empty in `meta-by-id`, `resolve` and an `initialize` that finds the file initialized if the file has no row and names no pad on another server.
 - `status` (sync): `updated`, `unchanged`, `locked` or `deferred`; `POST /api/v1/pads/sync/{fileId}` above says what `updated`, `locked` and `deferred` carry.
 - `status` (sync-status): `synced`, `out_of_sync`, or `unavailable` with `reason: external_no_revision` for a pad on another server. `in_sync` is always there, `null` for `unavailable`.
 - `snapshot_rev` (sync, sync-status): the revision the `.pad` holds – the Etherpad revision for an own pad, the app's own count of written snapshots for a pad on another server. `current_rev` (sync-status, and a sync that answers `unchanged` for an own pad): the pad's revision in Etherpad.

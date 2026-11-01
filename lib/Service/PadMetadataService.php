@@ -148,7 +148,7 @@ class PadMetadataService {
 			);
 		}
 
-		$metadata = $this->readPadMetadata($node, $fileId, $absolutePath, true, 'Pad meta parse skipped');
+		$metadata = $this->readPadMetadata($node, $fileId, true);
 
 		return new PadMeta(
 			isPad: true,
@@ -165,7 +165,7 @@ class PadMetadataService {
 	}
 
 	private function buildResolve(File $node, int $fileId, string $absolutePath): PadResolution {
-		$metadata = $this->readPadMetadata($node, $fileId, $absolutePath, false, 'Pad resolve metadata parse skipped');
+		$metadata = $this->readPadMetadata($node, $fileId, false);
 
 		return new PadResolution(
 			isPad: true,
@@ -186,11 +186,11 @@ class PadMetadataService {
 	 *
 	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
 	 */
-	private function readPadMetadata(File $node, int $fileId, string $absolutePath, bool $retryLockedRead, string $logMessage): array {
+	private function readPadMetadata(File $node, int $fileId, bool $retryLockedRead): array {
 		$binding = $this->bindingService->padOfFile($fileId);
 		return $binding !== null
 			? $this->metadataFromRow($binding, $node)
-			: $this->metadataOfExternalPad($node, $fileId, $absolutePath, $retryLockedRead, $logMessage);
+			: $this->metadataOfExternalPad($node, $fileId, $retryLockedRead);
 	}
 
 	/**
@@ -236,46 +236,35 @@ class PadMetadataService {
 	 *
 	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
 	 */
-	private function metadataOfExternalPad(File $node, int $fileId, string $absolutePath, bool $retryLockedRead, string $logMessage): array {
-		$accessMode = '';
-		$isExternal = false;
-		$padId = '';
+	private function metadataOfExternalPad(File $node, int $fileId, bool $retryLockedRead): array {
+		$named = null;
 		$url = '';
 		try {
 			$content = $retryLockedRead
 				? $this->lockRetryService->readContentWithOpenLockRetry($node)
 				: (string)$node->getContent();
-			$pad = $this->padFileService->readPad((string)$content);
+			$pad = $this->padFileService->readPad($content);
 			if ($pad->isExternal) {
-				$accessMode = $pad->accessMode;
-				$isExternal = true;
-				$padId = $pad->padId;
+				$named = $pad;
 				$url = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($pad->externalPadUrl())['pad_url'];
 			}
-		} catch (LockedException $e) {
-			if ($retryLockedRead) {
+		} catch (\Throwable $e) {
+			if ($retryLockedRead && $e instanceof LockedException) {
 				throw $e;
 			}
-			$this->logSkippedMetadata($logMessage, $fileId, $absolutePath, $e);
-		} catch (\Throwable $e) {
-			$this->logSkippedMetadata($logMessage, $fileId, $absolutePath, $e);
+			$this->logger->debug('The file gave no complete pad metadata.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
 		}
 
 		return [
-			'access_mode' => $accessMode,
-			'is_external' => $isExternal,
-			'pad_id' => $padId,
+			'access_mode' => $named->accessMode ?? '',
+			'is_external' => $named !== null,
+			'pad_id' => $named->padId ?? '',
 			'pad_url' => $url,
 			'public_open_url' => $url,
 		];
-	}
-
-	private function logSkippedMetadata(string $message, int $fileId, string $absolutePath, \Throwable $e): void {
-		$this->logger->debug($message, [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			'path' => $absolutePath,
-			...SafeError::context($e),
-		]);
 	}
 }

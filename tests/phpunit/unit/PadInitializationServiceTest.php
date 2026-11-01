@@ -249,6 +249,24 @@ class PadInitializationServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 	}
 
+	/** Text that says external does not outrun a row. */
+	public function testARowWinsOverTextThatSaysExternal(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('padOfFile')->with(42)->willReturn(new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
+
+		$result = $this->initializedFile(isExternal: true, bindingService: $bindingService);
+
+		$this->assertSame('g.NEW$pad', $result->padId);
+		$this->assertSame(BindingService::ACCESS_PROTECTED, $result->accessMode);
+	}
+
+	/** An `ext.` id alone is no pad on another server. */
+	public function testAnExtIdWithoutExternalMetadataIsNoPad(): void {
+		$result = $this->initializedFile(isExternal: false, bindingService: $this->createMock(BindingService::class), padId: 'ext.abc');
+
+		$this->assertSame(['', ''], [$result->padId, $result->accessMode]);
+	}
+
 	/** Not an answer that the file has no pad. */
 	public function testARowThatCannotBeReadStopsTheAnswer(): void {
 		$bindingService = $this->createMock(BindingService::class);
@@ -258,7 +276,7 @@ class PadInitializationServiceTest extends TestCase {
 		$this->initializedFile(isExternal: false, bindingService: $bindingService);
 	}
 
-	private function initializedFile(bool $isExternal, BindingService $bindingService, bool $mayWrite = true): PadInitializationResult {
+	private function initializedFile(bool $isExternal, BindingService $bindingService, bool $mayWrite = true, string $padId = 'g.OLD$pad'): PadInitializationResult {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
 		$file->method('getContent')->willReturn('content');
@@ -268,9 +286,9 @@ class PadInitializationServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Existing.pad');
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
-			frontmatter: ['pad_id' => 'g.OLD$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			frontmatter: ['pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PUBLIC],
 			body: '',
-			padId: 'g.OLD$pad',
+			padId: $padId,
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: $isExternal,

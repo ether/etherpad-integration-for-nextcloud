@@ -295,7 +295,6 @@
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$node->getId()]]></code>
       <code><![CDATA[(int)$node->getId()]]></code>
-      <code><![CDATA[(string)$content]]></code>
       <code><![CDATA[(string)$node->getContent()]]></code>
       <code><![CDATA[(string)$node->getContent()]]></code>
     </RedundantCastGivenDocblockType>
