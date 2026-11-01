@@ -125,5 +125,27 @@ test.describe('a copy of a .pad file and sync', () => {
 				await deleteViaDav(source).catch(() => {})
 			}
 		})
+
+		/** The copy's text names the original's pad, which is not the copy's. */
+		test(`a copy of a ${accessMode} pad reports no pad of its own`, async () => {
+			const source = uniquePadName(`orphan-meta-source-${accessMode}`)
+			const copy = uniquePadName(`orphan-meta-copy-${accessMode}`)
+			try {
+				await createPadAtPath(`/${source}`, accessMode)
+				await copyViaDav(source, copy)
+
+				const original = await padApiGet(`pads/meta-by-id/${await propfindFileId(source)}`)
+				expect(original.status, JSON.stringify(original.body)).toBe(200)
+				expect(original.body, 'the original should report its pad').toMatchObject({ access_mode: accessMode, is_external: false })
+				expect((original.body as { pad_id?: string }).pad_id).not.toBe('')
+
+				const answer = await padApiGet(`pads/meta-by-id/${await propfindFileId(copy)}`)
+				expect(answer.status, JSON.stringify(answer.body)).toBe(200)
+				expect(answer.body).toMatchObject({ is_pad: true, pad_id: '', access_mode: '', pad_url: '', public_open_url: '' })
+			} finally {
+				await deleteViaDav(copy).catch(() => {})
+				await deleteViaDav(source).catch(() => {})
+			}
+		})
 	}
 })

@@ -6,9 +6,11 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadInitializationResult;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -55,7 +57,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$result = (new PadInitializationService($padFileService, $padPaths, $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $padPaths, $userNodeResolver, $bootstrap, $this->createMock(BindingService::class)))
 			->initializeByPath('alice', '/Existing.pad');
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
@@ -96,7 +98,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $this->createMock(BindingService::class)))
 			->initializeById('alice', 42);
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
@@ -118,6 +120,7 @@ class PadInitializationServiceTest extends TestCase {
 			$padPaths,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PadBootstrapService::class),
+			$this->createMock(BindingService::class),
 		))->initializeByPath('alice', '   ');
 	}
 
@@ -136,7 +139,7 @@ class PadInitializationServiceTest extends TestCase {
 		$this->expectException(\RuntimeException::class);
 		$this->expectExceptionMessage('Could not resolve file ID.');
 
-		(new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $this->createMock(PadBootstrapService::class)))
+		(new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $this->createMock(PadBootstrapService::class), $this->createMock(BindingService::class)))
 			->initializeById('alice', 42);
 	}
 
@@ -172,7 +175,7 @@ class PadInitializationServiceTest extends TestCase {
 
 		$this->expectException(PadFileFormatException::class);
 
-		(new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
+		(new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $this->createMock(BindingService::class)))
 			->initializeById('alice', 42);
 	}
 
@@ -204,7 +207,10 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with(42)->willReturn(new Binding(42, 'g.ABC$pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));
+
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $bindingService))
 			->initializeById('alice', 42);
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
@@ -212,6 +218,58 @@ class PadInitializationServiceTest extends TestCase {
 		$this->assertSame(42, $result->fileId);
 		$this->assertSame('g.ABC$pad', $result->padId);
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
+	}
+
+	/** @return iterable<string, array{?Binding, string, string}> */
+	public static function rows(): iterable {
+		yield 'no row: a copy names a pad that is not its own' => [null, '', ''];
+		yield 'a row naming another pad, in another mode' => [new Binding(42, 'g.NEW$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE), 'g.NEW$pad', BindingService::ACCESS_PROTECTED];
+	}
+
+	/** The file's text names a pad; the row says which is the file's. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('rows')]
+	public function testAnInitializedFileReportsWhatItsRowNames(?Binding $row, string $padId, string $accessMode): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with(42)->willReturn($row);
+
+		$result = $this->initializedFile(isExternal: false, bindingService: $bindingService);
+
+		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
+		$this->assertSame($padId, $result->padId);
+		$this->assertSame($accessMode, $result->accessMode);
+	}
+
+	/** A pad on another server has no row to ask. */
+	public function testAnExternalPadReportsWhatItsFileNames(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('findByFileId');
+
+		$result = $this->initializedFile(isExternal: true, bindingService: $bindingService);
+
+		$this->assertSame('g.OLD$pad', $result->padId);
+		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
+	}
+
+	private function initializedFile(bool $isExternal, BindingService $bindingService): PadInitializationResult {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(42);
+		$file->method('getContent')->willReturn('content');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Existing.pad');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.OLD$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: 'g.OLD$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: $isExternal,
+			snapshotRev: -1,
+		));
+
+		return (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $this->createMock(PadBootstrapService::class), $bindingService))
+			->initializeById('alice', 42);
 	}
 
 	public function testInitializeBootstrapsMissingFrontmatter(): void {
@@ -255,7 +313,7 @@ class PadInitializationServiceTest extends TestCase {
 			->with('alice', 42, 'legacy-content')
 			->willReturn(false);
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $this->createMock(BindingService::class)))
 			->initializeById('alice', 42);
 
 		$this->assertSame(PadInitializationService::STATUS_INITIALIZED, $result->status);
@@ -303,7 +361,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('initializeMissingFrontmatter')->willReturn(true);
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap, $this->createMock(BindingService::class)))
 			->initializeById('alice', 43);
 
 		$this->assertSame(PadInitializationService::STATUS_MIGRATED_FROM_LEGACY, $result->status);

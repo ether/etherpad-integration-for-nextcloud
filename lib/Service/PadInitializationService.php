@@ -24,6 +24,7 @@ class PadInitializationService {
 		private PathNormalizer $padPaths,
 		private UserNodeResolver $userNodeResolver,
 		private PadBootstrapService $padBootstrapService,
+		private BindingService $bindingService,
 	) {
 	}
 
@@ -61,12 +62,14 @@ class PadInitializationService {
 		$path = $this->userNodeResolver->toUserAbsolutePath($uid, $file);
 		try {
 			$pad = $this->padFileService->readPad($content);
+			// From the row, as the metadata has it (PadMetadataService).
+			$binding = $pad->isExternal ? null : $this->bindingService->findByFileId($fileId);
 			return new PadInitializationResult(
 				status: self::STATUS_ALREADY_INITIALIZED,
 				file: $path,
 				fileId: $fileId,
-				padId: $pad->padId,
-				accessMode: $pad->accessMode,
+				padId: $pad->isExternal ? $pad->padId : ($binding->padId ?? ''),
+				accessMode: $pad->isExternal ? $pad->accessMode : ($binding->accessMode ?? ''),
 			);
 		} catch (MissingFrontmatterException) {
 			// Only the narrower one: a legacy or empty .pad continues into

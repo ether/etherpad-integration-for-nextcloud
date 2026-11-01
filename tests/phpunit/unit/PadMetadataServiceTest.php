@@ -130,7 +130,7 @@ class PadMetadataServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->with('g.ABC$pad')->willReturn('https://pad.example.test/p/g.ABC$pad');
 
-		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient, bindingService: $this->boundTo(138, 'g.ABC$pad', BindingService::ACCESS_PUBLIC))
 			->resolve('alice', 138);
 
 		$this->assertTrue($result->isPad);
@@ -177,7 +177,7 @@ class PadMetadataServiceTest extends TestCase {
 		$etherpadClient->method('getReadOnlyPadUrl')->with('g.ABC$pad')
 			->willReturn('https://pad.example.test/p/r.readonlyid');
 
-		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient, bindingService: $this->boundTo(138, 'g.ABC$pad', BindingService::ACCESS_PUBLIC))
 			->resolve('alice', 138);
 
 		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl());
@@ -220,11 +220,134 @@ class PadMetadataServiceTest extends TestCase {
 
 		// `meta`, not `resolve`: the response ships pad_url from here, and
 		// that is the field the editable address would survive in.
-		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient, bindingService: $this->boundTo(138, 'g.ABC$pad', BindingService::ACCESS_PUBLIC))
 			->metaById('alice', 138);
 
 		$this->assertSame('', $result->publicOpenUrl(), 'no read-only address to give');
 		$this->assertSame('', $result->padUrl(), 'and the editable one must not survive as the answer');
+	}
+
+	/**
+	 * A copy names the original's pad, and a hand-written file any pad: with
+	 * no row the file has none, whether it may be written or only read, and
+	 * Etherpad is not asked about the one it names.
+	 *
+	 * @return iterable<string, array{bool}>
+	 */
+	public static function writable(): iterable {
+		yield 'a file that may be written' => [true];
+		yield 'a file that may only be read' => [false];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('writable')]
+	public function testAFileWithNoRowAnswersNoPad(bool $updateable): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('buildPadUrl');
+		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with(138)->willReturn(null);
+
+		$result = $this->namingAPublicPad($updateable, $etherpadClient, $bindingService)->resolve('alice', 138);
+
+		$this->assertTrue($result->isPad);
+		$this->assertSame('', $result->accessMode);
+		$this->assertFalse($result->isExternal);
+		$this->assertSame('', $result->publicOpenUrl());
+	}
+
+	public function testMetaOfAFileWithNoRowNamesNoPad(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+
+		$meta = $this->namingAPublicPad(true, $this->createMock(EtherpadClient::class), $bindingService)->metaById('alice', 138);
+
+		$this->assertSame('', $meta->padId);
+		$this->assertSame('', $meta->padUrl());
+		$this->assertSame('', $meta->accessMode);
+	}
+
+	/** A row that cannot be read gives no answer, not the file's. */
+	public function testARowThatCannotBeReadAnswersNoPad(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('buildPadUrl');
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willThrowException(new \RuntimeException('database went away'));
+
+		$this->assertSame('', $this->namingAPublicPad(true, $etherpadClient, $bindingService)->resolve('alice', 138)->publicOpenUrl());
+	}
+
+	/** The row's pad, and its mode: a file left naming the pad its row has replaced reports the new one. */
+	public function testAFileReportsThePadItsRowNames(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->with('g.NEW$pad')->willReturn('https://pad.example.test/p/g.NEW$pad');
+
+		$meta = $this->namingAPublicPad(true, $etherpadClient, $this->boundTo(138, 'g.NEW$pad', BindingService::ACCESS_PUBLIC))->metaById('alice', 138);
+
+		$this->assertSame('g.NEW$pad', $meta->padId);
+		$this->assertSame('https://pad.example.test/p/g.NEW$pad', $meta->publicOpenUrl());
+		$this->assertSame('https://pad.example.test/p/g.NEW$pad', $meta->padUrl());
+	}
+
+	/**
+	 * A file saying public about a pad its row has as protected gets no
+	 * address, nor does Etherpad get asked for a read-only one. Nor does the
+	 * address the file stores stand in for another pad's.
+	 */
+	public function testARowNamingAProtectedPadGivesNoAddress(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
+
+		$meta = $this->namingAPublicPad(false, $etherpadClient, $this->boundTo(138, 'g.NEW$pad', BindingService::ACCESS_PROTECTED))->metaById('alice', 138);
+
+		$this->assertSame(BindingService::ACCESS_PROTECTED, $meta->accessMode);
+		$this->assertSame('', $meta->publicOpenUrl());
+		$this->assertSame('', $meta->padUrl());
+	}
+
+	/** What the file stores stays where it names the row's pad. */
+	public function testAProtectedPadKeepsTheAddressItsFileStores(): void {
+		$meta = $this->namingAPublicPad(true, $this->createMock(EtherpadClient::class), $this->boundTo(138, 'g.OLD$pad', BindingService::ACCESS_PROTECTED))->metaById('alice', 138);
+
+		$this->assertSame('https://pad.example.test/p/g.OLD$pad', $meta->padUrl());
+	}
+
+	public function testAnExternalPadHasNoRowToAsk(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('findByFileId');
+		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
+		$fetcher->method('normalizeAndValidateExternalPublicPadUrl')->willReturn(['pad_url' => 'https://other.example.test/p/remote']);
+
+		$result = $this->namingAPublicPad(true, $this->createMock(EtherpadClient::class), $bindingService, isExternal: true, fetcher: $fetcher)->resolve('alice', 138);
+
+		$this->assertTrue($result->isExternal);
+		$this->assertSame('https://other.example.test/p/remote', $result->publicOpenUrl());
+	}
+
+	private function namingAPublicPad(bool $updateable, EtherpadClient $etherpadClient, BindingService $bindingService, bool $isExternal = false, ?ExternalPadExportFetcher $fetcher = null): PadMetadataService {
+		$file = $this->buildPadNode(138, 'Named.pad', 'frontmatter', $updateable);
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Named.pad');
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->method('readContentWithOpenLockRetry')->willReturn('frontmatter');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.OLD$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: 'g.OLD$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/g.OLD$pad',
+			isExternal: $isExternal,
+			snapshotRev: -1,
+		));
+
+		return $this->buildService($padFileService, userNodeResolver: $userNodeResolver, lockRetryService: $lockRetryService, etherpadClient: $etherpadClient, externalPadExportFetcher: $fetcher, bindingService: $bindingService);
+	}
+
+	private function boundTo(int $fileId, string $padId, string $accessMode): BindingService {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding($fileId, $padId, $accessMode, BindingService::STATE_ACTIVE));
+		return $bindingService;
 	}
 
 	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {

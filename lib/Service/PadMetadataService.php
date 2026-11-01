@@ -191,10 +191,17 @@ class PadMetadataService {
 				? $this->lockRetryService->readContentWithOpenLockRetry($node)
 				: (string)$node->getContent();
 			$pad = $this->padFileService->readPad((string)$content);
-			$padId = $pad->padId;
-			$accessMode = $pad->accessMode;
-			$padUrl = $pad->padUrl();
 			$isExternal = $pad->isExternal;
+			// A file's own pad comes from its row, not its text, which anyone
+			// who can write the file wrote: a copy names the original's pad.
+			// With no row there is no pad to report, or to ask Etherpad about.
+			$binding = $isExternal ? null : $this->bindingService->findByFileId($fileId);
+			if (!$isExternal && $binding === null) {
+				return self::noPadMetadata();
+			}
+			$padId = $binding?->padId ?? $pad->padId;
+			$accessMode = $binding?->accessMode ?? $pad->accessMode;
+			$padUrl = $padId === $pad->padId ? $pad->padUrl() : '';
 
 			if ($accessMode === BindingService::ACCESS_PUBLIC) {
 				// The same question the open path asks, and the same caveat:
@@ -233,6 +240,11 @@ class PadMetadataService {
 			'pad_url' => $padUrl,
 			'public_open_url' => $publicOpenUrl,
 		];
+	}
+
+	/** @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string} */
+	private static function noPadMetadata(): array {
+		return ['access_mode' => '', 'is_external' => false, 'pad_id' => '', 'pad_url' => '', 'public_open_url' => ''];
 	}
 
 	/**

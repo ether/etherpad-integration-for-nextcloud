@@ -217,6 +217,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `GET /api/v1/pads/meta-by-id/{fileId}`
   - Controller: `PadSessionController::metaById`
   - Purpose: read-only metadata endpoint for external UIs that need stable file context without triggering open/session bootstrap.
+  - `pad_id`, `access_mode` and the addresses of a pad on this server come from the file's row, not its text. A file with no row, such as a copy, answers them empty, and Etherpad is not asked. `resolve` and an `initialize` that finds the file initialized do the same.
   - Result includes:
     - `is_pad`
     - `is_pad_mime`
