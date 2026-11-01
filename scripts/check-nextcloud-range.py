@@ -43,9 +43,6 @@ def main():
     # is the exact version the declaration admits rather than whatever the
     # moving major tag resolves to today.
     majors = [floor] + [str(v) for v in range(minimum + 1, maximum + 1)]
-    # Both ends of a single-major range are the same version, and asking for
-    # the bare major alongside the floor would put back the moving tag.
-    ends = majors if len(majors) == 1 else [floor, str(maximum)]
     problems = []
 
     def want(path, pattern, expected, what):
@@ -76,13 +73,20 @@ def main():
     want(".github/workflows/psalm.yml", r"ocp:\s*\[([^\]]*)\]", f"'locked', '^{maximum}'",
          "the OCP matrix")
 
-    # Both e2e matrices: a pull request runs the two ends, the nightly run
-    # covers every major in the range.
+    # Both e2e matrices: a pull request runs the two ends, the older on
+    # Etherpad 2 and the newer on Etherpad 3; the nightly run covers every
+    # major in the range on Etherpad 2, and the newest on Etherpad 3 too.
+    def stacks(pairs):
+        return ",".join(f'{{"nextcloud":"{nextcloud}","etherpad":"{etherpad}"}}' for nextcloud, etherpad in pairs)
+
+    # majors[-1], not the maximum: in a single-major range it is the floor, and
+    # the bare major beside it would put back the moving tag.
+    newest_on_3 = (majors[-1], "3")
     want(".github/workflows/e2e.yml", r"pull_request'\s*\n\s*&&\s*'\[([^\]]*)\]'",
-         ", ".join(f'"{v}"' for v in ends),
+         stacks([(floor, "2"), newest_on_3]),
          "the pull-request Nextcloud list")
     want(".github/workflows/e2e.yml", r"\|\|\s*'\[([^\]]*)\]'\)\s*\}\}",
-         ", ".join(f'"{v}"' for v in majors),
+         stacks([(v, "2") for v in majors] + [newest_on_3]),
          "the nightly Nextcloud list")
     # The upgrade runs rarely, so on every major.
     want(".github/workflows/e2e-upgrade.yml", r"nextcloud:\s*\[([^\]]*)\]",

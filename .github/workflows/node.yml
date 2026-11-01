@@ -46,6 +46,8 @@ jobs:
               # tests/js also holds the noise guard of the e2e suite, its
               # rules and its summary, and that every spec uses it.
               - 'tests/e2e/**'
+              # What the e2e run has to do is tested there against this list.
+              - '.github/workflows/e2e.yml'
 
   build-and-test:
     runs-on: ubuntu-latest
