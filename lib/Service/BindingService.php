@@ -87,6 +87,15 @@ class BindingService {
 		return $this->findByFileId($fileId)?->padId === $padId;
 	}
 
+	/**
+	 * The row to report a file's pad from: public or protected, in any state.
+	 * One waiting to go still names the pad of a file that is here.
+	 */
+	public function padOfFile(int $fileId): ?Binding {
+		$binding = $this->findByFileId($fileId);
+		return in_array($binding?->accessMode, [self::ACCESS_PUBLIC, self::ACCESS_PROTECTED], true) ? $binding : null;
+	}
+
 	public function findByPadId(string $padId, ?string $state = null): ?Binding {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')

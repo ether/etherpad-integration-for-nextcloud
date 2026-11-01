@@ -204,7 +204,10 @@ export const padApiPost = (
 ): Promise<{ status: number, body: unknown }> => padApi('POST', endpoint, form, as)
 
 /** GET one of the plugin's endpoints; see padApi(). */
-export const padApiGet = (endpoint: string): Promise<{ status: number, body: unknown }> => padApi('GET', endpoint)
+export const padApiGet = (
+	endpoint: string,
+	as: { uid: string, password: string } | null = null,
+): Promise<{ status: number, body: unknown }> => padApi('GET', endpoint, null, as)
 
 /**
  * Whether a file or folder is there, asked once: the readers above wait

@@ -295,10 +295,7 @@
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$node->getId()]]></code>
       <code><![CDATA[(int)$node->getId()]]></code>
-      <code><![CDATA[(string)$content]]></code>
       <code><![CDATA[(string)$node->getContent()]]></code>
-      <code><![CDATA[(string)$node->getContent()]]></code>
-      <code><![CDATA[(string)$normalized['pad_url']]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadOpenService.php">

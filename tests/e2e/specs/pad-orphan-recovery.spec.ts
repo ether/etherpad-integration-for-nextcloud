@@ -13,7 +13,7 @@ import {
 	openPadFromFileList,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { copyViaDav, createPadAtPath, deleteViaDav, getFileViaDav, padApiGet, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
+import { copyViaDav, createPadAtPath, deleteViaDav, getFileViaDav, padApiGet, padApiPost, propfindFileId, putFileViaDav, restoreFromTrashViaDav } from '../fixtures/dav'
 
 /**
  * Recovery flow for a `.pad` file that has no binding row of its own —
@@ -125,5 +125,61 @@ test.describe('a copy of a .pad file and sync', () => {
 				await deleteViaDav(source).catch(() => {})
 			}
 		})
+
+		/** The copy's text names the original's pad, which is not the copy's. */
+		test(`a copy of a ${accessMode} pad reports no pad of its own`, async () => {
+			const source = uniquePadName(`orphan-meta-source-${accessMode}`)
+			const copy = uniquePadName(`orphan-meta-copy-${accessMode}`)
+			try {
+				await createPadAtPath(`/${source}`, accessMode)
+				await copyViaDav(source, copy)
+
+				const original = await padApiGet(`pads/meta-by-id/${await propfindFileId(source)}`)
+				expect(original.status, JSON.stringify(original.body)).toBe(200)
+				expect(original.body, 'the original should report its pad').toMatchObject({ access_mode: accessMode, is_external: false })
+				expect((original.body as { pad_id?: string }).pad_id).not.toBe('')
+
+				const copyId = await propfindFileId(copy)
+				const meta = await padApiGet(`pads/meta-by-id/${copyId}`)
+				expect(meta.status, JSON.stringify(meta.body)).toBe(200)
+				expect(meta.body).toMatchObject({ is_pad: true, pad_id: '', access_mode: '', pad_url: '', public_open_url: '' })
+
+				const resolved = await padApiGet(`pads/resolve?fileId=${copyId}`)
+				expect(resolved.status, JSON.stringify(resolved.body)).toBe(200)
+				expect(resolved.body).toMatchObject({ is_pad: true, access_mode: '', public_open_url: '' })
+
+				const initialized = await padApiPost(`pads/initialize-by-id/${copyId}`)
+				expect(initialized.status, JSON.stringify(initialized.body)).toBe(200)
+				expect(initialized.body).toMatchObject({ status: 'already_initialized', pad_id: '', access_mode: '' })
+			} finally {
+				await deleteViaDav(copy).catch(() => {})
+				await deleteViaDav(source).catch(() => {})
+			}
+		})
 	}
+
+	/** The row says which pad the file has, and an open still holds the text to it. */
+	test('a file naming another pad reports its row\'s, and its open is refused', async () => {
+		const own = uniquePadName('orphan-row-own')
+		const other = uniquePadName('orphan-row-other')
+		try {
+			await createPadAtPath(`/${own}`, 'public')
+			await createPadAtPath(`/${other}`, 'public')
+			const fileId = await propfindFileId(own)
+			const before = await padApiGet(`pads/meta-by-id/${fileId}`)
+			const padId = (before.body as { pad_id: string }).pad_id
+			expect(padId).not.toBe('')
+
+			await putFileViaDav(own, await getFileViaDav(other))
+
+			const meta = await padApiGet(`pads/meta-by-id/${fileId}`)
+			expect(meta.body, 'the row names the pad, not the text').toMatchObject({ pad_id: padId, access_mode: 'public' })
+
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+			expect(opened.status, JSON.stringify(opened.body)).toBe(400)
+		} finally {
+			await deleteViaDav(own).catch(() => {})
+			await deleteViaDav(other).catch(() => {})
+		}
+	})
 })

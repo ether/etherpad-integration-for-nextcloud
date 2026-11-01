@@ -49,6 +49,15 @@ final class Binding {
 	}
 
 	/**
+	 * The pad's id for the metadata answers. A reader does not get a public
+	 * pad's, as the id edits it. Presentation rather than enforcement: the
+	 * file a reader may read usually holds the id.
+	 */
+	public function padIdFor(bool $mayWrite): string {
+		return $mayWrite || $this->accessMode !== BindingService::ACCESS_PUBLIC ? $this->padId : '';
+	}
+
+	/**
 	 * No run has tried this row since the file was seen deleted for good:
 	 * updated_at is still at deleted_at. Asked of rows the sweep takes,
 	 * which it finds by their deleted_at; every version that writes

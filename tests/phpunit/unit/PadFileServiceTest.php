@@ -637,13 +637,14 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService(new FixedClock());
 		$padUrl = 'https://pad.example.test/p/de' . $byte . 'mo';
 
-		$stored = $service->buildInitialDocument(1, 'demo', BindingService::ACCESS_PUBLIC, padUrl: $padUrl);
+		$stored = $service->buildInitialDocument(1, 'ext.demo', BindingService::ACCESS_PUBLIC, padUrl: $padUrl, extraFrontmatter: ['pad_origin' => 'https://pad.example.test', 'remote_pad_id' => 'demo']);
 		$pad = $service->readPad($stored);
-		$this->assertSame($padUrl, $pad->padUrl());
+		$this->assertTrue($pad->isExternal);
+		$this->assertSame($padUrl, $pad->externalPadUrl());
 
 		$synced = $service->withExportSnapshot($pad, new PadSnapshot('text', '<p>text</p>', 1));
 
-		$this->assertSame($padUrl, $service->readPad($synced)->padUrl());
+		$this->assertSame($padUrl, $service->readPad($synced)->externalPadUrl());
 	}
 
 	/**
@@ -841,7 +842,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter()['state']);
 		$this->assertNull($restored->frontmatter()['deleted_at']);
 		$this->assertSame('new-pad', $restored->padId);
-		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl());
+		$this->assertSame('https://pad.example.test/p/new-pad', $restored->frontmatter()['pad_url']);
 		// The old pad's revision 4 means nothing to the new one: without the
 		// new pad's own count, the document has not been synced yet.
 		$this->assertSame(-1, $restored->snapshotRev);

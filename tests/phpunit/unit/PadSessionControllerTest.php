@@ -527,6 +527,7 @@ class PadSessionControllerTest extends TestCase {
 
 	private function buildPadFileNode(): File {
 		$file = $this->createMock(File::class);
+		$file->method('isReadable')->willReturn(true);
 		$file->method('getId')->willReturn(138);
 		$file->method('getName')->willReturn('Test.pad');
 		$file->method('getPath')->willReturn('/alice/files/Test.pad');
