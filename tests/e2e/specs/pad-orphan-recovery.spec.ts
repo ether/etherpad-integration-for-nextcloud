@@ -13,7 +13,7 @@ import {
 	openPadFromFileList,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { copyViaDav, createPadAtPath, deleteViaDav, getFileViaDav, padApiGet, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
+import { copyViaDav, createPadAtPath, deleteViaDav, getFileViaDav, padApiGet, padApiPost, propfindFileId, putFileViaDav, restoreFromTrashViaDav } from '../fixtures/dav'
 
 /**
  * Recovery flow for a `.pad` file that has no binding row of its own —
@@ -157,4 +157,29 @@ test.describe('a copy of a .pad file and sync', () => {
 			}
 		})
 	}
+
+	/** The row says which pad the file has, and an open still holds the text to it. */
+	test('a file naming another pad reports its row\'s, and its open is refused', async () => {
+		const own = uniquePadName('orphan-row-own')
+		const other = uniquePadName('orphan-row-other')
+		try {
+			await createPadAtPath(`/${own}`, 'public')
+			await createPadAtPath(`/${other}`, 'public')
+			const fileId = await propfindFileId(own)
+			const before = await padApiGet(`pads/meta-by-id/${fileId}`)
+			const padId = (before.body as { pad_id: string }).pad_id
+			expect(padId).not.toBe('')
+
+			await putFileViaDav(own, await getFileViaDav(other))
+
+			const meta = await padApiGet(`pads/meta-by-id/${fileId}`)
+			expect(meta.body, 'the row names the pad, not the text').toMatchObject({ pad_id: padId, access_mode: 'public' })
+
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+			expect(opened.status, JSON.stringify(opened.body)).toBe(400)
+		} finally {
+			await deleteViaDav(own).catch(() => {})
+			await deleteViaDav(other).catch(() => {})
+		}
+	})
 })

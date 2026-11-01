@@ -16,7 +16,6 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
-use OCP\Files\NotPermittedException;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -27,6 +26,7 @@ class PadMetadataServiceTest extends TestCase {
 		$file = $this->createConfiguredMock(File::class, [
 			'getId' => 138,
 			'getName' => 'Broken.pad',
+			'isReadable' => true,
 			'getMimeType' => 'application/x-etherpad-nextcloud',
 			'getContent' => 'not a pad',
 		]);
@@ -109,9 +109,9 @@ class PadMetadataServiceTest extends TestCase {
 	 */
 	public function testAFileThatMayNotBeReadReportsNoPad(): void {
 		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad', 'isReadable' => false, 'isUpdateable' => false]);
-		$file->method('getContent')->willThrowException(new NotPermittedException());
+		$file->expects($this->never())->method('getContent');
 		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
-		$lockRetryService->method('readContentWithOpenLockRetry')->willThrowException(new NotPermittedException());
+		$lockRetryService->expects($this->never())->method('readContentWithOpenLockRetry');
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('buildPadUrl');
 		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
@@ -316,7 +316,7 @@ class PadMetadataServiceTest extends TestCase {
 
 	/** Resolve does not wait for a lock: it answers without what the file would say, and logs that. */
 	public function testResolveOfALockedFileWithNoRowAnswersWithoutItsPad(): void {
-		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad']);
+		$file = $this->createConfiguredMock(File::class, ['getId' => 138, 'getName' => 'Named.pad', 'isReadable' => true]);
 		$file->method('getContent')->willThrowException(new LockedException('/Named.pad'));
 		$userNodeResolver = $this->finding($file);
 		$logger = $this->createMock(LoggerInterface::class);

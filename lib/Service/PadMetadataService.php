@@ -18,6 +18,8 @@ use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 class PadMetadataService {
+	private const NO_PAD = ['access_mode' => '', 'is_external' => false, 'pad_id' => '', 'pad_url' => '', 'public_open_url' => ''];
+
 	public function __construct(
 		private PadFileService $padFileService,
 		private PathNormalizer $padPaths,
@@ -191,10 +193,13 @@ class PadMetadataService {
 	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
 	 */
 	private function readPadMetadata(File $node, int $fileId, bool $retryLockedRead): array {
-		$binding = $node->isReadable() ? $this->bindingService->padOfFile($fileId) : null;
+		if (!$node->isReadable()) {
+			return self::NO_PAD;
+		}
+		$binding = $this->bindingService->padOfFile($fileId);
 		return $binding !== null
 			? $this->metadataFromRow($binding, $node)
-			: $this->metadataOfExternalPad($node, $fileId, $retryLockedRead);
+			: $this->metadataWithoutRow($node, $fileId, $retryLockedRead);
 	}
 
 	/**
@@ -240,7 +245,7 @@ class PadMetadataService {
 	 *
 	 * @return array{access_mode:string,is_external:bool,pad_id:string,pad_url:string,public_open_url:string}
 	 */
-	private function metadataOfExternalPad(File $node, int $fileId, bool $retryLockedRead): array {
+	private function metadataWithoutRow(File $node, int $fileId, bool $retryLockedRead): array {
 		$named = null;
 		$url = '';
 		try {

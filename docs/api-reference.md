@@ -219,9 +219,10 @@ solely by the separate external-pad policy, not by these two settings.
   - Purpose: read-only metadata endpoint for external UIs that need stable file context without triggering open/session bootstrap.
   - Where the fields come from:
     - `pad_id`, `access_mode` and the addresses of a pad on this server come from the file's row, not its text. A file with no row, such as a copy, answers them empty, and Etherpad is not asked. So does a file the user may not read, which File Access Control can leave them able to find.
-    - A pad on another server has no row, so its file says, and its address counts only once it passes the checks.
-    - A reader who may not write the file gets a public pad's read-only address and no `pad_id`, which would edit it, and a protected pad's `pad_id` and no address. That leaves the `pad_id` out of these answers only: the file a reader may read usually holds it, and an open answers with it.
+    - A pad on another server has no row, so its file says, and its address counts only once it passes the checks. A reader gets that address too, which edits the pad: no read-only one is known for it.
+    - A reader of a pad on this server who may not write the file gets a public pad's read-only address and no `pad_id`, which would edit it, and a protected pad's `pad_id` and no address. That leaves the `pad_id` out of these answers only: the file a reader may read usually holds it, and an open answers with it.
     - A row that cannot be read is an error; an address that cannot be built stays empty.
+    - An open still reads the text. It answers `400` where the text names another pad of this server than the row, so these answers can name a pad whose open is refused, and it follows text naming a pad on another server.
     - `resolve` answers the same way. So does an `initialize` that finds the file initialized, which has to read the file first, so a file the user may not read fails there.
   - Result includes:
     - `is_pad`
