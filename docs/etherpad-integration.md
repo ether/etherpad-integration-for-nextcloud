@@ -271,5 +271,5 @@ fallback of a public pad above –
 - HTTP >= 400 and invalid JSON are treated as explicit failures.
 - Critical lifecycle flows log failures and abort in a controlled way (no silent best effort).
 - Protected open keeps author-cache fallback defensive:
-  - stale cached author IDs are cleared automatically when session creation fails
+  - an author Etherpad no longer knows is resolved again when session creation reports it; other errors fail the open, and the cached ID stays for a later logout
   - author name sync failures do not block pad opening

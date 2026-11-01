@@ -80,7 +80,7 @@ by a background job of their own: everyone's, so an account deleted also
 takes those of the people its pads were shared with. That is usually within
 minutes; thousands of protected pads going at once take longer, as about 100
 of them start every 30 seconds. A group with a file still in Files, or a pad
-of no file, keeps them ([sessions.md](sessions.md)).
+without a binding, keeps them ([sessions.md](sessions.md)).
 
 A pad an earlier version bound from a legacy Ownpad file under an id
 Etherpad's API may not act on as it is - with whitespace or a `:` in it,
