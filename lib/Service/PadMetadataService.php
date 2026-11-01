@@ -246,7 +246,7 @@ class PadMetadataService {
 		try {
 			$content = $retryLockedRead
 				? $this->lockRetryService->readContentWithOpenLockRetry($node)
-				: (string)$node->getContent();
+				: $node->getContent();
 			$pad = $this->padFileService->readPad($content);
 			if ($pad->isExternal) {
 				$named = $pad;
