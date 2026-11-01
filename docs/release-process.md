@@ -77,7 +77,8 @@ Setup, the variables, and what each spec covers are in
 Etherpad cannot be reached (`503` with `retryable`) is held by the PHPUnit
 suite rather than by an outage the release has to stage. The session cookie a
 protected open sets - one, and what it carries - is described in
-[etherpad-integration.md](etherpad-integration.md) and held by
+[sessions.md](sessions.md), its setup in
+[etherpad-integration.md](etherpad-integration.md), and held by
 `protected-session-cookie-httponly.spec.ts`.
 
 ## 3) Tagging
