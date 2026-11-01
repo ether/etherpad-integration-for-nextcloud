@@ -26,19 +26,9 @@ The pad stays as it is, and nothing is written into the file.
 
 - **A protected pad** loses its sessions: whoever still has it open can
   write no more from their next change on, and nobody opens it until the
-  file is back. What does not fit in a few seconds - a pad opened many
-  times, a folder with a few dozen protected pads, an Etherpad that is
-  slow to answer - a background job takes within minutes, while the file
-  stays in the trash; a file restored keeps what is left, and its next
-  open makes a new session. A folder with more than 100 protected pads
-  takes the sessions of the first 100 found, and a background job finds the
-  others within minutes under a system cron, while the folder stays in the
-  trash. A folder deleted past the trash, or from it before that job runs,
-  has its files seen deleted for good, and a job takes the sessions from
-  those. Where they are not seen - moved to a trash under new ids, as on a
-  storage with a wrapped cache, or reported under the wrong ids, as below -
-  or the job could not be queued, the others' sessions expire on their own,
-  within six hours, unless the pad goes first.
+  file is back. A file restored keeps what a background job has not taken by
+  then, and its next open makes a new session. How fast that goes, and what
+  can leave a session standing until it expires: [sessions.md](sessions.md).
 - **A public pad** stays reachable by its link, and can be written into.
   The file in the trash is not synced, so what is written there is in the
   pad, not in the file's snapshot; a restore brings it back with the pad.
@@ -90,7 +80,7 @@ by a background job of their own: everyone's, so an account deleted also
 takes those of the people its pads were shared with. That is usually within
 minutes; thousands of protected pads going at once take longer, as about 100
 of them start every 30 seconds. A group with a file still in Files, or a pad
-of no file, keeps them.
+of no file, keeps them ([sessions.md](sessions.md)).
 
 A pad an earlier version bound from a legacy Ownpad file under an id
 Etherpad's API may not act on as it is - with whitespace or a `:` in it,
