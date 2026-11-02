@@ -87,6 +87,20 @@ afterEach(() => {
 })
 
 describe('embed-create-main', () => {
+	it('creates nothing when opened on its own, as anyone can send the link', async () => {
+		Object.defineProperty(window, 'parent', { configurable: true, value: window })
+		document.getElementById('etherpad-nextcloud-embed-create').setAttribute('data-l10n-not-embedded', 'Only embedded.')
+
+		await importEmbedCreate()
+		await flushAsyncWork()
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(locationReplaceSpy).not.toHaveBeenCalled()
+		expect(errorPanelHidden()).toBe(false)
+		expect(errorMessageText()).toBe('Only embedded.')
+		expect(parentPostSpy).not.toHaveBeenCalled()
+	})
+
 	it('posts epnc:create-succeeded and redirects on a clean create', async () => {
 		fetch.mockResolvedValueOnce(jsonResponse({
 			embed_url: '/embed/by-id/777',
@@ -325,22 +339,5 @@ describe('embed-create-main', () => {
 		expect(payload.reason).toBe('server')
 		// And no redirect happened.
 		expect(locationReplaceSpy).not.toHaveBeenCalled()
-	})
-
-	it('does not postMessage when not embedded (window.parent === window)', async () => {
-		// Restore parent === window for this test only.
-		Object.defineProperty(window, 'parent', { configurable: true, value: window })
-		fetch.mockResolvedValueOnce(jsonResponse({
-			embed_url: '/embed/by-id/777',
-			file_id: 777,
-			pad_id: 'p',
-			access_mode: 'protected',
-		}))
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
-		expect(parentPostSpy).not.toHaveBeenCalled()
-		expect(locationReplaceSpy).toHaveBeenCalled()
 	})
 })

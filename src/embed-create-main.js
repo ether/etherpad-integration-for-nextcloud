@@ -18,6 +18,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	const missingNameMessage = String(root.getAttribute('data-l10n-missing-name') || 'Pad name is required.')
 	const invalidAccessModeMessage = String(root.getAttribute('data-l10n-invalid-access-mode') || 'Invalid access mode.')
 	const incompleteConfigMessage = String(root.getAttribute('data-l10n-incomplete-config') || 'Embed configuration is incomplete.')
+	const notEmbeddedMessage = String(root.getAttribute('data-l10n-not-embedded') || 'This page creates a pad only inside the page that embeds it.')
 	const unansweredMessage = String(root.getAttribute('data-l10n-unanswered') || 'Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.')
 	const failedMessage = String(root.getAttribute('data-l10n-failed') || 'Pad creation failed.')
 	const loadingNode = root.querySelector('[data-epnc-embed-create-loading]')
@@ -107,6 +108,13 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	}
 
 	const run = async () => {
+		// This page writes as it loads, and a GET carries no proof of who asked:
+		// opened from a link anyone could send, it would create in the visitor's
+		// name. Embedded, `frame-ancestors` has vetted the page around it.
+		if (window.parent === window) {
+			failCreate('invalid', notEmbeddedMessage)
+			return
+		}
 		if (!Number.isFinite(parentFolderId) || parentFolderId <= 0 || createByParentUrl === '') {
 			failCreate('invalid', incompleteConfigMessage)
 			return
