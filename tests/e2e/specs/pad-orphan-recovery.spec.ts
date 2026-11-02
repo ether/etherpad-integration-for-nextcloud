@@ -214,6 +214,7 @@ test.describe('a file with a row', () => {
 			for (const [what, answer] of [
 				['open', await padApiPost('pads/open-by-id', { fileId })],
 				['sync', await padApiPost(`pads/sync/${fileId}`)],
+				['sync status', await padApiGet(`pads/sync-status/${fileId}`)],
 			] as const) {
 				expect(answer.status, `${what}: ${JSON.stringify(answer.body)}`).toBe(400)
 				expect((answer.body as { message?: string }).message, what).toContain('could not be matched')

@@ -172,7 +172,7 @@ class PadSyncService {
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry(
 			$node,
 			$updatedContent,
-			fn () => $this->bindingService->assertTextMatchesRow($fileId, $padId, $pad->accessMode, true),
+			fn () => $this->bindingService->assertTextMatchesRow($fileId, $padId, $pad->accessMode, $pad->isExternal),
 		);
 
 		return new PadSyncResult(

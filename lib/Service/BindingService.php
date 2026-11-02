@@ -693,7 +693,8 @@ class BindingService {
 	/**
 	 * A row says which pad the file has; text anyone who may write the file
 	 * wrote cannot override it. Text naming a pad on this server must match
-	 * the row.
+	 * the row, which assertConsistentMapping() asks: it also answers a file
+	 * with no row, and writes, making a row seen deleted for good active.
 	 *
 	 * Text naming a pad on another server is accepted only without a public
 	 * or protected row, in any state. Other modes are ignored here, as in the

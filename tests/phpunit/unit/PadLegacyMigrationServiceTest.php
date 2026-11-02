@@ -359,8 +359,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			->migrate($this->claimOn('alice', $file), ['url' => $url, 'pad_id' => $padId]);
 	}
 
-	/** Its own row, for the pad the shortcut names: a migration to finish. */
-	public function testAShortcutToItsOwnRowsPadPasses(): void {
+	/** Its own row, for the pad the shortcut names: a migration to finish, past the switch and with no insert. */
+	public function testAShortcutToItsOwnRowsPadFinishesWhateverTheRowsState(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(707);
 		$file->expects($this->once())->method('putContent');
@@ -374,12 +374,14 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/team-pad');
 
-		$row = new Binding(707, 'team-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE);
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('padOfFile')->with(707)->willReturn($row);
-		$binding->method('findByPadId')->willReturn($row);
+		$binding->method('padOfFile')->with(707)->willReturn(new Binding(707, 'team-pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE, 100, 100));
+		$binding->expects($this->never())->method('findByPadId');
+		$binding->expects($this->never())->method('createBinding');
+		$policy = $this->createMock(LegacyImportPolicy::class);
+		$policy->expects($this->never())->method('allowsProtectedImport');
 
-		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient)
+		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient, legacyImportPolicy: $policy)
 			->migrate($this->claimOn('alice', $file), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
 	}
 
