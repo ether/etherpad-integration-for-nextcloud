@@ -255,6 +255,12 @@ class PadLegacyMigrationService {
 			);
 		}
 
+		// Readable, so the deletion it was seen in did not happen. Active
+		// again, as an open makes it, or the copy could not find its original.
+		if ($existingBinding->state === BindingService::STATE_PENDING_DELETE) {
+			$this->bindingService->transition($boundFileId, $sourcePadId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE);
+		}
+
 		// Collision-with-access: write managed frontmatter but do NOT create
 		// a second binding row. The file becomes a "copy of a pad" in our
 		// model and the existing copy-handling flow takes over.

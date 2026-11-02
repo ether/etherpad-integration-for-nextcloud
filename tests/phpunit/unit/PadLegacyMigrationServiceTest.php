@@ -318,6 +318,21 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$this->migrateWithARowWaitingOn(808, $file, $resolver);
 	}
 
+	/** Its row must go active: the copy's search for its original knows no other. */
+	public function testACopyMakesTheRowOfAFileStillHereActive(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(707);
+		$file->expects($this->once())->method('putContent');
+
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->once())
+			->method('resolveUserFileNodeById')
+			->with('alice', 808)
+			->willReturn($this->createMock(File::class));
+
+		$this->migrateWithARowWaitingOn(808, $file, $resolver, madeActive: 1);
+	}
+
 	/** A file seen deleted for good, yet here, with its migration unfinished. */
 	public function testFinishesItsOwnFileUnderARowWaitingToGo(): void {
 		$file = $this->createMock(File::class);
@@ -330,7 +345,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$this->migrateWithARowWaitingOn(707, $file, $resolver);
 	}
 
-	private function migrateWithARowWaitingOn(int $boundFileId, File $file, UserNodeResolver $resolver): void {
+	private function migrateWithARowWaitingOn(int $boundFileId, File $file, UserNodeResolver $resolver, int $madeActive = 0): void {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
 		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
@@ -349,6 +364,10 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$binding->expects($this->once())
 			->method('createBinding')
 			->willThrowException(new BindingException('unique constraint hit'));
+		$binding->expects($this->exactly($madeActive))
+			->method('transition')
+			->with($boundFileId, 'team-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE)
+			->willReturn(true);
 
 		$this->buildService(
 			binding: $binding,

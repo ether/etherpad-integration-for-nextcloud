@@ -41,11 +41,11 @@ If the pad-id is already bound to another Nextcloud file, the unique constraint 
 - **Requesting user has read access to the file that owns the existing binding** → managed frontmatter is written into the legacy file, but **no new binding row is created**. The file is now a "copy of a pad" in the plugin's model, and the existing copy-of-a-pad flow handles future opens (offers "Open the original" via `recoverByFileId`).
 - **Requesting user has no access to the bound file** → the migration is refused with `LegacyPadCollisionException`, surfaced as HTTP 409 with `code: "legacy_collision_no_access"`. The `.pad` file is left untouched, so the migration offer is still pending on the next open.
 
-A `pending_delete` row still reserves the pad id. The checks for a pad with no active row run first. If they pass, the failed insert is handled as a collision: when the bound file is gone, the migration answers HTTP 409 and leaves the shortcut unchanged.
+A `pending_delete` row still reserves the pad id. The checks for a pad with no active row run first. If they pass, the failed insert is handled as a collision: when the bound file is gone, the migration answers HTTP 409 and leaves the shortcut unchanged. When the requesting user can still read it, its deletion did not happen: the row goes active again and this file becomes a copy.
 
-With `delete_pad_with_file` off, the row remains. For a protected pad, a failed delete in Etherpad also keeps it waiting. An imported public pad under a name that is not this app's loses only its row, and the pad stays in Etherpad.
+With `delete_pad_with_file` off, the row remains. For a protected pad, a failed delete in Etherpad also keeps it waiting.
 
-With deleting on, "Check pending pads" starts a bounded sweep at once, past the grace and retry delays ([deleting-pads.md](deleting-pads.md)). Once the row has gone, a later open goes through the checks for a pad with no active row again.
+With deleting on, "Check pending pads" starts a bounded sweep at once, past the grace and retry delays ([deleting-pads.md](deleting-pads.md)). An imported public pad under a name that is not this app's loses only its row, and the pad stays in Etherpad. Once the row has gone, a later open goes through the checks for a pad with no active row again.
 
 This prevents the legacy format from being a backdoor: a malicious user can't drop a hand-crafted `[InternetShortcut]` file pointing at another user's pad and "claim" the binding.
 
