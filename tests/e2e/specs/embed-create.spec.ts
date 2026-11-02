@@ -50,6 +50,7 @@ test.describe('embed create', () => {
 					resolve(type)
 				}
 			})
+			setTimeout(() => resolve('no answer'), 30_000)
 			const frame = document.createElement('iframe')
 			frame.src = src
 			document.body.append(frame)

@@ -186,7 +186,7 @@ Primary flow (minimal blank create launcher page):
 
      `code` and `retryable` are the server's (`docs/api-reference.md`), `null` and `false` without them: `retryable` says the same create may work later, a locked folder say.
    The create has no client-side time limit, as it writes: a slow create is not a failed one, and the page reports nothing until the server or a proxy answers. A host that stops waiting on its own must assume the pad may still be created.
-   The inline error rendering inside the iframe is unchanged — `postMessage` is purely additive for hosts that want to act on the outcome. Target-origin is `*` because the page doesn't know the host's origin up-front; the route's `frame-ancestors` already constrains who can be the parent.
+   The inline error rendering inside the iframe is unchanged — `postMessage` is purely additive for hosts that want to act on the outcome. Target-origin is `*` because the page doesn't know the host's origin up-front; the route's `frame-ancestors` already constrains who can be the parent. It constrains the parent's origin, not who asked: script in content framed under a Nextcloud page on the same site can navigate its own frame to this URL and create a pad.
 7. On success the launcher redirects itself to the returned `embed_url`, after which the normal embed-open flow takes over.
 
 ### 3) Open (public share)
