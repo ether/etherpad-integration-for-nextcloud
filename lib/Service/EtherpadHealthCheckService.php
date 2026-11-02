@@ -444,10 +444,10 @@ class EtherpadHealthCheckService {
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
 	 *
-	 * Matching is on substrings rather than exception subtypes because the
-	 * upstream library bundles many failure shapes into the same message. If
-	 * upstream wording changes the classification just falls through to
-	 * REASON_UNKNOWN; the error itself still surfaces.
+	 * Matching is on substrings rather than exception subtypes because
+	 * EtherpadClient puts many failure shapes into one message, Etherpad's own
+	 * wording among them. If that wording changes the classification just
+	 * falls through to REASON_UNKNOWN; the error itself still surfaces.
 	 */
 	private function classifyFailure(string $rawMessage): string {
 		$message = strtolower($rawMessage);

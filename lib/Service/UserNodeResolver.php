@@ -145,8 +145,6 @@ class UserNodeResolver {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
 		} catch (\Exception $e) {
-			// Not a catch: NoUserException is an `OC\` class and may not
-			// exist, which instanceof answers with false rather than a load.
 			if (!$e instanceof NotPermittedException && !$e instanceof \OC\User\NoUserException) {
 				throw $e;
 			}

@@ -22,11 +22,10 @@ use OCP\IConfig;
 
 class EtherpadClient {
 	/**
-	 * Failsafe fallback API version, used only when auto-detection fails AND no
-	 * etherpad_api_version is stored. Deliberately kept LOW, not bumped to the
-	 * newest release: Etherpad's API version list is cumulative, so a newer
-	 * server accepts any older version while rejecting one higher than it
-	 * supports. Requesting a low version therefore maximises compatibility in
+	 * Fallback API version, for when none is stored or detected. Deliberately
+	 * kept LOW, not bumped to the newest release: Etherpad's API version list
+	 * is cumulative, so a newer server accepts any older version while
+	 * rejecting one higher than it supports. Requesting a low version therefore maximises compatibility in
 	 * exactly the degraded path where this constant matters, and the plugin
 	 * uses no method newer than ~1.2 (it never passes the authorId param that
 	 * 1.3.0 added). Only raise this if we start relying on a newer-API feature.
@@ -735,7 +734,7 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Shared request options for every Etherpad call: a fixed timeout, the
+	 * Shared request options for every Etherpad call: the given timeout, the
 	 * JSON Accept header, and redirects disabled (Etherpad never legitimately
 	 * redirects an API call, and following one could leak the apikey to a
 	 * foreign host).

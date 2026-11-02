@@ -46,9 +46,9 @@ use Psr\Log\LoggerInterface;
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
- *   otherwise write its own. Refusing: once a minute for each file, since
- *   each is a case of its own, and once a minute for all refusals that
- *   name none. Without a distributed cache that can add() - or with one
+ *   otherwise write its own. Refusing, or having lost a pad: once a minute
+ *   for each file, since each is a case of its own, and once a minute for
+ *   all of a kind that name none. Without a distributed cache that can add() - or with one
  *   that throws - each is a warning, a rejected key an error.
  * - A `.pad` and its row that do not match: a warning. That is data an
  *   admin has to mend. A row that could not be written: an error, with the
