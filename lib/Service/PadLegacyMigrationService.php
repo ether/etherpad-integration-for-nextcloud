@@ -138,9 +138,9 @@ class PadLegacyMigrationService {
 	}
 
 	/**
-	 * A file with a row has its pad, in any state. A shortcut to another
-	 * one is text someone wrote over it: written as a document, it would
-	 * replace the shortcut and be refused by the next open.
+	 * A shortcut cannot replace the file's bound pad, even while deletion is
+	 * pending. Refusal preserves the shortcut instead of writing a document
+	 * that opening would reject as a mismatch.
 	 *
 	 * @throws LegacyPadNotFoundException
 	 */

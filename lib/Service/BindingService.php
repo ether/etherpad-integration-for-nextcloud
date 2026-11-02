@@ -691,11 +691,15 @@ class BindingService {
 	}
 
 	/**
-	 * Whether the file's text may be acted on: the row says which pad a file
-	 * has, and its text is what anyone who may write the file wrote. A pad on
-	 * another server has no row, so a file that has one names another pad
-	 * than its own. A row in a mode no open accepts counts as none, as in the
+	 * A row says which pad the file has; text anyone who may write the file
+	 * wrote cannot override it. Text naming a pad on this server must match
+	 * the row.
+	 *
+	 * Text naming a pad on another server is accepted only without a public
+	 * or protected row, in any state. Other modes are ignored here, as in the
 	 * metadata.
+	 *
+	 * @throws BindingException when the text conflicts with the row
 	 */
 	public function assertTextMatchesRow(int $fileId, string $padId, string $accessMode, bool $isExternal): void {
 		if (!$isExternal) {

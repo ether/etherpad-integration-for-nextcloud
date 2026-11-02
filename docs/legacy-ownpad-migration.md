@@ -36,7 +36,7 @@ Where no active row names the pad yet, a group pad has to be listed in the group
 
 ### A file that has a row for another pad
 
-A file whose row, in any state, names another pad than its shortcut is refused first, on either branch: a shortcut there is text someone wrote over the file, and a document written from it would replace the shortcut and be refused by the next open. It answers HTTP 400, leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the file has a row for another pad.` with `reason` `own_row`. A shortcut naming its row's own pad on this server goes on: that migration is finished.
+A file whose row, in any state, names another pad than its shortcut is refused first, on either branch: a shortcut there is text someone wrote over the file, and a document written from it would replace the shortcut and be refused by the next open. It answers HTTP 400, leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the file has a row for another pad.` with `reason` `own_row`. A shortcut naming its row's own pad on this server passes this check; the remaining migration checks still apply.
 
 ### Same origin — claim-collision rule
 

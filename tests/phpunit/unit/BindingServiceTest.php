@@ -65,7 +65,7 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(BindingService::STATE_ACTIVE, $table->rows[0]['state']);
 	}
 
-	/** A pad on another server has no row: a file that has one names another pad than its own. */
+	/** A waiting row still keeps text naming a pad on another server from replacing the file's pad. */
 	public function testAFileWithARowMayNotNameAPadOnAnotherServer(): void {
 		$service = new BindingService(new InMemoryBindingTable([self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE)]), new FixedClock(500));
 
