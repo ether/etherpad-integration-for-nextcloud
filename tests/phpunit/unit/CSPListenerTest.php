@@ -88,6 +88,22 @@ class CSPListenerTest extends TestCase {
 		$this->assertSame([], $this->handled(['allow_external_pads' => 'yes', 'external_pad_allowlist' => 'other.example.test'])->getPolicies());
 	}
 
+	/** Nothing to frame, and nothing that may go into the header. */
+	#[DataProvider('hostsWithNoOrigin')]
+	public function testAddsNoPolicyForAHostWithNoOrigin(string $host): void {
+		$this->assertSame([], $this->handled(['etherpad_host' => $host])->getPolicies());
+	}
+
+	/** @return array<string,array{string}> */
+	public static function hostsWithNoOrigin(): array {
+		return [
+			'no scheme' => ['pad.example.test'],
+			'a host that would end the directive' => ['https://pad.example.test;script-src'],
+			'a host with a second source' => ['https://pad.example.test other.example.test'],
+			'a host with a comma' => ['https://pad.example.test,other.example.test'],
+		];
+	}
+
 	/** @param array<string,string> $values */
 	private function handled(array $values): AddContentSecurityPolicyEvent {
 		$config = $this->createMock(IConfig::class);

@@ -661,11 +661,13 @@ class EtherpadClient {
 
 	/**
 	 * Normalize an absolute URL to a comparable origin string
-	 * (scheme://host[:port]). Returns '' on unparseable input.
+	 * (scheme://host[:port]). Returns '' on unparseable input, and on a host
+	 * with what ends a source or a directive: parse_url() leaves that in the
+	 * host, and CSPListener puts the origin into every page's header.
 	 */
 	public function normalizeOrigin(string $url): string {
 		$parts = parse_url($url);
-		if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+		if ($parts === false || empty($parts['scheme']) || empty($parts['host']) || preg_match('/[\s;,]/', $parts['host']) === 1) {
 			return '';
 		}
 		$scheme = strtolower($parts['scheme']);
