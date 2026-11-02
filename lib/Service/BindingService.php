@@ -11,7 +11,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
-use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Util\DbRows;
@@ -704,7 +703,7 @@ class BindingService {
 			return;
 		}
 		if ($this->padOfFile($fileId) !== null) {
-			throw new PadFileNamesForeignPadException('A file with a row names a pad on another server.');
+			throw new BindingMismatchException('A file with a row names a pad on another server.');
 		}
 	}
 

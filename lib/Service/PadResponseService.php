@@ -11,7 +11,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Util\FilesViewerUrl;
@@ -232,9 +231,6 @@ class PadResponseService {
 	public function bindingErrorMessage(BindingException $e): string {
 		if ($e instanceof MissingBindingException) {
 			return $this->l10n->t('This .pad file has no matching pad in this Nextcloud.');
-		}
-		if ($e instanceof PadFileNamesForeignPadException) {
-			return $this->l10n->t('This .pad file has a pad here but names one on another server. Restore an earlier version of the file, or ask its owner.');
 		}
 		if ($e instanceof PadLostException) {
 			return $this->l10n->t('This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.');

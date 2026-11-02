@@ -11,7 +11,6 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
-use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -100,7 +99,7 @@ final class ApiErrorLog {
 		} elseif ($e instanceof BindingNotCreatedException) {
 			// A race or the database: the cause says which.
 			$this->logger->error('Could not create pad binding.', $context);
-		} elseif ($e instanceof BindingMismatchException || $e instanceof PadFileNamesForeignPadException) {
+		} elseif ($e instanceof BindingMismatchException) {
 			$this->logger->warning('A .pad file and its pad binding could not be matched.', $context);
 		} else {
 			$this->logger->debug('A request was refused.', $context);

@@ -216,7 +216,7 @@ test.describe('a file with a row', () => {
 				['sync', await padApiPost(`pads/sync/${fileId}`)],
 			] as const) {
 				expect(answer.status, `${what}: ${JSON.stringify(answer.body)}`).toBe(400)
-				expect((answer.body as { message?: string }).message, what).toContain('names one on another server')
+				expect((answer.body as { message?: string }).message, what).toContain('could not be matched')
 			}
 			expect(await getFileViaDav(name), 'the sync should write nothing over it').toBe(foreign)
 			const meta = await padApiGet(`pads/meta-by-id/${fileId}`)

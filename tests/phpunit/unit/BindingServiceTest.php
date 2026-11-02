@@ -6,7 +6,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
-use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Service\Binding;
@@ -74,7 +73,7 @@ class BindingServiceTest extends TestCase {
 		try {
 			$service->assertTextMatchesRow(10, 'ext.remote', BindingService::ACCESS_PUBLIC, true);
 			$this->fail('A row and a pad on another server were let through.');
-		} catch (PadFileNamesForeignPadException $e) {
+		} catch (BindingMismatchException $e) {
 			$this->assertSame('A file with a row names a pad on another server.', $e->getMessage());
 		}
 	}
