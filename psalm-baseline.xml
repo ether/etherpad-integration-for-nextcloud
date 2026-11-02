@@ -43,14 +43,9 @@
   <file src="lib/Listeners/CSPListener.php">
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$entry]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'allow_external_pads', 'no')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'external_pad_allowlist', '')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Listeners/FileCreatedFromTemplateListener.php">
