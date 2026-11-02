@@ -173,7 +173,7 @@ Primary flow (minimal blank create launcher page):
    - logged-in Nextcloud user
    - writable target folder by stable `parentFolderId`
 3. `templates/embed-create.php` loads the Vite-built bundle for `src/embed-create-main.js` explicitly in blank layout.
-4. `src/embed-create-main.js` creates nothing unless embedded: the page writes as it loads, a link opened on its own could come from anyone, and `frame-ancestors` is what vets an embedder. It reads `name` and `accessMode` from the launcher URL, validates them client-side, and calls `POST /api/v1/pads/create-by-parent` same-origin with CSRF token from the template.
+4. `src/embed-create-main.js` shows an error and creates nothing when opened as a top-level page. Embedded, it reads `name` and `accessMode` from the launcher URL, validates them client-side, and calls `POST /api/v1/pads/create-by-parent` same-origin with CSRF token from the template.
    - the token is injected manually for the same reason as embed-open: blank layout has no automatic `OC.requestToken` bootstrap
 5. `PadCreateController::createByParent` performs server-side validation of `name`, `accessMode`, and the writable target folder before creating the `.pad` file and binding.
 6. Before redirecting, `src/embed-create-main.js` posts the host page one of two structured events so the surrounding UI can react without scraping the iframe DOM:

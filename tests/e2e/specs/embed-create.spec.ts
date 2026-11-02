@@ -3,8 +3,6 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
-/** Covers the embed-create page: it creates inside an iframe, and from a link opened on its own it does not. */
-
 import { test, expect } from '../fixtures/browser-noise'
 import { gotoFiles, uniqueName, uniquePadName } from '../fixtures/nextcloud'
 import { deleteViaDav, existsViaDav, mkcolViaDav, propfindFileId } from '../fixtures/dav'
