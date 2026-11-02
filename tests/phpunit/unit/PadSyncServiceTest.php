@@ -61,7 +61,7 @@ class PadSyncServiceTest extends TestCase {
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->once())->method('assertTextMatchesRow')->with(138, $this->anything(), $this->anything(), true);
 
 		$result = $this->buildService($padFileService, $userNodeResolver, $bindingService)
 			->syncStatusById('alice', 138);
@@ -87,7 +87,7 @@ class PadSyncServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile([], '', 'pad-a', BindingService::ACCESS_PUBLIC, '', false, 3));
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping')->willThrowException($refused);
+		$bindingService->method('assertTextMatchesRow')->willThrowException($refused);
 		$service = $this->buildService($padFileService, $userNodeResolver, $bindingService);
 
 		foreach (['sync' => static fn () => $service->syncById('alice', 138, false), 'status' => static fn () => $service->syncStatusById('alice', 138)] as $case => $call) {
@@ -124,8 +124,8 @@ class PadSyncServiceTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.ABC$pad', BindingService::ACCESS_PROTECTED);
+			->method('assertTextMatchesRow')
+			->with(138, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, false);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -287,7 +287,7 @@ class PadSyncServiceTest extends TestCase {
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->once())->method('assertTextMatchesRow')->with(138, $this->anything(), $this->anything(), true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$externalPadExportFetcher = $this->createMock(ExternalPadExportFetcher::class);
@@ -507,8 +507,8 @@ class PadSyncServiceTest extends TestCase {
 		$checks = 0;
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping')->willReturnCallback(static function () use (&$checks): void {
-			// As the sync starts, before its first write, and after its wait.
-			if (++$checks === 3) {
+			// Before its first write, and after its wait.
+			if (++$checks === 2) {
 				throw new BindingMismatchException('Binding pad ID mismatch.');
 			}
 		});

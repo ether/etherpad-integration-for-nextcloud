@@ -38,11 +38,11 @@ class LivePadHtmlFetcher {
 	 * disagree about it.
 	 */
 	public function fetchForPadFile(ParsedPadFile $pad, int $fileId): LivePadHtml {
+		$this->bindingService->assertTextMatchesRow($fileId, $pad->padId, $pad->accessMode, $pad->isExternal);
+
 		if ($pad->isExternal) {
 			return $this->toPayload($this->externalPadExportFetcher->fetchExternalPublicPadHtml($pad->externalPadUrl()));
 		}
-
-		$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
 
 		return $this->toPayload($this->etherpadClient->getHTMLForPreview($pad->padId));
 	}

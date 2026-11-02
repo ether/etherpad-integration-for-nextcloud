@@ -182,6 +182,7 @@ OC.L10N.register(
     "The server did not say where to load this pad from.": "Le serveur n'a pas indiqué d'où charger ce pad.",
     "The session cookie domain could not be verified.": "Le domaine du cookie de session n'a pas pu être vérifié.",
     "This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.": "Ce fichier .pad et son pad ne correspondent pas. Réessayez, ou contactez votre administration si le problème persiste.",
+    "This .pad file has a pad here but names one on another server. Restore an earlier version of the file, or ask its owner.": "Ce fichier .pad a un pad ici mais en désigne un sur un autre serveur. Restaurez une version antérieure du fichier, ou demandez à la personne qui en est propriétaire.",
     "This .pad file has no matching pad in this Nextcloud.": "Ce fichier .pad n'a pas de pad correspondant dans ce Nextcloud.",
     "This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.": "Ce fichier .pad n'a pas de pad dans ce Nextcloud. Son propriétaire peut l'ouvrir pour restaurer le pad.",
     "This .pad file has no pad metadata yet.": "Ce fichier .pad n'a pas encore de métadonnées de pad.",

@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Util\FilesViewerUrl;
@@ -187,9 +188,9 @@ class PadResponseService {
 			'original_pad_url' => $target->originalPadUrl(),
 			'url' => $target->url(),
 			// Only where a surface of ours draws the pad itself: the
-			// read-only view always, and an external pad because its iframe
-			// may be refused and fall back to the same view. An editable
-			// protected pad is Etherpad's own page and has no use for it.
+			// read-only view, and an external pad, which no frame shows. An
+			// editable protected pad is Etherpad's own page and has no use
+			// for it.
 			'content_url' => ($target->isReadOnlyView || $target->isExternal)
 				? $this->urlGenerator->linkToRoute('etherpad_nextcloud.padSession.contentById', ['fileId' => $target->fileId])
 				: '',
@@ -231,6 +232,9 @@ class PadResponseService {
 	public function bindingErrorMessage(BindingException $e): string {
 		if ($e instanceof MissingBindingException) {
 			return $this->l10n->t('This .pad file has no matching pad in this Nextcloud.');
+		}
+		if ($e instanceof PadFileNamesForeignPadException) {
+			return $this->l10n->t('This .pad file has a pad here but names one on another server. Restore an earlier version of the file, or ask its owner.');
 		}
 		if ($e instanceof PadLostException) {
 			return $this->l10n->t('This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.');

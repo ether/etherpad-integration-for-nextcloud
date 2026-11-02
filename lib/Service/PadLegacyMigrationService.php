@@ -138,6 +138,29 @@ class PadLegacyMigrationService {
 	}
 
 	/**
+	 * A file with a row has its pad, in any state. A shortcut to another
+	 * one is text someone wrote over it: written as a document, it would
+	 * replace the shortcut and be refused by the next open.
+	 *
+	 * @throws LegacyPadNotFoundException
+	 */
+	private function refuseOverARowForAnotherPad(string $uid, int $fileId, string $sourceUrl, string $sourcePadId, bool $sameOrigin): void {
+		$row = $this->bindingService->findByFileId($fileId);
+		if ($row === null || ($sameOrigin && $row->padId === $sourcePadId)) {
+			return;
+		}
+		$this->logger->warning('Refused legacy Ownpad migration - the file has a row for another pad.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
+			'originBranch' => $sameOrigin ? 'same' : 'cross',
+			'uid' => $uid,
+			'reason' => 'own_row',
+		]);
+		throw new LegacyPadNotFoundException('The legacy .pad file names another pad than the row of its file.');
+	}
+
+	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
 	 * @param CreatedFileClaim $claim the file, and the shortcut as it was read
@@ -159,7 +182,10 @@ class PadLegacyMigrationService {
 		$sourceUrl = $legacyShortcut['url'];
 		$sourcePadId = $legacyShortcut['pad_id'];
 
-		if (!$this->isSameOrigin($sourceUrl)) {
+		$sameOrigin = $this->isSameOrigin($sourceUrl);
+		$this->refuseOverARowForAnotherPad($uid, $fileId, $sourceUrl, $sourcePadId, $sameOrigin);
+
+		if (!$sameOrigin) {
 			$this->claimedFileWriter->write($claim, $this->externalPadSeeder->prepare($fileId, $sourceUrl)['content']);
 			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', [
 				'app' => 'etherpad_nextcloud',

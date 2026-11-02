@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
+use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Util\DbRows;
@@ -687,6 +688,23 @@ class BindingService {
 		}
 		if ($binding->state !== self::STATE_ACTIVE) {
 			throw new BindingException('Pad binding is not active.');
+		}
+	}
+
+	/**
+	 * Whether the file's text may be acted on: the row says which pad a file
+	 * has, and its text is what anyone who may write the file wrote. A pad on
+	 * another server has no row, so a file that has one names another pad
+	 * than its own. A row in a mode no open accepts counts as none, as in the
+	 * metadata.
+	 */
+	public function assertTextMatchesRow(int $fileId, string $padId, string $accessMode, bool $isExternal): void {
+		if (!$isExternal) {
+			$this->assertConsistentMapping($fileId, $padId, $accessMode);
+			return;
+		}
+		if ($this->padOfFile($fileId) !== null) {
+			throw new PadFileNamesForeignPadException('A file with a row names a pad on another server.');
 		}
 	}
 

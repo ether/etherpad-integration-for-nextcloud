@@ -97,7 +97,10 @@ class PadLifecycleControllerTest extends TestCase {
 		// Once as the sync starts, and again right before each of its three
 		// writes: a recovery may move the row while it waits for the lock.
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->exactly(4))
+		$bindingService->expects($this->once())
+			->method('assertTextMatchesRow')
+			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED, false);
+		$bindingService->expects($this->exactly(3))
 			->method('assertConsistentMapping')
 			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED);
 

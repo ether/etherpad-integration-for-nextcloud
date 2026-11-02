@@ -61,9 +61,7 @@ class PublicPadContextService {
 		$pad = $this->padFileService->readPad($content);
 		$isExternal = $pad->isExternal;
 
-		if (!$isExternal) {
-			$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
-		}
+		$this->bindingService->assertTextMatchesRow($fileId, $pad->padId, $pad->accessMode, $pad->isExternal);
 		$openTarget = $this->publicPadOpenService->open($pad, $resolved->readOnly, $token);
 
 		return new PublicPadContext(

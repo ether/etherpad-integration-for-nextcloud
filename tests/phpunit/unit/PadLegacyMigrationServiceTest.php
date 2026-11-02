@@ -318,6 +318,67 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$this->migrateWithARowWaitingOn(808, $file, $resolver);
 	}
 
+	/** @return iterable<string,array{string,string}> */
+	public static function shortcutsOverAnotherPadsRow(): iterable {
+		yield 'to another pad here' => ['https://pad.our-server.test/p/other-pad', 'other-pad'];
+		yield 'to the same id on another server' => ['https://legacy.example.test/p/team-pad', 'team-pad'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('shortcutsOverAnotherPadsRow')]
+	public function testRefusesAShortcutOverARowForAnotherPad(string $url, string $padId): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(707);
+		$file->expects($this->never())->method('putContent');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturnCallback(
+			static fn (string $source): string => str_starts_with($source, 'https://pad.our-server.test') ? 'https://pad.our-server.test' : 'https://legacy.example.test',
+		);
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByFileId')->with(707)->willReturn(new Binding(707, 'team-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE, 100, 100));
+		$binding->expects($this->never())->method('createBinding');
+
+		$seeder = $this->createMock(ExternalPadSeeder::class);
+		$seeder->expects($this->never())->method('prepare');
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with('Refused legacy Ownpad migration - the file has a row for another pad.', $this->callback(
+				static fn (array $context): bool => $context['reason'] === 'own_row' && $context['fileId'] === 707 && !in_array($padId, $context, true),
+			));
+
+		$this->expectException(LegacyPadNotFoundException::class);
+		$this->buildService(binding: $binding, etherpadClient: $etherpadClient, externalPadSeeder: $seeder, logger: $logger)
+			->migrate($this->claimOn('alice', $file), ['url' => $url, 'pad_id' => $padId]);
+	}
+
+	/** Its own row, for the pad the shortcut names: a migration to finish. */
+	public function testAShortcutToItsOwnRowsPadPasses(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(707);
+		$file->expects($this->once())->method('putContent');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/team-pad');
+
+		$row = new Binding(707, 'team-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE);
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByFileId')->with(707)->willReturn($row);
+		$binding->method('findByPadId')->willReturn($row);
+
+		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient)
+			->migrate($this->claimOn('alice', $file), ['url' => 'https://pad.our-server.test/p/team-pad', 'pad_id' => 'team-pad']);
+	}
+
 	/** Its row must go active: the copy's search for its original knows no other. */
 	public function testACopyMakesTheRowOfAFileStillHereActive(): void {
 		$file = $this->createMock(File::class);

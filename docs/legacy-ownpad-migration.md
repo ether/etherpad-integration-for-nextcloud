@@ -34,6 +34,10 @@ Etherpad's `lowerCasePadIds` setting has the API lower the capitals of an id no 
 
 Where no active row names the pad yet, a group pad has to be listed in the group it names (`listPads`), after the switch below; a group Etherpad does not know is answered as a missing pad, so the answer does not tell whether the group is there. Where no active row names a public pad, its id must not be of the form this app gives its own pads (`nc-…`, `r-…`), in any capitals: Ownpad names none so, and the pad may belong to another installation on the same Etherpad. Anyone can write or edit a shortcut as Ownpad does, and nothing tells the files apart, so every rule here goes by what the file names, not by who wrote it. Each of these refusals answers HTTP 400 ("This .pad file names a pad that cannot be linked to it."), leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the pad it names cannot be linked.` with `reason` `invalid_id`, `case_variant`, `not_in_group` or `own_name`.
 
+### A file that has a row for another pad
+
+A file whose row, in any state, names another pad than its shortcut is refused first, on either branch: a shortcut there is text someone wrote over the file, and a document written from it would replace the shortcut and be refused by the next open. It answers HTTP 400, leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the file has a row for another pad.` with `reason` `own_row`. A shortcut naming its row's own pad on this server goes on: that migration is finished.
+
 ### Same origin — claim-collision rule
 
 If the pad-id is already bound to another Nextcloud file, the unique constraint on `ep_pad_bindings.pad_id` prevents a second binding row. The migration handles the conflict explicitly:
@@ -69,7 +73,7 @@ Every branch emits one log line at `info` level (or `warning` for a refusal); a 
 | `accessMode` | `public` / `protected` / unset for cross-origin |
 | `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, the line of an insert that met a row |
 | `uid` | Migrating user |
-| `reason` | Why a pad cannot be linked: `invalid_id`, `case_variant`, `not_in_group` or `own_name`; on that refusal only |
+| `reason` | Why a pad cannot be linked: `invalid_id`, `case_variant`, `not_in_group`, `own_name` or `own_row`; on those refusals only |
 | `boundFileId` | The file a row already binds the pad to, on `with_access` and `no_access`; on `case_variant`, the file a row binds it to under other capitals |
 
 Neither the URL nor the pad id is written out. A legacy shortcut can carry

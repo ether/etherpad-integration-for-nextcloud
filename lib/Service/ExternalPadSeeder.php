@@ -60,8 +60,8 @@ class ExternalPadSeeder {
 			// endpoint refused to serve content (404). Common causes:
 			// the remote Etherpad has authentication on /p/<id>/export,
 			// or the pad is restricted despite a public-looking URL.
-			// We keep the file (the viewer can still load the pad
-			// directly through the iframe) and surface a stable code
+			// We keep the file (the viewer still links to the pad) and
+			// surface a stable code
 			// the frontend translates into a toast.
 			$result['snapshot_warning_code'] = 'remote_export_unavailable';
 		}

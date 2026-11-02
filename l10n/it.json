@@ -181,6 +181,7 @@
         "The server did not say where to load this pad from.": "Il server non ha indicato da dove caricare questo pad.",
         "The session cookie domain could not be verified.": "Non è stato possibile verificare il dominio del cookie di sessione.",
         "This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.": "Non è stato possibile abbinare questo file .pad al suo pad. Riprova oppure, se il problema persiste, contatta l'amministrazione.",
+        "This .pad file has a pad here but names one on another server. Restore an earlier version of the file, or ask its owner.": "Questo file .pad ha un pad qui ma ne indica uno su un altro server. Ripristina una versione precedente del file oppure chiedi a chi ne è proprietario.",
         "This .pad file has no matching pad in this Nextcloud.": "Questo file .pad non ha alcun pad corrispondente in questo Nextcloud.",
         "This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.": "Questo file .pad non ha alcun pad in questo Nextcloud. Il proprietario può aprirlo per ripristinare il pad.",
         "This .pad file has no pad metadata yet.": "Questo file .pad non ha ancora metadati del pad.",

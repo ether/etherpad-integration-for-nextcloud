@@ -99,9 +99,7 @@ class PadSyncService {
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			$isExternal = $pad->isExternal;
-			if (!$isExternal) {
-				$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
-			}
+			$this->bindingService->assertTextMatchesRow($fileId, $pad->padId, $pad->accessMode, $pad->isExternal);
 
 			if ($isExternal) {
 				return $this->syncExternalPad($node, $fileId, $pad, $force);
@@ -122,12 +120,8 @@ class PadSyncService {
 
 		$pad = $this->padFileService->readPad((string)$node->getContent());
 		$padId = $pad->padId;
-		$accessMode = $pad->accessMode;
-		$isExternal = $pad->isExternal;
-		if (!$isExternal) {
-			$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
-		}
-		if ($isExternal) {
+		$this->bindingService->assertTextMatchesRow($fileId, $pad->padId, $pad->accessMode, $pad->isExternal);
+		if ($pad->isExternal) {
 			return new PadSyncStatus(
 				status: self::STATUS_UNAVAILABLE,
 				inSync: null,

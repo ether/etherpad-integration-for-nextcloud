@@ -151,6 +151,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		foreach ([
 			'Etherpad not reachable' => [new EtherpadClientException('Etherpad API request failed: getHTML'), 'warning', 'Etherpad could not be reached while answering a request.'],
 			'a row naming another pad' => [new BindingMismatchException('Binding pad ID mismatch.'), 'warning', 'A .pad file and its pad binding could not be matched.'],
+			'a file with a row naming a pad on another server' => [new \OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException('internal wording'), 'warning', 'A .pad file and its pad binding could not be matched.'],
 			'another binding problem' => [new BindingException('Pad binding is not active.'), 'debug', 'A request was refused.'],
 			'a pad too large to show' => [new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'), 'debug', 'A request was refused.'],
 			'a pad on another server' => [new \OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException('Public export HTTP error (500)', 500), 'debug', 'A request was refused.'],

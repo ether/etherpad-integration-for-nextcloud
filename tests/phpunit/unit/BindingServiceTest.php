@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
+use OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Service\Binding;
@@ -63,6 +64,28 @@ class BindingServiceTest extends TestCase {
 		$service->assertConsistentMapping(10, 'pad-a', BindingService::ACCESS_PUBLIC);
 
 		$this->assertSame(BindingService::STATE_ACTIVE, $table->rows[0]['state']);
+	}
+
+	/** A pad on another server has no row: a file that has one names another pad than its own. */
+	public function testAFileWithARowMayNotNameAPadOnAnotherServer(): void {
+		$service = new BindingService(new InMemoryBindingTable([self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE)]), new FixedClock(500));
+
+		$service->assertTextMatchesRow(11, 'ext.remote', BindingService::ACCESS_PUBLIC, true);
+		try {
+			$service->assertTextMatchesRow(10, 'ext.remote', BindingService::ACCESS_PUBLIC, true);
+			$this->fail('A row and a pad on another server were let through.');
+		} catch (PadFileNamesForeignPadException $e) {
+			$this->assertSame('A file with a row names a pad on another server.', $e->getMessage());
+		}
+	}
+
+	/** Not a pad on another server: the row must then name it. */
+	public function testAPadOnThisServerIsComparedWithItsRow(): void {
+		$service = new BindingService(new InMemoryBindingTable([self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE)]), new FixedClock(500));
+
+		$service->assertTextMatchesRow(10, 'pad-a', BindingService::ACCESS_PUBLIC, false);
+		$this->expectException(BindingMismatchException::class);
+		$service->assertTextMatchesRow(10, 'pad-b', BindingService::ACCESS_PUBLIC, false);
 	}
 
 	/**

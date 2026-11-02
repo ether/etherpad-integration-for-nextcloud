@@ -78,6 +78,8 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'a row naming another pad' => [new BindingException('Binding pad ID mismatch.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', []];
 		// Two initialisations at once: the next open finds the winner's pad.
 		yield 'a row another request made first' => [new BindingNotCreatedException('Could not create unique pad binding.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', ['retryable' => true]];
+		// Trying again would not help: the row says which pad the file has.
+		yield 'a file with a row naming a pad on another server' => [new \OCA\EtherpadNextcloud\Exception\PadFileNamesForeignPadException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has a pad here but names one on another server. Restore an earlier version of the file, or ask its owner.', []];
 		yield 'a legacy import switched off' => [new LegacyProtectedImportDisabledException('internal wording'), Http::STATUS_FORBIDDEN, 'This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.', ['code' => 'legacy_protected_import_disabled']];
 		yield 'a legacy pad missing from its group' => [new LegacyPadNotFoundException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file names a pad that cannot be linked to it.', []];
 		yield 'a legacy pad bound elsewhere' => [new LegacyPadCollisionException('internal wording'), Http::STATUS_CONFLICT, 'This pad is already linked to another file you do not have access to.', ['code' => 'legacy_collision_no_access']];

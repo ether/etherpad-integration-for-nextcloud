@@ -78,8 +78,8 @@ class PublicViewerControllerTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(42, 'g.abcdefghijklmnop$Shared', BindingService::ACCESS_PROTECTED);
+			->method('assertTextMatchesRow')
+			->with(42, 'g.abcdefghijklmnop$Shared', BindingService::ACCESS_PROTECTED, false);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
@@ -208,7 +208,7 @@ class PublicViewerControllerTest extends TestCase {
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->method('assertTextMatchesRow')->with($this->anything(), $this->anything(), $this->anything(), true);
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->expects($this->once())
@@ -279,7 +279,7 @@ class PublicViewerControllerTest extends TestCase {
 			));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->method('assertTextMatchesRow')->with($this->anything(), $this->anything(), $this->anything(), true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
