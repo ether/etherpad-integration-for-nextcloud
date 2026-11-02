@@ -19,7 +19,8 @@ class PadOpenTarget {
 	public function __construct(
 		public readonly string $file,
 		public readonly int $fileId,
-		public readonly string $padId,
+		/** Private behind answeredPadId(): a reader does not get every pad's. */
+		private readonly string $padId,
 		public readonly string $accessMode,
 		/**
 		 * The pad's addresses: one of a pad on another server opens it to
@@ -50,12 +51,11 @@ class PadOpenTarget {
 	}
 
 	/**
-	 * The pad's id for the answer. A reader does not get a public pad's, as
-	 * Binding::padIdFor() has it; on another server the address they get
-	 * holds the id anyway.
+	 * The pad's id for the answer (Binding::padIdOf()). On another server the
+	 * reader's address edits the pad anyway, and the id only marks it.
 	 */
 	public function answeredPadId(): string {
-		return $this->mayWrite || $this->isExternal || $this->accessMode !== BindingService::ACCESS_PUBLIC ? $this->padId : '';
+		return $this->isExternal ? $this->padId : Binding::padIdOf($this->padId, $this->accessMode, $this->mayWrite);
 	}
 
 	public function cookieHeader(): string {
