@@ -4,6 +4,7 @@
  */
 
 import { test, expect } from '../fixtures/browser-noise'
+import { E2E } from '../fixtures/env'
 import { gotoFiles, uniqueName, uniquePadName } from '../fixtures/nextcloud'
 import { deleteViaDav, existsViaDav, mkcolViaDav, propfindFileId } from '../fixtures/dav'
 
@@ -13,7 +14,7 @@ test.describe('embed create', () => {
 
 	test.beforeAll(async () => {
 		await mkcolViaDav(folder)
-		launcher = `/index.php/apps/etherpad_nextcloud/embed/create-by-parent/${await propfindFileId(folder)}`
+		launcher = `${E2E.baseURL}/apps/etherpad_nextcloud/embed/create-by-parent/${await propfindFileId(folder)}`
 	})
 
 	test.afterAll(async () => {
@@ -22,10 +23,18 @@ test.describe('embed create', () => {
 
 	test('creates nothing from a link opened on its own', async ({ page }) => {
 		const padName = uniquePadName('embed-create-link')
+		const creates: string[] = []
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && request.url().includes('create-by-parent')) {
+				creates.push(request.url())
+			}
+		})
 
 		await page.goto(`${launcher}?name=${encodeURIComponent(padName)}&accessMode=protected`)
 
-		await expect(page.locator('[data-epnc-embed-create-error]')).toBeVisible()
+		const refusal = await page.locator('#etherpad-nextcloud-embed-create').getAttribute('data-l10n-not-embedded')
+		await expect(page.locator('[data-epnc-embed-create-error-message]')).toHaveText(String(refusal))
+		expect(creates).toEqual([])
 		expect(await existsViaDav(`${folder}/${padName}`)).toBe(false)
 	})
 
@@ -34,12 +43,19 @@ test.describe('embed create', () => {
 		const padName = uniquePadName('embed-create-framed')
 		await gotoFiles(page)
 
-		await page.evaluate((src) => {
+		const told = await page.evaluate((src) => new Promise<string>((resolve) => {
+			window.addEventListener('message', (event) => {
+				const type = String(event.data?.type)
+				if (type.startsWith('epnc:create-')) {
+					resolve(type)
+				}
+			})
 			const frame = document.createElement('iframe')
 			frame.src = src
 			document.body.append(frame)
-		}, `${launcher}?name=${encodeURIComponent(padName)}&accessMode=protected`)
+		}), `${launcher}?name=${encodeURIComponent(padName)}&accessMode=protected`)
 
-		await expect.poll(() => existsViaDav(`${folder}/${padName}`), { timeout: 30_000 }).toBe(true)
+		expect(told).toBe('epnc:create-succeeded')
+		expect(await existsViaDav(`${folder}/${padName}`)).toBe(true)
 	})
 })

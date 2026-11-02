@@ -28,7 +28,7 @@ A file or folder id a route takes - `{fileId}`, `fileId`, `parentFolderId`, `tem
     - renders a blank embed page that internally calls `open-by-id`
     - injects CSRF token manually into the blank template because this layout does not receive the normal `OC.requestToken` bootstrap
     - if open fails with `code: missing_frontmatter`, the embed page retries once after `initialize-by-id/{fileId}`
-    - sets route-specific `frame-ancestors` from admin-configured trusted embed origins
+    - sets route-specific `frame-ancestors`: Nextcloud's own origin plus the admin-configured trusted embed origins
   - Host message contract:
     - accepted incoming messages from trusted origins:
       - `epnc:host-visible`
@@ -57,7 +57,7 @@ A file or folder id a route takes - `{fileId}`, `fileId`, `parentFolderId`, `tem
     - renders a launcher that submits `POST /api/v1/pads/create-by-parent` with a same-origin CSRF token only when embedded. Opened as a top-level page, it displays an error without creating a pad
     - injects CSRF token manually into the blank template because this layout does not receive the normal `OC.requestToken` bootstrap
     - on success redirects itself to the returned `embed_url`
-    - sets route-specific `frame-ancestors` from admin-configured trusted embed origins
+    - sets route-specific `frame-ancestors`: Nextcloud's own origin plus the admin-configured trusted embed origins
 
 ### Naming the file in a public share
 

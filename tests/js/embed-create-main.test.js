@@ -90,6 +90,7 @@ describe('embed-create-main', () => {
 	it('creates nothing when opened on its own, as anyone can send the link', async () => {
 		Object.defineProperty(window, 'parent', { configurable: true, value: window })
 		document.getElementById('etherpad-nextcloud-embed-create').setAttribute('data-l10n-not-embedded', 'Only embedded.')
+		const selfPostSpy = vi.spyOn(window, 'postMessage')
 
 		await importEmbedCreate()
 		await flushAsyncWork()
@@ -98,7 +99,8 @@ describe('embed-create-main', () => {
 		expect(locationReplaceSpy).not.toHaveBeenCalled()
 		expect(errorPanelHidden()).toBe(false)
 		expect(errorMessageText()).toBe('Only embedded.')
-		expect(parentPostSpy).not.toHaveBeenCalled()
+		expect(selfPostSpy).not.toHaveBeenCalled()
+		selfPostSpy.mockRestore()
 	})
 
 	it('posts epnc:create-succeeded and redirects on a clean create', async () => {

@@ -198,6 +198,8 @@ Each `specs/*.spec.ts` covers one flow:
   link the app does not take (http, a group pad) is refused with its
   reason and leaves no file.
 - **pad-create-template** — create from the blank template-picker entry.
+- **embed-create** — the create launcher creates inside an iframe and tells
+  its host; opened on its own it refuses and sends nothing.
 - **pad-author-display-name** — protected pad opens with the NC account's
   display name visible in Etherpad's user list.
 - **pad-template-placeholders** — `{{date}}` / `{{user}}` substitution

@@ -149,7 +149,7 @@ Primary flow (minimal blank embed page):
 
 Trusted host integration details:
 
-- Embed routes use route-specific `frame-ancestors` from admin setting `trusted_embed_origins`.
+- Embed routes use route-specific `frame-ancestors`: Nextcloud's own origin plus admin setting `trusted_embed_origins`.
 - `src/embed-main.js` accepts host messages only from:
   - `window.location.origin`
   - configured trusted embed origins
@@ -178,7 +178,7 @@ Primary flow (minimal blank create launcher page):
 5. `PadCreateController::createByParent` performs server-side validation of `name`, `accessMode`, and the writable target folder before creating the `.pad` file and binding.
 6. Before redirecting, `src/embed-create-main.js` posts the host page one of two structured events so the surrounding UI can react without scraping the iframe DOM:
    - `epnc:create-succeeded` — payload `{embed_url, file_id, pad_id, access_mode}`. Fires once on the success path, immediately before the iframe self-redirects to the embed-open URL.
-   - `epnc:create-failed` — payload `{reason, status, message, code, retryable}`. Fires on any error. `reason` is one of:
+   - `epnc:create-failed` — payload `{reason, status, message, code, retryable}`. Fires on any error while embedded; a top-level page has no host to tell and only shows the error. `reason` is one of:
      - `'invalid'`: client-side validation failed; nothing was sent.
      - `'conflict'`: a `409`, a name taken or a file that changed while its pad was set up; `code` tells them apart.
      - `'server'`: refused with any other 4xx, by this app or by a proxy before it, so nothing was created; or failed by this app with a 5xx of its own, which it rolls back as far as it can; or answered in a way the page cannot use.
@@ -186,7 +186,7 @@ Primary flow (minimal blank create launcher page):
 
      `code` and `retryable` are the server's (`docs/api-reference.md`), `null` and `false` without them: `retryable` says the same create may work later, a locked folder say.
    The create has no client-side time limit, as it writes: a slow create is not a failed one, and the page reports nothing until the server or a proxy answers. A host that stops waiting on its own must assume the pad may still be created.
-   The inline error rendering inside the iframe is unchanged — `postMessage` is purely additive for hosts that want to act on the outcome. Target-origin is `*` because the page doesn't know the host's origin up-front; the `frame-ancestors` allowlist already constrains who can be the parent.
+   The inline error rendering inside the iframe is unchanged — `postMessage` is purely additive for hosts that want to act on the outcome. Target-origin is `*` because the page doesn't know the host's origin up-front; the route's `frame-ancestors` already constrains who can be the parent.
 7. On success the launcher redirects itself to the returned `embed_url`, after which the normal embed-open flow takes over.
 
 ### 3) Open (public share)

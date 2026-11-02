@@ -33,13 +33,8 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	 * The launcher has no host handshake to establish a target origin.
 	 * Embedding is restricted by frame-ancestors to Nextcloud's own origin
 	 * and the configured trusted embed origins.
-	 *
-	 * No-ops if we're not actually embedded (window.parent === window).
 	 */
 	const postHostMessage = (type, payload) => {
-		if (window.parent === window) {
-			return
-		}
 		try {
 			window.parent.postMessage(Object.assign({ type }, payload || {}), '*')
 		} catch (e) {
@@ -111,7 +106,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 		// block a page opened on its own.
 		// @see https://w3c.github.io/webappsec-csp/#directive-frame-ancestors
 		if (window.parent === window) {
-			failCreate('invalid', notEmbeddedMessage)
+			showError(notEmbeddedMessage)
 			return
 		}
 		if (!Number.isFinite(parentFolderId) || parentFolderId <= 0 || createByParentUrl === '') {
