@@ -499,7 +499,8 @@ class PadSyncServiceTest extends TestCase {
 		$padFileService->method('withExportSnapshot')->willReturn('updated');
 		$checks = 0;
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertTextMatchesRow')->willReturnCallback(static function () use (&$checks): void {
+		$bindingService->method('assertTextMatchesRow')->willReturnCallback(static function (int $fileId, string $padId, string $accessMode, bool $isExternal) use (&$checks): void {
+			self::assertTrue($isExternal);
 			if (++$checks === 2) {
 				throw new BindingMismatchException('A file with a row names a pad on another server.');
 			}

@@ -349,6 +349,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			->with('Refused legacy Ownpad migration - the file has a row for another pad.', $this->callback(
 				static fn (array $context): bool => $context['reason'] === 'own_row'
 					&& $context['fileId'] === 707
+					&& $context['uid'] === 'alice'
+					&& isset($context['sourceHost'])
 					&& $context['originBranch'] === $branch
 					&& isset($context['accessMode']) === ($branch === 'same')
 					&& !in_array($padId, $context, true),
