@@ -193,8 +193,8 @@ class PadLegacyMigrationService {
 			if (PadId::isAppPublicId(mb_strtolower($sourcePadId))) {
 				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'own_name', 'The legacy .pad file names a pad with the id of a pad this app makes.');
 			}
-			// Unbound pads only; a bound one is the collision rule's
-			// question below.
+			// Only where no active row names the pad; one that does is the
+			// collision rule's question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
 			// After the switched-off refusal: asking first would answer three
 			// ways and make this an existence oracle on a privileged API.
@@ -205,27 +205,22 @@ class PadLegacyMigrationService {
 			if ($otherCase !== null) {
 				throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, 'none', 'case_variant', 'The legacy .pad file names a pad bound under other capitals.', $otherCase->fileId);
 			}
-			// Create the binding first, then write the file. If the binding
-			// fails (e.g. a concurrent migration claimed the same pad-id
-			// between findByPadId and createBinding), we re-classify as a
-			// collision and fall through to the access check — the .pad
-			// file is left untouched so the next open retries cleanly.
+			// The pad id is unique across all states, so a failed insert may
+			// be a collision with a concurrent migration or a row seen deleted
+			// for good. Read it again without a state filter and apply the
+			// normal access check.
 			//
-			// Doing it in the other order would leave a half-migrated state:
-			// the file would have managed frontmatter pointing at a pad-id
-			// with no binding row, and the existing copy-recovery flow can't
-			// help (it needs *some* binding for that pad-id to exist).
+			// The row comes first: managed frontmatter with no row for its pad
+			// id is a state copy recovery cannot help with.
 			try {
 				$this->bindingService->createBinding($fileId, $sourcePadId, $accessMode);
 			} catch (BindingException $e) {
-				$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
+				$existingBinding = $this->bindingService->findByPadId($sourcePadId);
 				if ($existingBinding === null) {
-					// Race lost AND no winner — surface the original failure
-					// so the open retry sees a clear "could not initialize".
+					// No row holds it, so the insert failed for another reason.
 					throw $e;
 				}
-				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, null));
-				// Fall through to the collision-with-access handling below.
+				$this->logger->info('A row already holds the pad-id of a legacy Ownpad migration; reclassifying as collision.', $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, null));
 			}
 			if ($existingBinding === null) {
 				$context = $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'none');
@@ -237,16 +232,17 @@ class PadLegacyMigrationService {
 
 		$boundFileId = $existingBinding->fileId;
 		if ($boundFileId === $fileId) {
-			// Self-collision: an earlier migration attempt for this file
-			// succeeded in creating the binding but failed before the file
-			// write - or this one's insert landed and still threw. Just finish
-			// the file-side work; the binding already covers us.
+			// An earlier attempt made this file's row but did not finish its
+			// document, or this insert committed before throwing. Only the
+			// document is completed here; assertConsistentMapping() makes a
+			// row seen deleted for good active when the file is opened.
 			$context = $this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'self');
 			$this->writeOrTakeBackTheRow($claim, $document, $sourcePadId, $context);
 			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', $context);
 			return;
 		}
 
+		// A file gone for good, its row still waiting, cannot be read either.
 		try {
 			$this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
 		} catch (NotFoundException) {
@@ -257,6 +253,12 @@ class PadLegacyMigrationService {
 			throw new LegacyPadCollisionException(
 				'This pad is already linked to another file you do not have access to.',
 			);
+		}
+
+		// Readable, so the deletion it was seen in did not happen. Active
+		// again, as an open makes it, or the copy could not find its original.
+		if ($existingBinding->state === BindingService::STATE_PENDING_DELETE) {
+			$this->bindingService->transition($boundFileId, $sourcePadId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE);
 		}
 
 		// Collision-with-access: write managed frontmatter but do NOT create
@@ -277,8 +279,9 @@ class PadLegacyMigrationService {
 	 * keep the next open from taking the pad the file names. Elsewhere it
 	 * stays - a file naming this pad, or an emptied one, is bound by it on
 	 * its next open, and for one that does not parse, or cannot be looked
-	 * up or read, the row may be all that names its pad. Only the row: the
-	 * pad was there before, and is never the migration's to take down.
+	 * up or read, the row may be all that names its pad. A row seen deleted
+	 * for good stays too. Only the row: the pad was there before, and is
+	 * never the migration's to take down.
 	 *
 	 * @param array<string,int|string> $context the same-origin fields
 	 */

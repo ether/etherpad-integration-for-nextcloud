@@ -297,9 +297,87 @@ class PadLegacyMigrationServiceTest extends TestCase {
 
 		// The race's own line decides no collision; the copy's line does.
 		$this->assertEquals([
-			['Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', $this->sameOriginFields(707, BindingService::ACCESS_PUBLIC, 'alice', null)],
+			['A row already holds the pad-id of a legacy Ownpad migration; reclassifying as collision.', $this->sameOriginFields(707, BindingService::ACCESS_PUBLIC, 'alice', null)],
 			['Migrated legacy Ownpad .pad as copy of an already-bound pad.', $this->sameOriginFields(707, BindingService::ACCESS_PUBLIC, 'alice', 'with_access', ['boundFileId' => 808])],
 		], $lines);
+	}
+
+	/** The unique index covers a row waiting for its pad to go, which the first lookup leaves out. */
+	public function testARowWaitingToGoIsACollisionOnceTheInsertFails(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(707);
+		$file->expects($this->never())->method('putContent');
+
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->once())
+			->method('resolveUserFileNodeById')
+			->with('alice', 808)
+			->willThrowException(new NotFoundException());
+
+		$this->expectException(LegacyPadCollisionException::class);
+		$this->migrateWithARowWaitingOn(808, $file, $resolver);
+	}
+
+	/** Its row must go active: the copy's search for its original knows no other. */
+	public function testACopyMakesTheRowOfAFileStillHereActive(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(707);
+		$file->expects($this->once())->method('putContent');
+
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->once())
+			->method('resolveUserFileNodeById')
+			->with('alice', 808)
+			->willReturn($this->createMock(File::class));
+
+		$this->migrateWithARowWaitingOn(808, $file, $resolver, madeActive: 1);
+	}
+
+	/** A file seen deleted for good, yet here, with its migration unfinished. */
+	public function testFinishesItsOwnFileUnderARowWaitingToGo(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(707);
+		$file->expects($this->once())->method('putContent');
+
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->never())->method('resolveUserFileNodeById');
+
+		$this->migrateWithARowWaitingOn(707, $file, $resolver);
+	}
+
+	private function migrateWithARowWaitingOn(int $boundFileId, File $file, UserNodeResolver $resolver, int $madeActive = 0): void {
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PUBLIC);
+		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/team-pad');
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturnCallback(
+			static fn (string $padId, ?string $state = null): ?Binding => $state === null
+				? new Binding($boundFileId, $padId, BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE, 100, 100)
+				: null,
+		);
+		$binding->expects($this->once())
+			->method('createBinding')
+			->willThrowException(new BindingException('unique constraint hit'));
+		$binding->expects($this->exactly($madeActive))
+			->method('transition')
+			->with($boundFileId, 'team-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			resolver: $resolver,
+		)->migrate($this->claimOn('alice', $file), [
+			'url' => 'https://pad.our-server.test/p/team-pad',
+			'pad_id' => 'team-pad',
+		]);
 	}
 
 	/**
