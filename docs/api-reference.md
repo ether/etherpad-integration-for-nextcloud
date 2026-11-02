@@ -54,7 +54,7 @@ A file or folder id a route takes - `{fileId}`, `fileId`, `parentFolderId`, `tem
   - Behavior:
     - requires a logged-in Nextcloud user
     - validates that `parentFolderId` resolves to an accessible writable folder in the user's file tree
-    - renders a launcher that submits `POST /api/v1/pads/create-by-parent` with a same-origin CSRF token only when embedded. Opened as a top-level page, it displays an error without creating a pad
+    - renders a launcher that, embedded, calls `POST /api/v1/pads/create-by-parent` same-origin with CSRF token. Opened as a top-level page, it shows an error and creates nothing
     - injects CSRF token manually into the blank template because this layout does not receive the normal `OC.requestToken` bootstrap
     - on success redirects itself to the returned `embed_url`
     - sets route-specific `frame-ancestors`: Nextcloud's own origin plus the admin-configured trusted embed origins

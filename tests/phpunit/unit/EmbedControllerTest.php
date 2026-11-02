@@ -219,6 +219,7 @@ class EmbedControllerTest extends TestCase {
 		// No answer to a create leaves its outcome open, and the page says so.
 		$this->assertSame('Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.', $params['l10n']['unanswered']);
 		$this->assertSame('Pad creation failed.', $params['l10n']['failed']);
+		$this->assertSame('This page creates a pad only inside the page that embeds it.', $params['l10n']['not_embedded']);
 	}
 
 	private function buildController(UserNodeResolver $userNodeResolver, bool $anonymous = false): EmbedController {

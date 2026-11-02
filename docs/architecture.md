@@ -173,7 +173,7 @@ Primary flow (minimal blank create launcher page):
    - logged-in Nextcloud user
    - writable target folder by stable `parentFolderId`
 3. `templates/embed-create.php` loads the Vite-built bundle for `src/embed-create-main.js` explicitly in blank layout.
-4. `src/embed-create-main.js` shows an error and creates nothing when opened as a top-level page. Embedded, it reads `name` and `accessMode` from the launcher URL, validates them client-side, and calls `POST /api/v1/pads/create-by-parent` same-origin with CSRF token from the template.
+4. `src/embed-create-main.js` shows an error and creates nothing when opened as a top-level page. Embedded, it reads `name` and `accessMode` from the launcher URL, validates them client-side, and calls `POST /api/v1/pads/create-by-parent` same-origin with CSRF token from the template. `frame-ancestors` checks the origins around the page, not who asked: script in content framed under a Nextcloud page on the same site can navigate its own frame to this URL and create a pad.
    - the token is injected manually for the same reason as embed-open: blank layout has no automatic `OC.requestToken` bootstrap
 5. `PadCreateController::createByParent` performs server-side validation of `name`, `accessMode`, and the writable target folder before creating the `.pad` file and binding.
 6. Before redirecting, `src/embed-create-main.js` posts the host page one of two structured events so the surrounding UI can react without scraping the iframe DOM:
@@ -186,7 +186,7 @@ Primary flow (minimal blank create launcher page):
 
      `code` and `retryable` are the server's (`docs/api-reference.md`), `null` and `false` without them: `retryable` says the same create may work later, a locked folder say.
    The create has no client-side time limit, as it writes: a slow create is not a failed one, and the page reports nothing until the server or a proxy answers. A host that stops waiting on its own must assume the pad may still be created.
-   The inline error rendering inside the iframe is unchanged — `postMessage` is purely additive for hosts that want to act on the outcome. Target-origin is `*` because the page doesn't know the host's origin up-front; the route's `frame-ancestors` already constrains who can be the parent. It constrains the parent's origin, not who asked: script in content framed under a Nextcloud page on the same site can navigate its own frame to this URL and create a pad.
+   The inline error rendering inside the iframe is unchanged — `postMessage` is purely additive for hosts that want to act on the outcome. Target-origin is `*` because the page doesn't know the host's origin up-front; the route's `frame-ancestors` already constrains who can be the parent.
 7. On success the launcher redirects itself to the returned `embed_url`, after which the normal embed-open flow takes over.
 
 ### 3) Open (public share)
