@@ -596,7 +596,7 @@ Registered in `lib/AppInfo/Application.php`.
 - `sync_interval_seconds` (default `120`, clamp `5..3600`) — how often each visible viewer and embed page sends a timed sync; what that costs, measured: `docs/architecture.md` ("Open viewers")
 - `allow_external_pads` (`yes|no`, default `no`)
 - `allow_legacy_protected_import` (`yes|no`, default `no`) — whether a legacy Ownpad `.pad` naming a group pad may bring that pad in. Turn on only where this Nextcloud is the only thing creating group pads on the Etherpad server; see the legacy migration doc.
-- `external_pad_allowlist` (newline-separated host list, optional)
+- `external_pad_allowlist` (newline-separated host list, optional) — the hosts the app fetches a pad on another server from. It opens no `frame-src`: that names only the origin of `etherpad_host`, as a pad on another server is shown in the app's own view.
 - `trusted_embed_origins` (newline-separated absolute `https://origin` list, optional)
   - used for the route-specific `frame-ancestors` policy on:
     - `/embed/by-id/{fileId}`
