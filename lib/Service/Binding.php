@@ -49,12 +49,16 @@ final class Binding {
 	}
 
 	/**
-	 * The pad's id for the metadata answers. A reader does not get a public
-	 * pad's, as the id edits it. Presentation rather than enforcement: the
-	 * file a reader may read usually holds the id.
+	 * A pad's id for an answer. A reader does not get a public pad's, as the
+	 * id edits it. Presentation rather than enforcement: the file a reader
+	 * may read usually holds the id.
 	 */
+	public static function padIdOf(string $padId, string $accessMode, bool $mayWrite): string {
+		return $mayWrite || $accessMode !== BindingService::ACCESS_PUBLIC ? $padId : '';
+	}
+
 	public function padIdFor(bool $mayWrite): string {
-		return $mayWrite || $this->accessMode !== BindingService::ACCESS_PUBLIC ? $this->padId : '';
+		return self::padIdOf($this->padId, $this->accessMode, $mayWrite);
 	}
 
 	/**

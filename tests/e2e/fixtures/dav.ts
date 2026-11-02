@@ -298,8 +298,8 @@ export const restoreAppConfig = async (key: string, before: string): Promise<voi
 }
 
 /**
- * The pad a file opens on, as the open answers it; anything but an opened
- * pad is thrown.
+ * The pad a file opens on, as the open answers it to someone who may write
+ * the file; anything but an opened pad is thrown.
  */
 export const padOfFile = async (fileId: number): Promise<string> => {
 	const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })

@@ -156,6 +156,7 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('', $target->url(), 'no pad to open');
 		$this->assertSame('', $target->padUrl(), 'and not under the other name either');
 		$this->assertSame('', $target->cookieHeader(), 'and no session');
+		$this->assertSame('', $target->answeredPadId(), 'and not the id that edits it');
 	}
 
 	/**
