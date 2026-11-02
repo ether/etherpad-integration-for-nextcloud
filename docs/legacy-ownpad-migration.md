@@ -41,7 +41,11 @@ If the pad-id is already bound to another Nextcloud file, the unique constraint 
 - **Requesting user has read access to the file that owns the existing binding** → managed frontmatter is written into the legacy file, but **no new binding row is created**. The file is now a "copy of a pad" in the plugin's model, and the existing copy-of-a-pad flow handles future opens (offers "Open the original" via `recoverByFileId`).
 - **Requesting user has no access to the bound file** → the migration is refused with `LegacyPadCollisionException`, surfaced as HTTP 409 with `code: "legacy_collision_no_access"`. The `.pad` file is left untouched, so the migration offer is still pending on the next open.
 
-A row whose file was seen deleted for good holds the pad id too, until it goes. The checks for a pad with no active row still answer first; a migration they let through finds the row when its insert fails, and the rule above decides: where the file is gone, it is refused. Once the row has gone, a later open migrates or is refused by those checks. The row stays with `delete_pad_with_file` off or while Etherpad refuses to delete the pad, and so does the refusal. With deleting on and Etherpad taking the delete, the job takes the row, and "Check pending pads" does so at once, with every other pad waiting ([deleting-pads.md](deleting-pads.md)); a public pad imported here loses only its row.
+A `pending_delete` row still reserves the pad id. The checks for a pad with no active row run first. If they pass, the failed insert is handled as a collision: when the bound file is gone, the migration answers HTTP 409 and leaves the shortcut unchanged.
+
+With `delete_pad_with_file` off, the row remains. For a protected pad, a failed delete in Etherpad also keeps it waiting. An imported public pad under a name that is not this app's loses only its row, and the pad stays in Etherpad.
+
+With deleting on, "Check pending pads" starts a bounded sweep at once, past the grace and retry delays ([deleting-pads.md](deleting-pads.md)). Once the row has gone, a later open goes through the checks for a pad with no active row again.
 
 This prevents the legacy format from being a backdoor: a malicious user can't drop a hand-crafted `[InternetShortcut]` file pointing at another user's pad and "claim" the binding.
 
