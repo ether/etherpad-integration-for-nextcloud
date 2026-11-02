@@ -61,8 +61,7 @@ class ExternalPadSeeder {
 			// the remote Etherpad has authentication on /p/<id>/export,
 			// or the pad is restricted despite a public-looking URL.
 			// We keep the file (the viewer still links to the pad) and
-			// surface a stable code
-			// the frontend translates into a toast.
+			// surface a stable code the frontend translates into a toast.
 			$result['snapshot_warning_code'] = 'remote_export_unavailable';
 		}
 

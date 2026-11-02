@@ -222,7 +222,7 @@ solely by the separate external-pad policy, not by these two settings.
     - A pad on another server has no row, so its file says, and its address counts only once it passes the checks. A reader gets that address too, which edits the pad: no read-only one is known for it. A file with a row whose text names such a pad reports its row's pad here, and its open and sync answer `400`.
     - A reader of a pad on this server who may not write the file gets a public pad's read-only address and no `pad_id`, which would edit it, and a protected pad's `pad_id` and no address. An open answers a reader's `pad_id` the same. It is no protection: the file a reader may read usually holds the id.
     - A row that cannot be read is an error; an address that cannot be built stays empty.
-    - An open still reads the text. It answers `400` where the text names another pad of this server than the row, so these answers can name a pad whose open is refused, and it follows text naming a pad on another server.
+    - An open still reads the text. It answers `400` where the text names another pad than the row, on this server or another, so these answers can name a pad whose open is refused.
     - `resolve` answers the same way. So does an `initialize` that finds the file initialized, which has to read the file first, so a file the user may not read fails there.
   - Result includes:
     - `is_pad`
@@ -267,7 +267,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `status=synced` if `snapshot_rev >= current_rev`
     - `status=out_of_sync` if `snapshot_rev < current_rev`
     - `status=unavailable` for external pads without safe revision lookup
-    - External pads return `unavailable` because the app intentionally does not keep revision state for remote servers.
+    - External pads return `unavailable` because the app intentionally does not keep revision state for remote servers. A file that has a row is refused with `400`.
 
 - `POST /api/v1/pads/recover-from-snapshot/{fileId}`
   - Controller: `PadLifecycleController::recoverByFileId`
