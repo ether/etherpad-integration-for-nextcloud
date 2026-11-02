@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\CSPListener;
+use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\EventDispatcher\Event;
+use OCP\Http\Client\IClientService;
 use OCP\IConfig;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class CSPListenerTest extends TestCase {
@@ -21,21 +25,7 @@ class CSPListenerTest extends TestCase {
 	 * class grows.
 	 */
 	public function testHandlePopulatesNothingButFrameSrc(): void {
-		$config = $this->createMock(IConfig::class);
-		$config->method('getAppValue')->willReturnCallback(
-			static function (string $app, string $key, string $default = ''): string {
-				if ($app !== 'etherpad_nextcloud') {
-					return $default;
-				}
-
-				return $key === 'etherpad_host' ? 'https://pad.jaggob.uber.space' : $default;
-			}
-		);
-
-		$listener = new CSPListener($config);
-		$event = new AddContentSecurityPolicyEvent();
-
-		$listener->handle($event);
+		$event = $this->handled(['etherpad_host' => 'https://pad.jaggob.uber.space']);
 
 		$policy = $event->getPolicies()[0];
 		$populated = [];
@@ -51,39 +41,63 @@ class CSPListenerTest extends TestCase {
 	}
 
 	public function testLeavesEveryOtherEventAlone(): void {
-		$config = $this->createMock(IConfig::class);
-		$config->expects($this->never())->method('getAppValue');
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('getConfiguredOrigin');
 
-		(new CSPListener($config))->handle(new Event());
+		(new CSPListener($client))->handle(new Event());
 	}
 
 	/** The allowlist says whom the app fetches from, not what any page may frame. */
-	public function testFramesOnlyTheOwnEtherpadWhateverTheAllowlist(): void {
-		$this->assertSame(['https://pad.example.test'], $this->frameDomains([
+	#[DataProvider('allowlists')]
+	public function testFramesOnlyTheOwnEtherpadWhateverTheAllowlist(string $allowlist): void {
+		$policies = $this->handled([
 			'etherpad_host' => 'https://pad.example.test/',
 			'allow_external_pads' => 'yes',
-			'external_pad_allowlist' => 'other.example.test',
-		]));
+			'external_pad_allowlist' => $allowlist,
+		])->getPolicies();
+
+		$this->assertCount(1, $policies);
+		$this->assertSame(['https://pad.example.test'], $policies[0]->getAllowedFrameDomains());
+	}
+
+	/** @return array<string,array{string}> */
+	public static function allowlists(): array {
+		return [
+			'a host on it' => ['other.example.test'],
+			'an empty one, which trusts every host for a fetch' => [''],
+		];
+	}
+
+	/** A source with a path matches that path alone, and the path goes into the header as written. */
+	#[DataProvider('hostsWithAPath')]
+	public function testFramesTheOriginOfAHostWithAPath(string $host): void {
+		$policies = $this->handled(['etherpad_host' => $host])->getPolicies();
+
+		$this->assertSame(['https://pad.example.test'], $policies[0]->getAllowedFrameDomains());
+	}
+
+	/** @return array<string,array{string}> */
+	public static function hostsWithAPath(): array {
+		return [
+			'an Etherpad under a path' => ['https://pad.example.test/base'],
+			'a path that would end the directive' => ['https://pad.example.test/a; script-src *'],
+		];
 	}
 
 	public function testAddsNoPolicyWithoutAnEtherpadHost(): void {
-		$this->assertSame([], $this->frameDomains(['allow_external_pads' => 'yes', 'external_pad_allowlist' => 'other.example.test']));
+		$this->assertSame([], $this->handled(['allow_external_pads' => 'yes', 'external_pad_allowlist' => 'other.example.test'])->getPolicies());
 	}
 
-	/**
-	 * @param array<string, string> $values
-	 * @return list<string>
-	 */
-	private function frameDomains(array $values): array {
+	/** @param array<string,string> $values */
+	private function handled(array $values): AddContentSecurityPolicyEvent {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
 			static fn (string $app, string $key, string $default = ''): string => $app === 'etherpad_nextcloud' ? ($values[$key] ?? $default) : $default,
 		);
 		$event = new AddContentSecurityPolicyEvent();
 
-		(new CSPListener($config))->handle($event);
+		(new CSPListener(new EtherpadClient($config, $this->createMock(AdminSettingsRepository::class), $this->createMock(IClientService::class))))->handle($event);
 
-		$policies = $event->getPolicies();
-		return $policies === [] ? [] : $policies[0]->getAllowedFrameDomains();
+		return $event;
 	}
 }

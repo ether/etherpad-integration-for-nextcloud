@@ -92,7 +92,7 @@ Notes:
   - `access_mode: public`
   - `pad_id`: external marker (`ext.<remote_pad_id>`)
   - `pad_origin` + `remote_pad_id` are set
-  - `pad_url`: external URL used for viewer open
+  - `pad_url`: external URL, the link beside the app's own content view
   - no row in `ep_pad_bindings`; the `.pad` frontmatter is the source of truth for the remote target
 
 Protected + external is not supported.

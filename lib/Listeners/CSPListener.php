@@ -8,10 +8,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\AppFramework\Http\ContentSecurityPolicy;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
-use OCP\IConfig;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
 
 /**
@@ -19,7 +19,7 @@ use OCP\Security\CSP\AddContentSecurityPolicyEvent;
  */
 class CSPListener implements IEventListener {
 	public function __construct(
-		private IConfig $config,
+		private EtherpadClient $etherpadClient,
 	) {
 	}
 
@@ -28,8 +28,11 @@ class CSPListener implements IEventListener {
 			return;
 		}
 
-		$etherpadHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
-		if ($etherpadHost === '') {
+		// The origin, not the host as configured: a source with a path matches
+		// that path alone, not the pads under it, and goes into every page's
+		// header as it stands.
+		$etherpadOrigin = $this->etherpadClient->getConfiguredOrigin();
+		if ($etherpadOrigin === '') {
 			return;
 		}
 
@@ -43,7 +46,7 @@ class CSPListener implements IEventListener {
 		// is framed: a pad on another server is shown in the app's own view,
 		// and the HTML its server sends there has no frame to load.
 		$policy = new ContentSecurityPolicy();
-		$policy->addAllowedFrameDomain($etherpadHost);
+		$policy->addAllowedFrameDomain($etherpadOrigin);
 		$event->addPolicy($policy);
 	}
 }
