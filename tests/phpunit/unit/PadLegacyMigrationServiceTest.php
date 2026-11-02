@@ -68,10 +68,22 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$binding->expects($this->never())->method('findByPadId');
 		$binding->expects($this->never())->method('createBinding');
 
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('info')
+			->with('Migrated legacy Ownpad .pad as external public pad.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => 101,
+				'sourceHost' => 'https://legacy.example.test',
+				'originBranch' => 'cross',
+				'uid' => 'alice',
+			]);
+
 		$this->buildService(
 			binding: $binding,
 			etherpadClient: $etherpadClient,
 			externalPadSeeder: $externalPadSeeder,
+			logger: $logger,
 		)->migrate($this->claimOn('alice', $file), [
 			'url' => 'https://legacy.example.test/p/team-meeting',
 			'pad_id' => 'team-meeting',
