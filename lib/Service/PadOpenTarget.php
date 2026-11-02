@@ -49,6 +49,15 @@ class PadOpenTarget {
 	) {
 	}
 
+	/**
+	 * The pad's id for the answer. A reader does not get a public pad's, as
+	 * Binding::padIdFor() has it; on another server the address they get
+	 * holds the id anyway.
+	 */
+	public function answeredPadId(): string {
+		return $this->mayWrite || $this->isExternal || $this->accessMode !== BindingService::ACCESS_PUBLIC ? $this->padId : '';
+	}
+
 	public function cookieHeader(): string {
 		return $this->cookieHeader;
 	}

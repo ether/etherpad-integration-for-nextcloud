@@ -179,7 +179,7 @@ class PadResponseService {
 		$payload = [
 			'file' => $target->file,
 			'file_id' => $target->fileId,
-			'pad_id' => $target->padId,
+			'pad_id' => $target->answeredPadId(),
 			'access_mode' => $target->accessMode,
 			'pad_url' => $target->padUrl(),
 			'is_external' => $target->isExternal,

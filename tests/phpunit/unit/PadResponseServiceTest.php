@@ -194,14 +194,33 @@ class PadResponseServiceTest extends TestCase {
 		$this->assertStringContainsString('private', $response->getHeaders()['Cache-Control']);
 	}
 
-	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false, string $cookieHeader = '', string $accessMode = 'protected'): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+	/** @return iterable<string,array{bool,string,bool,string}> */
+	public static function whoGetsThePadId(): iterable {
+		yield 'a writer of a public pad' => [true, 'public', false, 'test'];
+		yield 'a reader of a public pad' => [false, 'public', false, ''];
+		yield 'a reader of a protected pad' => [false, 'protected', false, 'test'];
+		yield 'a reader of a pad on another server' => [false, 'public', true, 'test'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('whoGetsThePadId')]
+	public function testOpenResponseTellsAReaderNoPublicPadId(bool $mayWrite, string $accessMode, bool $isExternal, string $expected): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturn('/route');
+		$data = (new PadResponseService($urlGenerator, $this->createMock(AppConfigService::class), $this->l10nEcho()))
+			->openResponse($this->buildTarget(false, $mayWrite, accessMode: $accessMode, isExternal: $isExternal), new RecordingCookieHeaders())
+			->getData();
+
+		$this->assertSame($expected, $data['pad_id']);
+	}
+
+	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false, string $cookieHeader = '', string $accessMode = 'protected', bool $isExternal = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
 			file: '/Test.pad',
 			fileId: 42,
 			padId: 'test',
 			accessMode: $accessMode,
 			padUrl: 'https://pad.example.test/p/test',
-			isExternal: false,
+			isExternal: $isExternal,
 			originalPadUrl: '',
 			url: $isReadOnlyView ? '' : 'https://pad.example.test/p/test',
 			cookieHeader: $cookieHeader,
