@@ -10,6 +10,7 @@ import { brokenBody, errorResponse, jsonResponse, pageResponse } from './respons
 // The page's sentences for no answer and for a failure without one.
 const NO_ANSWER = 'No answer; look in the folder first.'
 const CREATE_FAILED = 'Anlegen fehlgeschlagen.'
+const NOT_EMBEDDED = 'Only embedded.'
 
 const setupEmbedCreateDom = () => {
 	document.body.innerHTML = `
@@ -21,6 +22,7 @@ const setupEmbedCreateDom = () => {
 			data-l10n-missing-name="Pad name is required."
 			data-l10n-invalid-access-mode="Invalid access mode."
 			data-l10n-incomplete-config="Embed configuration is incomplete."
+			data-l10n-not-embedded="${NOT_EMBEDDED}"
 			data-l10n-unanswered="${NO_ANSWER}"
 			data-l10n-failed="${CREATE_FAILED}">
 			<div data-epnc-embed-create-loading>loading</div>
@@ -87,6 +89,33 @@ afterEach(() => {
 })
 
 describe('embed-create-main', () => {
+	it('creates nothing when opened on its own, as anyone can send the link', async () => {
+		Object.defineProperty(window, 'parent', { configurable: true, value: window })
+		const selfPostSpy = vi.spyOn(window, 'postMessage')
+
+		await importEmbedCreate()
+		await flushAsyncWork()
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(locationReplaceSpy).not.toHaveBeenCalled()
+		expect(errorPanelHidden()).toBe(false)
+		expect(errorMessageText()).toBe(NOT_EMBEDDED)
+		expect(selfPostSpy).not.toHaveBeenCalled()
+		selfPostSpy.mockRestore()
+	})
+
+	it('refuses on its own before it looks at the link', async () => {
+		Object.defineProperty(window, 'parent', { configurable: true, value: window })
+		const selfPostSpy = vi.spyOn(window, 'postMessage')
+
+		await importEmbedCreate('?accessMode=protected')
+		await flushAsyncWork()
+
+		expect(errorMessageText()).toBe(NOT_EMBEDDED)
+		expect(selfPostSpy).not.toHaveBeenCalled()
+		selfPostSpy.mockRestore()
+	})
+
 	it('posts epnc:create-succeeded and redirects on a clean create', async () => {
 		fetch.mockResolvedValueOnce(jsonResponse({
 			embed_url: '/embed/by-id/777',
@@ -325,22 +354,5 @@ describe('embed-create-main', () => {
 		expect(payload.reason).toBe('server')
 		// And no redirect happened.
 		expect(locationReplaceSpy).not.toHaveBeenCalled()
-	})
-
-	it('does not postMessage when not embedded (window.parent === window)', async () => {
-		// Restore parent === window for this test only.
-		Object.defineProperty(window, 'parent', { configurable: true, value: window })
-		fetch.mockResolvedValueOnce(jsonResponse({
-			embed_url: '/embed/by-id/777',
-			file_id: 777,
-			pad_id: 'p',
-			access_mode: 'protected',
-		}))
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
-		expect(parentPostSpy).not.toHaveBeenCalled()
-		expect(locationReplaceSpy).toHaveBeenCalled()
 	})
 })

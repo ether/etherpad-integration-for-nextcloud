@@ -113,6 +113,7 @@ class EmbedController extends Controller {
 					'missing_name' => $this->l10n->t('Pad name is required.'),
 					'invalid_access_mode' => $this->l10n->t('Invalid access mode.'),
 					'incomplete_config' => $this->l10n->t('Embed configuration is incomplete.'),
+					'not_embedded' => $this->l10n->t('This page creates a pad only inside the page that embeds it.'),
 					'unanswered' => $this->l10n->t('Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.'),
 					'failed' => $this->l10n->t('Pad creation failed.'),
 				],

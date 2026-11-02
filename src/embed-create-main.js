@@ -18,6 +18,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	const missingNameMessage = String(root.getAttribute('data-l10n-missing-name') || 'Pad name is required.')
 	const invalidAccessModeMessage = String(root.getAttribute('data-l10n-invalid-access-mode') || 'Invalid access mode.')
 	const incompleteConfigMessage = String(root.getAttribute('data-l10n-incomplete-config') || 'Embed configuration is incomplete.')
+	const notEmbeddedMessage = String(root.getAttribute('data-l10n-not-embedded') || 'This page creates a pad only inside the page that embeds it.')
 	const unansweredMessage = String(root.getAttribute('data-l10n-unanswered') || 'Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.')
 	const failedMessage = String(root.getAttribute('data-l10n-failed') || 'Pad creation failed.')
 	const loadingNode = root.querySelector('[data-epnc-embed-create-loading]')
@@ -29,19 +30,11 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	/**
 	 * Post an `epnc:*` event to the host page that's embedding this iframe.
 	 *
-	 * Target-origin is `*` rather than a specific origin because the create
-	 * page doesn't know the host's origin up-front (the host hasn't talked to
-	 * us yet). The actual access control happens at iframe-load time via the
-	 * route's CSP `frame-ancestors` header, which only lists the admin-
-	 * configured `trusted_embed_origins`. Anyone receiving these messages is
-	 * by construction already in that allowlist.
-	 *
-	 * No-ops if we're not actually embedded (window.parent === window).
+	 * The launcher has no host handshake to establish a target origin.
+	 * Embedding is restricted by frame-ancestors to Nextcloud's own origin
+	 * and the configured trusted embed origins.
 	 */
 	const postHostMessage = (type, payload) => {
-		if (window.parent === window) {
-			return
-		}
 		try {
 			window.parent.postMessage(Object.assign({ type }, payload || {}), '*')
 		} catch (e) {
@@ -107,6 +100,15 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	}
 
 	const run = async () => {
+		// Loading this launcher can create a pad in the signed-in user's account.
+		// Requiring a frame prevents ordinary links from triggering creation;
+		// frame-ancestors restricts which origins may embed it, but does not
+		// block a page opened on its own.
+		// @see https://w3c.github.io/webappsec-csp/#directive-frame-ancestors
+		if (window.parent === window) {
+			showError(notEmbeddedMessage)
+			return
+		}
 		if (!Number.isFinite(parentFolderId) || parentFolderId <= 0 || createByParentUrl === '') {
 			failCreate('invalid', incompleteConfigMessage)
 			return
