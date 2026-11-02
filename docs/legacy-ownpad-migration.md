@@ -41,6 +41,8 @@ If the pad-id is already bound to another Nextcloud file, the unique constraint 
 - **Requesting user has read access to the file that owns the existing binding** → managed frontmatter is written into the legacy file, but **no new binding row is created**. The file is now a "copy of a pad" in the plugin's model, and the existing copy-of-a-pad flow handles future opens (offers "Open the original" via `recoverByFileId`).
 - **Requesting user has no access to the bound file** → the migration is refused with `LegacyPadCollisionException`, surfaced as HTTP 409 with `code: "legacy_collision_no_access"`. The `.pad` file is left untouched, so the migration offer is still pending on the next open.
 
+A row whose file was seen deleted for good holds the pad id too, until it goes. The checks for a pad with no active row still answer first; a migration they let through finds the row when its insert fails, and is refused as above, as the file is gone. Once the row has gone, a later open migrates or is refused by those checks. With `delete_pad_with_file` off the row stays, and so does the refusal.
+
 This prevents the legacy format from being a backdoor: a malicious user can't drop a hand-crafted `[InternetShortcut]` file pointing at another user's pad and "claim" the binding.
 
 ### Same origin — protected import switch
@@ -53,7 +55,7 @@ Refused imports surface as HTTP 403 with `code: "legacy_protected_import_disable
 
 ## Audit log
 
-Every branch emits one log line at `info` level (or `warning` for a refusal); a migration that lost a race for the pad id writes a second, `info`, before the collision's. Where the migration stops on something else, the error mapper writes the line instead. A refused write adds a line of its own where it takes its row back (`info`), and where it keeps the row because the file could not be looked up or read, or could not remove it (both `warning`). A pad on another server takes the path of `POST /api/v1/pads/from-url`, whose own refusals - external pads switched off, say - it logs at `debug`. A group listing Etherpad refuses for another reason than not knowing the group is a warning once a minute for each file, an Etherpad that does not answer a warning once a minute, a key Etherpad rejects an error once a minute for the instance, and a race lost without a winner an error (`Could not create pad binding.`). Fields:
+Every branch emits one log line at `info` level (or `warning` for a refusal); a migration whose insert met a row holding the pad id writes a second, `info`, before the collision's. Where the migration stops on something else, the error mapper writes the line instead. A refused write adds a line of its own where it takes its row back (`info`), and where it keeps the row because the file could not be looked up or read, or could not remove it (both `warning`). A pad on another server takes the path of `POST /api/v1/pads/from-url`, whose own refusals - external pads switched off, say - it logs at `debug`. A group listing Etherpad refuses for another reason than not knowing the group is a warning once a minute for each file, an Etherpad that does not answer a warning once a minute, a key Etherpad rejects an error once a minute for the instance, and a race lost without a winner an error (`Could not create pad binding.`). Fields:
 
 | Field | Meaning |
 |---|---|
@@ -61,7 +63,7 @@ Every branch emits one log line at `info` level (or `warning` for a refusal); a 
 | `sourceHost` | Scheme and host of the legacy shortcut's URL |
 | `originBranch` | `same` or `cross` |
 | `accessMode` | `public` / `protected` / unset for cross-origin |
-| `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, the line of a lost race |
+| `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, the line of an insert that met a row |
 | `uid` | Migrating user |
 | `reason` | Why a pad cannot be linked: `invalid_id`, `case_variant`, `not_in_group` or `own_name`; on that refusal only |
 | `boundFileId` | The file a row already binds the pad to, on `with_access` and `no_access`; on `case_variant`, the file a row binds it to under other capitals |
