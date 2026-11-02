@@ -64,8 +64,8 @@ class PublicPadContextServiceTest extends TestCase {
 
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED);
+			->method('assertTextMatchesRow')
+			->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED, false);
 
 		$openService = $this->createMock(PublicPadOpenService::class);
 		$openService->expects($this->once())
@@ -152,7 +152,7 @@ class PublicPadContextServiceTest extends TestCase {
 		$file = $this->sharedFile();
 		$mismatch = new BindingException('Pad binding is not active.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED)->willThrowException($mismatch);
+		$bindings->method('assertTextMatchesRow')->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED, false)->willThrowException($mismatch);
 		$openService = $this->createMock(PublicPadOpenService::class);
 		$openService->expects($this->never())->method('open');
 

@@ -183,3 +183,47 @@ test.describe('a copy of a .pad file and sync', () => {
 		}
 	})
 })
+
+test.describe('a file with a row', () => {
+	test('refuses text that names a pad on another server', async () => {
+		const name = uniquePadName('row-and-foreign-text')
+		await createPadAtPath(`/${name}`, 'public')
+		try {
+			const fileId = String(await propfindFileId(name))
+			const padId = (await padApiPost('pads/open-by-id', { fileId })).body as { pad_id: string }
+			const foreign = [
+				'---',
+				'format: "etherpad-nextcloud/1"',
+				'file_id: 1',
+				'pad_id: "ext.remote-pad"',
+				'pad_origin: "https://pad.remote.test"',
+				'remote_pad_id: "remote-pad"',
+				'pad_url: "https://pad.remote.test/p/remote-pad"',
+				'access_mode: "public"',
+				'state: "active"',
+				'deleted_at: null',
+				'created_at: "2026-01-01T00:00:00+00:00"',
+				'updated_at: "2026-01-01T00:00:00+00:00"',
+				'snapshot_rev: 0',
+				'---',
+				'[TEXT]',
+				'',
+			].join('\n')
+			await putFileViaDav(name, foreign)
+
+			for (const [what, answer] of [
+				['open', await padApiPost('pads/open-by-id', { fileId })],
+				['sync', await padApiPost(`pads/sync/${fileId}`)],
+				['sync status', await padApiGet(`pads/sync-status/${fileId}`)],
+			] as const) {
+				expect(answer.status, `${what}: ${JSON.stringify(answer.body)}`).toBe(400)
+				expect((answer.body as { message?: string }).message, what).toContain('could not be matched')
+			}
+			expect(await getFileViaDav(name), 'the sync should write nothing over it').toBe(foreign)
+			const meta = await padApiGet(`pads/meta-by-id/${fileId}`)
+			expect(meta.body).toMatchObject({ pad_id: padId.pad_id, is_external: false })
+		} finally {
+			await deleteViaDav(name).catch(() => {})
+		}
+	})
+})

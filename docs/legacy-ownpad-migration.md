@@ -8,6 +8,10 @@ The detection lives in `PadFileService::parseLegacyOwnpadShortcut`; the migratio
 
 The migration service compares the shortcut URL's origin (scheme + host + port, normalized) against the configured `etherpad_host` and branches accordingly. On every branch the document goes in last, after the row lookups, a group's listing or the remote export, and only into the file as the open read it: the migration finds the file again by its id and leaves one that no longer holds the shortcut, with `The .pad file changed before its document was written.` A row made for the shortcut - by this migration, or by an earlier one of the same file that it now finishes - goes again when the write is refused, for a changed file or another write's lock, and the file names another pad by then, in its document or a shortcut: the row would keep the next open from taking the pad the file names; one seen deleted for good is not taken back. Otherwise it stays: a file naming this pad, or an emptied one, is bound by it on its next open, and for one that does not parse, or cannot be looked up or read, the row may be all that names its pad. After any other failed write the row stays for the next open to finish. The pad is never removed.
 
+### A file that has a row for another pad
+
+A file whose public or protected row, in any state, names another pad than its shortcut is refused first, on either branch below: a shortcut there is text someone wrote over the file, and a document written from it would replace the shortcut and be refused by the next open. It answers HTTP 400, leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the file has a row for another pad.` with `reason` `own_row`. A shortcut naming its row's own pad on this server is a migration to finish, whichever state the row is in: only the checks on the id and the write still apply.
+
 ### Different origin — external public pad
 
 The source URL points at an Etherpad server that isn't the one this Nextcloud instance manages. We can't apply protected-mode auth to a server we don't control, so the file is converted to an `ext.*` public pad via the same path as `POST /api/v1/pads/from-url`:
@@ -41,7 +45,7 @@ If the pad-id is already bound to another Nextcloud file, the unique constraint 
 - **Requesting user has read access to the file that owns the existing binding** → managed frontmatter is written into the legacy file, but **no new binding row is created**. The file is now a "copy of a pad" in the plugin's model, and the existing copy-of-a-pad flow handles future opens (offers "Open the original" via `recoverByFileId`).
 - **Requesting user has no access to the bound file** → the migration is refused with `LegacyPadCollisionException`, surfaced as HTTP 409 with `code: "legacy_collision_no_access"`. The `.pad` file is left untouched, so the migration offer is still pending on the next open.
 
-A `pending_delete` row still reserves the pad id. The checks for a pad with no active row run first. If they pass, the failed insert is handled as a collision: when the bound file is gone, the migration answers HTTP 409 and leaves the shortcut unchanged. When the requesting user can still read it, its deletion did not happen: the row goes active again and this file becomes a copy.
+Another file's `pending_delete` row still reserves the pad id. The checks for a pad with no active row run first. If they pass, the failed insert is handled as a collision: when the bound file is gone, the migration answers HTTP 409 and leaves the shortcut unchanged. When the requesting user can still read it, its deletion did not happen: the row goes active again and this file becomes a copy.
 
 With `delete_pad_with_file` off, the row remains. For a protected pad, a failed delete in Etherpad also keeps it waiting.
 
@@ -53,7 +57,7 @@ This prevents the legacy format from being a backdoor: a malicious user can't dr
 
 The pad-id in a legacy `.pad` is written by whoever wrote the file, and for a group pad it also names the Etherpad group a later session is minted for — a session grants what the group holds, not only the pad the file named. Where this Nextcloud is the only writer on its Etherpad server, a group pad it made carries a binding and the collision rule above covers it — barring one orphaned by a failed cleanup, which the admin settings' consistency check surfaces. Where it is not, a foreign group pad has no binding here, and nothing distinguishes it from the pads this migration exists for: a genuine Ownpad pad lives in a group Ownpad created, never in one of ours, so provenance is exactly what cannot be checked.
 
-`allow_legacy_protected_import` (default `no`) therefore refuses the import outright. It is meant to be turned on only where no other software creates group pads on the same Etherpad server, not as a window during a migration — the forgery is available to any user for as long as it is on. It applies only where no active binding exists yet; active ones stay with the collision rule above, which also lets a migration that wrote the row and died before the file write still finish. Public pads are unaffected: a pad anyone holding its id can read is no more reachable for having a file bound to it. What a bound file must not bring is the pad's end, so a public pad imported here stays in Etherpad when its file is deleted for good ([deleting-pads.md](deleting-pads.md)); nothing tells it from another installation's on the same Etherpad.
+`allow_legacy_protected_import` (default `no`) therefore refuses the import outright. It is meant to be turned on only where no other software creates group pads on the same Etherpad server, not as a window during a migration — the forgery is available to any user for as long as it is on. It applies only where no active binding and no row of the file itself exists yet; those stay with the collision rule above, which also lets a migration that wrote the row and died before the file write still finish. Public pads are unaffected: a pad anyone holding its id can read is no more reachable for having a file bound to it. What a bound file must not bring is the pad's end, so a public pad imported here stays in Etherpad when its file is deleted for good ([deleting-pads.md](deleting-pads.md)); nothing tells it from another installation's on the same Etherpad.
 
 Refused imports surface as HTTP 403 with `code: "legacy_protected_import_disabled"`; an id the app cannot link gets the 400 above instead, as it is refused before the switch is asked. The `.pad` file is left untouched, so switching the setting back on migrates it on the next open.
 
@@ -67,9 +71,9 @@ Every branch emits one log line at `info` level (or `warning` for a refusal); a 
 | `sourceHost` | Scheme and host of the legacy shortcut's URL |
 | `originBranch` | `same` or `cross` |
 | `accessMode` | `public` / `protected` / unset for cross-origin |
-| `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, the line of an insert that met a row |
+| `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, an `own_row` refusal, the line of an insert that met a row |
 | `uid` | Migrating user |
-| `reason` | Why a pad cannot be linked: `invalid_id`, `case_variant`, `not_in_group` or `own_name`; on that refusal only |
+| `reason` | Why a pad cannot be linked: `invalid_id`, `case_variant`, `not_in_group`, `own_name` or `own_row`; on those refusals only |
 | `boundFileId` | The file a row already binds the pad to, on `with_access` and `no_access`; on `case_variant`, the file a row binds it to under other capitals |
 
 Neither the URL nor the pad id is written out. A legacy shortcut can carry

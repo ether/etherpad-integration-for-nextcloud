@@ -65,6 +65,28 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(BindingService::STATE_ACTIVE, $table->rows[0]['state']);
 	}
 
+	/** A waiting row still keeps text naming a pad on another server from replacing the file's pad. */
+	public function testAFileWithARowMayNotNameAPadOnAnotherServer(): void {
+		$service = new BindingService(new InMemoryBindingTable([self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE)]), new FixedClock(500));
+
+		$service->assertTextMatchesRow(11, 'ext.remote', BindingService::ACCESS_PUBLIC, true);
+		try {
+			$service->assertTextMatchesRow(10, 'ext.remote', BindingService::ACCESS_PUBLIC, true);
+			$this->fail('A row and a pad on another server were let through.');
+		} catch (BindingMismatchException $e) {
+			$this->assertSame('A file with a row names a pad on another server.', $e->getMessage());
+		}
+	}
+
+	/** Not a pad on another server: the row must then name it. */
+	public function testAPadOnThisServerIsComparedWithItsRow(): void {
+		$service = new BindingService(new InMemoryBindingTable([self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE)]), new FixedClock(500));
+
+		$service->assertTextMatchesRow(10, 'pad-a', BindingService::ACCESS_PUBLIC, false);
+		$this->expectException(BindingMismatchException::class);
+		$service->assertTextMatchesRow(10, 'pad-b', BindingService::ACCESS_PUBLIC, false);
+	}
+
 	/**
 	 * A file seen deleted for good that is opened was not deleted after all:
 	 * its row is active again, and keeps its pad. Only its own row.

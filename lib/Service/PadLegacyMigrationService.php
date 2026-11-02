@@ -138,6 +138,34 @@ class PadLegacyMigrationService {
 	}
 
 	/**
+	 * A shortcut cannot replace the file's bound pad, even while deletion is
+	 * pending. Refusal preserves the shortcut instead of writing a document
+	 * that opening would reject as a mismatch.
+	 */
+	private function overARowForAnotherPad(string $uid, int $fileId, string $sourceUrl, string $sourcePadId, bool $sameOrigin): LegacyPadNotFoundException {
+		$context = $sameOrigin
+			? $this->sameOriginContext($uid, $fileId, $sourceUrl, $this->padFileService->inferAccessModeFromPadId($sourcePadId), null)
+			: $this->crossOriginContext($uid, $fileId, $sourceUrl);
+		$this->logger->warning('Refused legacy Ownpad migration - the file has a row for another pad.', [...$context, 'reason' => 'own_row']);
+		return new LegacyPadNotFoundException('The legacy .pad file names another pad than the row of its file.');
+	}
+
+	/**
+	 * The fields of every cross-origin line.
+	 *
+	 * @return array<string,int|string>
+	 */
+	private function crossOriginContext(string $uid, int $fileId, string $sourceUrl): array {
+		return [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
+			'originBranch' => 'cross',
+			'uid' => $uid,
+		];
+	}
+
+	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
 	 * @param CreatedFileClaim $claim the file, and the shortcut as it was read
@@ -159,15 +187,15 @@ class PadLegacyMigrationService {
 		$sourceUrl = $legacyShortcut['url'];
 		$sourcePadId = $legacyShortcut['pad_id'];
 
-		if (!$this->isSameOrigin($sourceUrl)) {
+		$sameOrigin = $this->isSameOrigin($sourceUrl);
+		$ownRow = $this->bindingService->padOfFile($fileId);
+		if ($ownRow !== null && (!$sameOrigin || $ownRow->padId !== $sourcePadId)) {
+			throw $this->overARowForAnotherPad($uid, $fileId, $sourceUrl, $sourcePadId, $sameOrigin);
+		}
+
+		if (!$sameOrigin) {
 			$this->claimedFileWriter->write($claim, $this->externalPadSeeder->prepare($fileId, $sourceUrl)['content']);
-			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-				'originBranch' => 'cross',
-				'uid' => $uid,
-			]);
+			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', $this->crossOriginContext($uid, $fileId, $sourceUrl));
 			return;
 		}
 
@@ -181,7 +209,8 @@ class PadLegacyMigrationService {
 		if ($document === null) {
 			throw $this->unlinkable($uid, $fileId, $sourceUrl, $accessMode, null, 'invalid_id', 'The legacy .pad file names a pad id that cannot be linked.');
 		}
-		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
+		// The file's own row finishes its migration, waiting to go or not.
+		$existingBinding = $ownRow ?? $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
 			// With no active row here, an id of the app's form may be another

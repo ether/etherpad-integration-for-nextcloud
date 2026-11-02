@@ -61,7 +61,7 @@ class PadSyncServiceTest extends TestCase {
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->once())->method('assertTextMatchesRow')->with(138, $this->anything(), $this->anything(), true);
 
 		$result = $this->buildService($padFileService, $userNodeResolver, $bindingService)
 			->syncStatusById('alice', 138);
@@ -87,7 +87,7 @@ class PadSyncServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile([], '', 'pad-a', BindingService::ACCESS_PUBLIC, '', false, 3));
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping')->willThrowException($refused);
+		$bindingService->method('assertTextMatchesRow')->willThrowException($refused);
 		$service = $this->buildService($padFileService, $userNodeResolver, $bindingService);
 
 		foreach (['sync' => static fn () => $service->syncById('alice', 138, false), 'status' => static fn () => $service->syncStatusById('alice', 138)] as $case => $call) {
@@ -124,8 +124,8 @@ class PadSyncServiceTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.ABC$pad', BindingService::ACCESS_PROTECTED);
+			->method('assertTextMatchesRow')
+			->with(138, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, false);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -287,7 +287,7 @@ class PadSyncServiceTest extends TestCase {
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->once())->method('assertTextMatchesRow')->with(138, $this->anything(), $this->anything(), true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$externalPadExportFetcher = $this->createMock(ExternalPadExportFetcher::class);
@@ -476,6 +476,50 @@ class PadSyncServiceTest extends TestCase {
 		}
 	}
 
+	/** The fetch takes a while: a row made during it wins over the text the sync would write. */
+	public function testARowMadeWhileAForeignPadIsFetchedStopsTheWrite(): void {
+		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getName')->willReturn('Test.pad');
+		$file->method('getContent')->willReturn('frontmatter');
+		$file->expects($this->never())->method('putContent');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: 'ext.remote',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/remote',
+			isExternal: true,
+			snapshotRev: 4,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'previous', 'html' => '']);
+		$padFileService->method('withExportSnapshot')->willReturn('updated');
+		$checks = 0;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('assertTextMatchesRow')->willReturnCallback(static function (int $fileId, string $padId, string $accessMode, bool $isExternal) use (&$checks): void {
+			self::assertTrue($isExternal);
+			if (++$checks === 2) {
+				throw new BindingMismatchException('A file with a row names a pad on another server.');
+			}
+		});
+		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
+		$fetcher->method('normalizeAndFetchExternalPublicPadText')->willReturn([
+			'origin' => 'https://pad.example.test',
+			'pad_id' => 'remote',
+			'pad_url' => 'https://pad.example.test/p/remote',
+			'text' => 'remote',
+		]);
+		$lockRetryService = new PadFileLockRetryService(static function (int $delay): void {
+		});
+
+		$this->expectException(BindingMismatchException::class);
+		$this->buildService($padFileService, $userNodeResolver, $bindingService, null, $lockRetryService, $fetcher)
+			->syncById('alice', 138, true);
+	}
+
 	/**
 	 * A recovery that moves the row onto a new pad while the sync waits for
 	 * the file's lock stops the sync's next write: the old pad's text would
@@ -507,8 +551,8 @@ class PadSyncServiceTest extends TestCase {
 		$checks = 0;
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping')->willReturnCallback(static function () use (&$checks): void {
-			// As the sync starts, before its first write, and after its wait.
-			if (++$checks === 3) {
+			// Before its first write, and after its wait.
+			if (++$checks === 2) {
 				throw new BindingMismatchException('Binding pad ID mismatch.');
 			}
 		});

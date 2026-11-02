@@ -120,8 +120,8 @@ class PadSessionControllerTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PUBLIC);
+			->method('assertTextMatchesRow')
+			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PUBLIC, false);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -322,7 +322,7 @@ class PadSessionControllerTest extends TestCase {
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->once())->method('assertTextMatchesRow')->with($this->anything(), $this->anything(), $this->anything(), true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('buildPadUrl');

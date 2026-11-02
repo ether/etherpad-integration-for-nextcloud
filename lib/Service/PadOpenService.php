@@ -83,9 +83,7 @@ class PadOpenService {
 		// narrower: without write permission in Nextcloud, this open may
 		// not issue a session that writes on the pad server.
 		$mayWrite = $node->isUpdateable();
-		if (!$pad->isExternal) {
-			$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
-		}
+		$this->bindingService->assertTextMatchesRow($fileId, $pad->padId, $pad->accessMode, $pad->isExternal);
 
 		return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);
 	}

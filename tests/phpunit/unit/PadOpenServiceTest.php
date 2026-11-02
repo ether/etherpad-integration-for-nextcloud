@@ -166,7 +166,7 @@ class PadOpenServiceTest extends TestCase {
 	public function testABindingErrorReachesTheCallerAsItIs(): void {
 		$mismatch = new BindingException('Pad binding is not active.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->willThrowException($mismatch);
+		$bindings->method('assertTextMatchesRow')->willThrowException($mismatch);
 		$session = $this->createMock(PadSessionService::class);
 		$session->expects($this->never())->method($this->anything());
 		$client = $this->createMock(EtherpadClient::class);

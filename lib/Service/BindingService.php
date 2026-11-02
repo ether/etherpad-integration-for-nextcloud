@@ -691,6 +691,28 @@ class BindingService {
 	}
 
 	/**
+	 * A row says which pad the file has; text anyone who may write the file
+	 * wrote cannot override it. Text naming a pad on this server must match
+	 * the row, which assertConsistentMapping() asks: it also answers a file
+	 * with no row, and writes, making a row seen deleted for good active.
+	 *
+	 * Text naming a pad on another server is accepted only without a public
+	 * or protected row, in any state. Other modes are ignored here, as in the
+	 * metadata.
+	 *
+	 * @throws BindingException when the text conflicts with the row
+	 */
+	public function assertTextMatchesRow(int $fileId, string $padId, string $accessMode, bool $isExternal): void {
+		if (!$isExternal) {
+			$this->assertConsistentMapping($fileId, $padId, $accessMode);
+			return;
+		}
+		if ($this->padOfFile($fileId) !== null) {
+			throw new BindingMismatchException('A file with a row names a pad on another server.');
+		}
+	}
+
+	/**
 	 * The row there, naming this pad in this access mode.
 	 *
 	 * @psalm-assert !null $binding

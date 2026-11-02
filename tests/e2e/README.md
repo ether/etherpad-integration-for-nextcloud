@@ -206,7 +206,8 @@ Each `specs/*.spec.ts` covers one flow:
   when creating from a Templates-folder `.pad`.
 - **pad-move-rename** — the binding (keyed on file id) survives an
   in-place rename and a move into a subfolder.
-- **pad-orphan-recovery** — a binding-less `.pad` (WebDAV copy) shows the
+- **pad-orphan-recovery** — a file with a row whose text names a pad on
+  another server is refused; a binding-less `.pad` (WebDAV copy) shows the
   recovery card and "Open the original" navigates to the source pad; so
   does such a copy after a trash + restore round-trip, which gives it no
   pad of its own. A copy refuses sync status, sync and a forced sync with

@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -34,7 +35,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 	public function testABindingErrorReachesTheCallerAsItIs(): void {
 		$refused = new MissingBindingException('No binding exists for this file.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->willThrowException($refused);
+		$bindings->method('assertTextMatchesRow')->willThrowException($refused);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('getHTMLForPreview');
 
@@ -51,8 +52,8 @@ class LivePadHtmlFetcherTest extends TestCase {
 	public function testAPadIdThatDoesNotMatchTheBindingIsNotFetched(): void {
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.group$somebody-elses', BindingService::ACCESS_PROTECTED)
+			->method('assertTextMatchesRow')
+			->with(138, 'g.group$somebody-elses', BindingService::ACCESS_PROTECTED, false)
 			->willThrowException(new BindingException('pad_id does not match the stored binding.'));
 
 		$client = $this->createMock(EtherpadClient::class);
@@ -63,9 +64,23 @@ class LivePadHtmlFetcherTest extends TestCase {
 			->fetchForPadFile($this->pad(padId: 'g.group$somebody-elses'), 138);
 	}
 
-	public function testForeignPadIsFetchedOverItsPublicExportWithoutABindingCheck(): void {
+	/** Text anyone may write names that server: refused, it is not asked. */
+	public function testAFileWhoseRowRefusesItsTextFetchesNothing(): void {
+		$refused = new BindingMismatchException('A file with a row names a pad on another server.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects($this->never())->method('assertConsistentMapping');
+		$bindings->method('assertTextMatchesRow')->willThrowException($refused);
+		$external = $this->createMock(ExternalPadExportFetcher::class);
+		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
+
+		$this->expectExceptionObject($refused);
+
+		$this->buildFetcher(externalPadExportFetcher: $external, bindingService: $bindings)
+			->fetchForPadFile($this->externalPad(), 138);
+	}
+
+	public function testForeignPadIsFetchedOverItsPublicExport(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->expects($this->once())->method('assertTextMatchesRow')->with(138, $this->anything(), $this->anything(), true);
 
 		$external = $this->createMock(ExternalPadExportFetcher::class);
 		$external->expects($this->once())
