@@ -145,18 +145,20 @@ class PadLegacyMigrationService {
 	 * @throws LegacyPadNotFoundException
 	 */
 	private function refuseOverARowForAnotherPad(string $uid, int $fileId, string $sourceUrl, string $sourcePadId, bool $sameOrigin): void {
-		$row = $this->bindingService->findByFileId($fileId);
+		$row = $this->bindingService->padOfFile($fileId);
 		if ($row === null || ($sameOrigin && $row->padId === $sourcePadId)) {
 			return;
 		}
-		$this->logger->warning('Refused legacy Ownpad migration - the file has a row for another pad.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-			'originBranch' => $sameOrigin ? 'same' : 'cross',
-			'uid' => $uid,
-			'reason' => 'own_row',
-		]);
+		$context = $sameOrigin
+			? $this->sameOriginContext($uid, $fileId, $sourceUrl, $this->padFileService->inferAccessModeFromPadId($sourcePadId), null)
+			: [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
+				'originBranch' => 'cross',
+				'uid' => $uid,
+			];
+		$this->logger->warning('Refused legacy Ownpad migration - the file has a row for another pad.', [...$context, 'reason' => 'own_row']);
 		throw new LegacyPadNotFoundException('The legacy .pad file names another pad than the row of its file.');
 	}
 

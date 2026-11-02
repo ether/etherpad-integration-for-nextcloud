@@ -36,7 +36,7 @@ Where no active row names the pad yet, a group pad has to be listed in the group
 
 ### A file that has a row for another pad
 
-A file whose row, in any state, names another pad than its shortcut is refused first, on either branch: a shortcut there is text someone wrote over the file, and a document written from it would replace the shortcut and be refused by the next open. It answers HTTP 400, leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the file has a row for another pad.` with `reason` `own_row`. A shortcut naming its row's own pad on this server passes this check; the remaining migration checks still apply.
+A file whose public or protected row, in any state, names another pad than its shortcut is refused first, on either branch: a shortcut there is text someone wrote over the file, and a document written from it would replace the shortcut and be refused by the next open. It answers HTTP 400, leaves the `.pad` file untouched, and logs `Refused legacy Ownpad migration - the file has a row for another pad.` with `reason` `own_row`. A shortcut naming its row's own pad on this server passes this check; the remaining migration checks still apply.
 
 ### Same origin — claim-collision rule
 
@@ -71,7 +71,7 @@ Every branch emits one log line at `info` level (or `warning` for a refusal); a 
 | `sourceHost` | Scheme and host of the legacy shortcut's URL |
 | `originBranch` | `same` or `cross` |
 | `accessMode` | `public` / `protected` / unset for cross-origin |
-| `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, the line of an insert that met a row |
+| `collision` | `none` / `with_access` / `no_access` / `self`; absent where no row was looked up and decided - an id the app cannot link, an `own_row` refusal, the line of an insert that met a row |
 | `uid` | Migrating user |
 | `reason` | Why a pad cannot be linked: `invalid_id`, `case_variant`, `not_in_group`, `own_name` or `own_row`; on those refusals only |
 | `boundFileId` | The file a row already binds the pad to, on `with_access` and `no_access`; on `case_variant`, the file a row binds it to under other capitals |

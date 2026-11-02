@@ -318,14 +318,14 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$this->migrateWithARowWaitingOn(808, $file, $resolver);
 	}
 
-	/** @return iterable<string,array{string,string}> */
+	/** @return iterable<string,array{string,string,string}> */
 	public static function shortcutsOverAnotherPadsRow(): iterable {
-		yield 'to another pad here' => ['https://pad.our-server.test/p/other-pad', 'other-pad'];
-		yield 'to the same id on another server' => ['https://legacy.example.test/p/team-pad', 'team-pad'];
+		yield 'to another pad here' => ['https://pad.our-server.test/p/other-pad', 'other-pad', 'same'];
+		yield 'to the same id on another server' => ['https://legacy.example.test/p/team-pad', 'team-pad', 'cross'];
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('shortcutsOverAnotherPadsRow')]
-	public function testRefusesAShortcutOverARowForAnotherPad(string $url, string $padId): void {
+	public function testRefusesAShortcutOverARowForAnotherPad(string $url, string $padId, string $branch): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(707);
 		$file->expects($this->never())->method('putContent');
@@ -337,7 +337,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByFileId')->with(707)->willReturn(new Binding(707, 'team-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE, 100, 100));
+		$binding->method('padOfFile')->with(707)->willReturn(new Binding(707, 'team-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE, 100, 100));
 		$binding->expects($this->never())->method('createBinding');
 
 		$seeder = $this->createMock(ExternalPadSeeder::class);
@@ -347,7 +347,11 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$logger->expects($this->once())
 			->method('warning')
 			->with('Refused legacy Ownpad migration - the file has a row for another pad.', $this->callback(
-				static fn (array $context): bool => $context['reason'] === 'own_row' && $context['fileId'] === 707 && !in_array($padId, $context, true),
+				static fn (array $context): bool => $context['reason'] === 'own_row'
+					&& $context['fileId'] === 707
+					&& $context['originBranch'] === $branch
+					&& isset($context['accessMode']) === ($branch === 'same')
+					&& !in_array($padId, $context, true),
 			));
 
 		$this->expectException(LegacyPadNotFoundException::class);
@@ -372,7 +376,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 
 		$row = new Binding(707, 'team-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE);
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByFileId')->with(707)->willReturn($row);
+		$binding->method('padOfFile')->with(707)->willReturn($row);
 		$binding->method('findByPadId')->willReturn($row);
 
 		$this->buildService(binding: $binding, padFileService: $padFileService, etherpadClient: $etherpadClient)

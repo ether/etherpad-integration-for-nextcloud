@@ -99,7 +99,7 @@ class PadSyncService {
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			$isExternal = $pad->isExternal;
-			$this->bindingService->assertTextMatchesRow($fileId, $pad->padId, $pad->accessMode, $pad->isExternal);
+			$this->bindingService->assertTextMatchesRow($fileId, $padId, $accessMode, $isExternal);
 
 			if ($isExternal) {
 				return $this->syncExternalPad($node, $fileId, $pad, $force);
@@ -168,7 +168,12 @@ class PadSyncService {
 		$previousRev = $pad->snapshotRev;
 		$nextRev = max(0, $previousRev + 1);
 		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, '', $nextRev));
-		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
+		// The fetch takes a while, and a row made meanwhile wins over this text.
+		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry(
+			$node,
+			$updatedContent,
+			fn () => $this->bindingService->assertTextMatchesRow($fileId, $padId, $pad->accessMode, true),
+		);
 
 		return new PadSyncResult(
 			status: self::STATUS_UPDATED,

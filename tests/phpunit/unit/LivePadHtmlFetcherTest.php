@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -61,6 +62,20 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$this->expectException(BindingException::class);
 		$this->buildFetcher($client, bindingService: $bindings)
 			->fetchForPadFile($this->pad(padId: 'g.group$somebody-elses'), 138);
+	}
+
+	/** Text anyone may write names that server: refused, it is not asked. */
+	public function testAFileWhoseRowRefusesItsTextFetchesNothing(): void {
+		$refused = new BindingMismatchException('A file with a row names a pad on another server.');
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('assertTextMatchesRow')->willThrowException($refused);
+		$external = $this->createMock(ExternalPadExportFetcher::class);
+		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
+
+		$this->expectExceptionObject($refused);
+
+		$this->buildFetcher(externalPadExportFetcher: $external, bindingService: $bindings)
+			->fetchForPadFile($this->externalPad(), 138);
 	}
 
 	public function testForeignPadIsFetchedOverItsPublicExport(): void {
