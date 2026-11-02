@@ -281,8 +281,9 @@ class PadLegacyMigrationService {
 	 * keep the next open from taking the pad the file names. Elsewhere it
 	 * stays - a file naming this pad, or an emptied one, is bound by it on
 	 * its next open, and for one that does not parse, or cannot be looked
-	 * up or read, the row may be all that names its pad. Only the row: the
-	 * pad was there before, and is never the migration's to take down.
+	 * up or read, the row may be all that names its pad. A row seen deleted
+	 * for good stays too. Only the row: the pad was there before, and is
+	 * never the migration's to take down.
 	 *
 	 * @param array<string,int|string> $context the same-origin fields
 	 */
