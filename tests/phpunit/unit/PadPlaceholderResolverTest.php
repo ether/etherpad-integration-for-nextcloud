@@ -96,6 +96,23 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('etc passwd', $result);
 	}
 
+	/** No leading dot survives, whatever stands before it, so a template's path is not refused. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('namesWithLeadingDots')]
+	public function testApplyForPathDropsLeadingDotsBehindSpacesAndSeparators(string $name, string $expected): void {
+		$this->assertSame($expected, $this->resolver()->applyForPath('{{user}}', $this->user($name)));
+	}
+
+	/** @return array<string,array{string,string}> */
+	public static function namesWithLeadingDots(): array {
+		return [
+			'dots behind a separator' => ['/..', ''],
+			'dots between spaces' => [' .. ', ''],
+			'dots and spaces in turn' => ['. . Anna', 'Anna'],
+			'dots before a name' => ['..Anna', 'Anna'],
+			'a dot after a name' => ['Anna.', 'Anna.'],
+		];
+	}
+
 	public function testLeavesDotedDateDirectiveAsLiteral(): void {
 		// `date.something` is not a real property — the date directive only
 		// supports `:arg` and `|format`. Silently rendering today's date

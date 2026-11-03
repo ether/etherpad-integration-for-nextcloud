@@ -122,16 +122,16 @@ class PadPlaceholderResolver {
 	 * Keeps a display name or UID to one filename segment when it goes into a
 	 * user-supplied path (e.g. a target file name in `createFromTemplate`): NUL,
 	 * tabs and line breaks go, runs of separators become a space so the result
-	 * stays readable, and leading dots go before the value is trimmed, so dots
-	 * after a leading separator survive: `/..` becomes `..`, which
-	 * PathNormalizer then refuses as a segment.
+	 * stays readable, and leading spaces and dots go together.
 	 */
 	private function sanitizePathLikeValue(string $value): string {
 		$cleaned = str_replace(["\0", "\r", "\n", "\t"], '', $value);
 		$cleaned = preg_replace('#[/\\\\]+#', ' ', $cleaned) ?? $cleaned;
 		// A display name of `..` would otherwise become a parent segment in a
-		// path that goes on after the placeholder.
-		$cleaned = preg_replace('/^\.+/', '', $cleaned) ?? $cleaned;
+		// path that goes on after the placeholder, and PathNormalizer refuses
+		// the path then. Together, as a separator turned space can stand
+		// before the dots.
+		$cleaned = preg_replace('/^[ .]+/', '', $cleaned) ?? $cleaned;
 		return trim($cleaned);
 	}
 }
