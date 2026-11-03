@@ -31,9 +31,9 @@ class PadPlaceholderResolver {
 
 	/**
 	 * Resolve placeholders for a target file name or path. Display name and
-	 * UID pass through sanitizePathLikeValue(), as a free-form display name
-	 * must not add path segments. Use this when the resolved string is fed
-	 * into a path normaliser / file-create call.
+	 * UID pass through pathSegment(), as a free-form value must not add path
+	 * segments. Use this when the resolved string is fed into a path
+	 * normaliser / file-create call.
 	 */
 	public function applyForPath(string $content, ?IUser $user): string {
 		return $this->applyInternal($content, $user, sanitizeUserValues: true);
@@ -107,31 +107,33 @@ class PadPlaceholderResolver {
 		}
 		switch (strtolower($arg)) {
 			case '':
-				$value = $user->getDisplayName();
-				break;
+				if (!$sanitize) {
+					return $user->getDisplayName();
+				}
+				// A display name that leaves nothing gives way to the UID: an
+				// empty value would drop a folder or name a bare `.pad`.
+				$name = $this->pathSegment($user->getDisplayName(), dropLeadingDots: true);
+				return $name !== '' ? $name : $this->pathSegment($user->getUID(), dropLeadingDots: false);
 			case 'uid':
-				$value = $user->getUID();
-				break;
+				// Its leading dots stay: `.anna` and `anna` are two users.
+				return $sanitize
+					? $this->pathSegment($user->getUID(), dropLeadingDots: false)
+					: $user->getUID();
 			default:
 				return $original;
 		}
-		return $sanitize ? $this->sanitizePathLikeValue($value) : $value;
 	}
 
 	/**
-	 * Keeps a display name or UID to one filename segment when it goes into a
-	 * user-supplied path (e.g. a target file name in `createFromTemplate`): NUL,
-	 * tabs and line breaks go, runs of separators become a space so the result
-	 * stays readable, and leading spaces and dots go together.
+	 * A user's value as one filename segment: control characters and
+	 * separators become a space, so the words stay apart and no segment is
+	 * added, as Nextcloud refuses a control character in a name. A value of
+	 * dots alone, a parent or current folder, gives nothing. A display name
+	 * also loses its leading dots, which would hide the file.
 	 */
-	private function sanitizePathLikeValue(string $value): string {
-		$cleaned = str_replace(["\0", "\r", "\n", "\t"], '', $value);
-		$cleaned = preg_replace('#[/\\\\]+#', ' ', $cleaned) ?? $cleaned;
-		// A display name of `..` would otherwise become a parent segment in a
-		// path that goes on after the placeholder, and PathNormalizer refuses
-		// the path then. Together, as a separator turned space can stand
-		// before the dots.
-		$cleaned = preg_replace('/^[ .]+/', '', $cleaned) ?? $cleaned;
-		return trim($cleaned);
+	private function pathSegment(string $value, bool $dropLeadingDots): string {
+		$cleaned = (string)preg_replace('/[\x00-\x1F\x7F\/\\\\]+/', ' ', $value);
+		$cleaned = rtrim(ltrim($cleaned, $dropLeadingDots ? ' .' : ' '), ' ');
+		return trim($cleaned, '.') === '' ? '' : $cleaned;
 	}
 }

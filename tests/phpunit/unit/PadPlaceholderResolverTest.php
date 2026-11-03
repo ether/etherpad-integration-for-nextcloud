@@ -96,20 +96,39 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('etc passwd', $result);
 	}
 
-	/** No leading dot survives, whatever stands before it, so a template's path is not refused. */
-	#[\PHPUnit\Framework\Attributes\DataProvider('namesWithLeadingDots')]
-	public function testApplyForPathDropsLeadingDotsBehindSpacesAndSeparators(string $name, string $expected): void {
+	/** One segment of a name, with no leading dot; a name that leaves nothing gives way to the UID. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('displayNamesInAPath')]
+	public function testApplyForPathKeepsADisplayNameToOneSegment(string $name, string $expected): void {
 		$this->assertSame($expected, $this->resolver()->applyForPath('{{user}}', $this->user($name)));
 	}
 
 	/** @return array<string,array{string,string}> */
-	public static function namesWithLeadingDots(): array {
+	public static function displayNamesInAPath(): array {
 		return [
-			'dots behind a separator' => ['/..', ''],
-			'dots between spaces' => [' .. ', ''],
+			'dots behind a separator' => ['/..', 'user1'],
+			'dots between spaces' => [' .. ', 'user1'],
+			'dots behind a vertical tab' => ["\v..", 'user1'],
 			'dots and spaces in turn' => ['. . Anna', 'Anna'],
 			'dots before a name' => ['..Anna', 'Anna'],
 			'a dot after a name' => ['Anna.', 'Anna.'],
+			'a separator at the end' => ['Anna/', 'Anna'],
+			'a tab between words' => ["Anna\tMüller", 'Anna Müller'],
+			'a control character' => ["An\x01na", 'An na'],
+		];
+	}
+
+	/** A UID keeps its leading dots, as another user may have the same UID without them. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('uidsInAPath')]
+	public function testApplyForPathKeepsAUidApartFromAnother(string $uid, string $expected): void {
+		$this->assertSame($expected, $this->resolver()->applyForPath('{{user.uid}}', $this->user('Anna', $uid)));
+	}
+
+	/** @return array<string,array{string,string}> */
+	public static function uidsInAPath(): array {
+		return [
+			'a leading dot' => ['.anna', '.anna'],
+			'dots alone' => ['...', ''],
+			'a separator' => ['an/na', 'an na'],
 		];
 	}
 
