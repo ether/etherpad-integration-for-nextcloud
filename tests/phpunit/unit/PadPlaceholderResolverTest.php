@@ -130,7 +130,7 @@ class PadPlaceholderResolverTest extends TestCase {
 	/** What the admin forbids in a name, for Windows clients for example, becomes a space as a separator does, before the trims. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('namesWithForbiddenCharacters')]
 	public function testApplyForPathReplacesWhatTheAdminForbids(string $name, string $expected, string $key = 'forbidden_filename_characters'): void {
-		$resolver = $this->resolver([$key => [':', '?', '*', 7]]);
+		$resolver = $this->resolver([$key => [':', '?', '*', 7, '€']]);
 		$this->assertSame($expected, $resolver->applyForPath('{{user}}', $this->user($name)));
 	}
 
@@ -145,6 +145,7 @@ class PadPlaceholderResolverTest extends TestCase {
 			'one before a hidden name' => ['?.hidden', 'hidden'],
 			'under the older key' => ['Anna*Müller', 'Anna Müller', 'forbidden_chars'],
 			'a number listed, which is no character' => ['Anna7', 'Anna7'],
+			'a character of several bytes, beside another one' => ['Anna–Müller€5', 'Anna–Müller 5'],
 		];
 	}
 
