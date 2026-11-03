@@ -10,10 +10,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * Result of the lightweight sync-status check used by the viewer's
- * polling loop. The unavailable / external branches set `$inSync = null`
- * and supply `$reason`; the live branches set `$inSync = bool` and the
- * `$snapshotRev` / `$currentRev` pair instead.
+ * Result of the lightweight sync-status check. The external branch sets
+ * `$inSync = null` and supplies `$reason`; the live branch sets
+ * `$inSync = bool` and the `$snapshotRev` / `$currentRev` pair instead.
  */
 class PadSyncStatus {
 	public function __construct(

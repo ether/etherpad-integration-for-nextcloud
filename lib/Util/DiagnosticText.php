@@ -9,11 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Util;
 
-/**
- * Upstream wording on its way to an admin panel or a log. Both operations
- * are one-liners and both were wrong once in a way the other was not, so
- * they live here rather than beside each reader of them.
- */
+/** Formats text from outside for an admin page or a log. */
 class DiagnosticText {
 	/** What one line of a check may occupy. */
 	public const MAX_LENGTH = 160;

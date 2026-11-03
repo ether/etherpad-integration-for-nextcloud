@@ -23,15 +23,17 @@ use OCP\IRequest;
 use Psr\Log\LoggerInterface;
 
 /**
- * The one line an error a client is answered for gets, for both error
- * mappers; the services under them leave it to this. Of a key Etherpad
- * rejected, some jobs and listeners write the same line where no answer
- * logs it (reportIfKeyRejected()). Kept on purpose are
- * the lines a service writes to explain a refusal nothing else would: a
- * name another create has locked (PadFileCreator - a stale lock looks like
- * a taken name), a file a create will not write over, and the refusals of
- * a legacy Ownpad migration, the trail docs/legacy-ownpad-migration.md
- * points admins to. At the level it deserves:
+ * Logs the errors PadControllerErrorMapper and
+ * PublicViewerControllerErrorMapper answer, one line each. Some jobs and
+ * listeners, where no answer logs a rejected key, write its line through
+ * reportIfKeyRejected().
+ *
+ * Services keep their own lines where the answer cannot explain a refusal:
+ * a name another create has locked (PadFileCreator: a stale lock looks like
+ * a taken name), a file a create will not write over, and the refusals of a
+ * legacy Ownpad migration (docs/legacy-ownpad-migration.md).
+ *
+ * Levels and rate limits:
  *
  * - A key Etherpad rejected (EtherpadKeyRejectedException says why it is
  *   answered as an outage): an error once a minute for the instance, at
@@ -46,10 +48,11 @@ use Psr\Log\LoggerInterface;
  * - This instance's Etherpad not reachable: a warning once a minute for
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
- *   otherwise write its own. Refusing: once a minute for each file, since
- *   each is a case of its own, and once a minute for all refusals that
- *   name none. Without a distributed cache that can add() - or with one
- *   that throws - each is a warning, a rejected key an error.
+ *   otherwise write its own. Refusing, or having lost a pad: once a minute
+ *   for each file, since each is a case of its own, and once a minute for
+ *   all of a kind that name none. Without a distributed cache that can
+ *   add() - or with one that throws - each is a warning, a rejected key an
+ *   error.
  * - A `.pad` and its row that do not match: a warning. That is data an
  *   admin has to mend. A row that could not be written: an error, with the
  *   database's cause.

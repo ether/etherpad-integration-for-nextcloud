@@ -10,10 +10,13 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Exception;
 
 /**
- * This instance's Etherpad answered, and refused: a pad or group it does
- * not have. Trying again gives the same answer; what it said is for the
- * admin. Any other EtherpadClientException of our own Etherpad is one it
- * did not answer properly, or a key it rejected (EtherpadKeyRejectedException).
+ * This instance's Etherpad answered with an error code other than a
+ * rejected key's, or with JSON that carries no code at all: for example a
+ * pad or group it does not have, or an internal error. The server answered,
+ * so this is not an outage; what it said is for the admin. Any other
+ * EtherpadClientException of our own Etherpad is no proper answer, a key it
+ * rejected (EtherpadKeyRejectedException), or a pad too large to read
+ * (EtherpadTooLargeException).
  */
 class EtherpadRefusedException extends EtherpadClientException {
 	/** Etherpad answered. */

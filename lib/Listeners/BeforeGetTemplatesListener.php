@@ -40,12 +40,9 @@ class BeforeGetTemplatesListener implements IEventListener {
 		// Nextcloud dispatches this twice: once to list the templates, once to
 		// answer what fields one has. Only the second dispatch matters — the
 		// picker asks for fields through its own endpoint after a tile is
-		// chosen, on 31, 32 and 33 alike — so what the listing carries is never
-		// read. Ignoring it saves walking every template on every picker open.
-		//
-		// method_exists because the flag is documented as Nextcloud 32 even
-		// though 31 ships it; the guard costs nothing and outlives the tag.
-		if (method_exists($event, 'shouldGetFields') && !$event->shouldGetFields()) {
+		// chosen — so what the listing carries is never read. Ignoring it saves
+		// walking every template on every picker open.
+		if (!$event->shouldGetFields()) {
 			return;
 		}
 

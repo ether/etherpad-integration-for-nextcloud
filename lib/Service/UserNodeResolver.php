@@ -125,10 +125,9 @@ class UserNodeResolver {
 	 * neither of which is a NotFoundException — and the callers of this
 	 * class catch that one type to degrade gracefully: a metadata lookup
 	 * answers "not a pad", the legacy migration reports a collision. Left
-	 * to escape, an unavailable home storage would turn both into a 500,
-	 * where asking the global root simply returned no nodes. Not being able
-	 * to look inside a user's files is, for every caller here, the same
-	 * answer as not finding the file.
+	 * to escape, either exception would turn both of those into a 500.
+	 * Not being able to look inside a user's files is, for every caller
+	 * here, the same answer as not finding the file.
 	 *
 	 * Only the two the interface declares. NotPermittedException is in OCP
 	 * and can be named; NoUserException lives in `OC\User\` and is not
@@ -145,8 +144,6 @@ class UserNodeResolver {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
 		} catch (\Exception $e) {
-			// Not a catch: NoUserException is an `OC\` class and may not
-			// exist, which instanceof answers with false rather than a load.
 			if (!$e instanceof NotPermittedException && !$e instanceof \OC\User\NoUserException) {
 				throw $e;
 			}

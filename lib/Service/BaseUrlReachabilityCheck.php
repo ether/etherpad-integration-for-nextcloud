@@ -86,10 +86,10 @@ class BaseUrlReachabilityCheck {
 				self::FIELD,
 			);
 		} catch (\Throwable $e) {
-			// The Nextcloud client throws on >= 400, so recover the real
-			// response: a 404 still proves the host answers, which is all this
-			// row claims. Only a throwable without one is a transport failure,
-			// and then the original error is the useful one to report.
+			// The Nextcloud client throws on a status of 400 or above, so the
+			// response is recovered: the status check below reports it as an
+			// answer, not as a network failure. A throwable without a response
+			// is a transport failure, and its own error is the one to report.
 			try {
 				$response = $client->getResponseFromThrowable($e);
 			} catch (\Throwable) {

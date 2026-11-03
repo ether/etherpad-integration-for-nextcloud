@@ -37,13 +37,12 @@ class PadMetadataService {
 	 * points at another `.pad` in the requester's userspace. Used to offer
 	 * "Open the original" in the recovery UI when a copy was made.
 	 *
-	 * Authorization: the response is identical for every miss path — no
-	 * binding, binding for ext.* pad ID, binding owned by another user,
-	 * trashed / pending-delete binding, frontmatter unreadable. The presence
-	 * of the `found: true` payload itself is therefore the only signal, and
-	 * it is only emitted when the requester can already read the bound file
-	 * (gated by UserNodeResolver). This means a crafted frontmatter cannot
-	 * be used to probe for `.pad` files in other users' accounts.
+	 * Authorization: only an active row whose file resolves in the
+	 * requester's file tree, their own files and those shared with them,
+	 * answers `found: true`; every other miss answers the same
+	 * `found: false`, so crafted frontmatter cannot probe for `.pad` files
+	 * the requester cannot reach. The lookup checks the file's place, not
+	 * read permission.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {

@@ -22,14 +22,14 @@ use OCP\IConfig;
 
 class EtherpadClient {
 	/**
-	 * Failsafe fallback API version, used only when auto-detection fails AND no
-	 * etherpad_api_version is stored. Deliberately kept LOW, not bumped to the
-	 * newest release: Etherpad's API version list is cumulative, so a newer
-	 * server accepts any older version while rejecting one higher than it
-	 * supports. Requesting a low version therefore maximises compatibility in
-	 * exactly the degraded path where this constant matters, and the plugin
-	 * uses no method newer than ~1.2 (it never passes the authorId param that
-	 * 1.3.0 added). Only raise this if we start relying on a newer-API feature.
+	 * Fallback API version, for when none is stored or detected. Deliberately
+	 * kept LOW, not bumped to the newest release: Etherpad's API version list
+	 * is cumulative, so a newer server accepts any older version while
+	 * rejecting one higher than it supports. Requesting a low version
+	 * therefore maximises compatibility in exactly the degraded path where
+	 * this constant matters, and the plugin uses no method newer than ~1.2
+	 * (it never passes the authorId param that 1.3.0 added). Only raise this
+	 * if we start relying on a newer-API feature.
 	 */
 	public const DEFAULT_API_VERSION = '1.2.15';
 
@@ -61,14 +61,11 @@ class EtherpadClient {
 	public const SESSION_LISTING_MAX_BYTES = 4194304;
 
 	/**
-	 * `/health` gets far less patience than an API call.
-	 *
-	 * Nothing depends on the answer: the caller falls back to the last known
-	 * release, and without one to the cookie it was writing before. It is
-	 * asked on the open path, though, so a pad server that accepts the
-	 * connection and then says nothing must not be able to hold an open
-	 * hostage for the full request timeout on top of the calls that do
-	 * matter.
+	 * `/health` gets far less patience than an API call. It is asked on the
+	 * open path, and a failed answer costs little: the caller falls back to
+	 * the last known release, and without one to a script-readable cookie. A
+	 * pad server that accepts the connection and then says nothing must not
+	 * hold an open for the full request timeout.
 	 */
 	private const HEALTH_TIMEOUT_SECONDS = 3;
 
@@ -163,13 +160,12 @@ class EtherpadClient {
 	 * that is not there, which for a pad inside it means the pad is not
 	 * there either.
 	 *
-	 * Read strictly, because of what an empty answer now means. The caller
-	 * takes `[]` as "this group holds nothing, removing it takes nothing
-	 * with it" — so a shrugged-off answer would be a licence to delete. A
-	 * missing field, a non-array, a member that is not a string: each of
-	 * those is an Etherpad that did not answer the question, not a group
-	 * that is empty. Saying so drops the caller back to deleting the pad
-	 * alone, which is what it did before it could ask.
+	 * Read strictly, because of what an empty answer means. The callers that
+	 * remove a group, or the sessions in it, take `[]` as "this group holds
+	 * nothing, removing it takes nothing with it", so a shrugged-off answer
+	 * would be a licence to delete. A missing field, a non-array, a member
+	 * that is not a string: each of those is an Etherpad that did not answer
+	 * the question, not a group that is empty.
 	 *
 	 * @return list<string>
 	 */
@@ -190,10 +186,11 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Removes the group, every pad inside it, and every session that granted
-	 * access to it — which is what makes it the right call for a protected
-	 * pad. deletePad() on a group pad leaves the group and its sessions
-	 * behind, and nothing else ever collects them.
+	 * Removes the group, every pad inside it, and every session that grants
+	 * access to it, which makes it the right call for a protected pad.
+	 * deletePad() on a group pad leaves the group behind, which nothing goes
+	 * looking for, and its sessions, which stay valid until they expire;
+	 * ExpiredSessionCollector removes them after that.
 	 */
 	public function deleteGroup(string $groupId, ?int $timeoutSeconds = null): void {
 		$this->apiCall('deleteGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
@@ -735,7 +732,7 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Shared request options for every Etherpad call: a fixed timeout, the
+	 * Shared request options for every Etherpad call: the given timeout, the
 	 * JSON Accept header, and redirects disabled (Etherpad never legitimately
 	 * redirects an API call, and following one could leak the apikey to a
 	 * foreign host).

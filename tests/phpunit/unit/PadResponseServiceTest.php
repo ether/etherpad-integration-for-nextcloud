@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Service\PadMeta;
 use OCA\EtherpadNextcloud\Service\PadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PadResolution;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Service\PadSyncStatus;
 use OCA\EtherpadNextcloud\Tests\Support\RecordingCookieHeaders;
 use OCP\AppFramework\Http;
 use OCP\IL10N;
@@ -211,6 +212,20 @@ class PadResponseServiceTest extends TestCase {
 			->getData();
 
 		$this->assertSame($expected, $data['pad_id']);
+	}
+
+	/** `in_sync` is always there: null is a state of its own, not out of sync. */
+	public function testSyncStatusResponseNamesEachStateItHas(): void {
+		$service = new PadResponseService($this->createMock(IURLGenerator::class), $this->createMock(AppConfigService::class), $this->l10nEcho());
+
+		$this->assertSame(
+			['status' => 'unavailable', 'in_sync' => null, 'reason' => 'external_no_revision'],
+			$service->syncStatusResponse(new PadSyncStatus('unavailable', reason: 'external_no_revision')),
+		);
+		$this->assertSame(
+			['status' => 'out_of_sync', 'in_sync' => false, 'snapshot_rev' => 3, 'current_rev' => 5],
+			$service->syncStatusResponse(new PadSyncStatus('out_of_sync', false, 3, 5)),
+		);
 	}
 
 	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false, string $cookieHeader = '', string $accessMode = 'protected', bool $isExternal = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {

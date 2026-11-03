@@ -83,13 +83,8 @@ class EtherpadHealthCheckService {
 			if ($hint !== '') {
 				$detail .= ' ' . $hint;
 			}
-			// We render the template ourselves and pass a plain string into
-			// the exception instead of relying on IL10N's placeholder
-			// substitution: the Exception constructor coerces non-strings
-			// via __toString, but at least on Nextcloud 30 the L10NString
-			// path leaks the literal '{detail}' through to consumers in
-			// some catalog setups. Doing the substitution here removes that
-			// surface area.
+			// Filled after translating: IL10N fills parameters with vsprintf(),
+			// which knows no {name}.
 			$template = $this->l10n->t('Etherpad connection test failed: {detail}');
 			throw new AdminHealthCheckException(
 				str_replace('{detail}', $detail, $template),
@@ -290,13 +285,15 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * What `SameSite=None` costs, added to whatever else the line says.
+	 * Adds to whatever the line says what crossSiteNote() has to say about
+	 * how far the cookie travels.
 	 *
-	 * Set by hand, for one deployment: a foreign site framing the embed
-	 * routes where Nextcloud authenticates without a cookie. Whether that
-	 * holds is not this app's to decide, but Nextcloud's own session cookie
-	 * is readable at runtime and says which half of the question the admin
-	 * is in — reported rather than assumed.
+	 * A cross-site embed needs `SameSite=None` on the Etherpad cookie, set by
+	 * hand, and Nextcloud authenticating without its session cookie. Whether
+	 * Nextcloud authenticates that way, this app cannot tell. The SameSite
+	 * attribute of Nextcloud's own session cookie, read at runtime, can say
+	 * why that cookie does not reach such a frame; it does not confirm that
+	 * a frame is logged in.
 	 */
 	private function withCrossSiteNote(HealthCheckItem $item): HealthCheckItem {
 		$note = $this->crossSiteNote();
@@ -347,14 +344,13 @@ class EtherpadHealthCheckService {
 
 	/**
 	 * The configuration that breaks silently: an embed origin outside the
-	 * cookie's own domain while the cookie stays same-site.
+	 * cookie's domain while the cookie stays same-site.
 	 *
-	 * Compared against the domain the cookie actually carries, not against
-	 * a guess at the registrable domain — an origin the cookie already
-	 * covers is certainly same-site, and anything else is worth a second
-	 * look. Over-warning is the acceptable direction here: this asks an
-	 * admin to check, where deciding the cookie from the same comparison
-	 * would need a public suffix list to be right.
+	 * The domain is the one derived for the configured hosts; an admin's own
+	 * setting is not asked here. CookieDomainPolicy::isCoveredBy() says why
+	 * 'outside' only means 'worth checking'. Over-warning is acceptable: this
+	 * asks an admin to check, where deciding the cookie from the same
+	 * comparison would need a public suffix list.
 	 */
 	private function embedOriginNote(): string {
 		$origins = $this->appConfigService->getTrustedEmbedOrigins();
@@ -444,10 +440,10 @@ class EtherpadHealthCheckService {
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
 	 *
-	 * Matching is on substrings rather than exception subtypes because the
-	 * upstream library bundles many failure shapes into the same message. If
-	 * upstream wording changes the classification just falls through to
-	 * REASON_UNKNOWN; the error itself still surfaces.
+	 * Matching is on substrings rather than exception subtypes because
+	 * EtherpadClient puts many failure shapes into one message, Etherpad's own
+	 * wording among them. If that wording changes the classification just
+	 * falls through to REASON_UNKNOWN; the error itself still surfaces.
 	 */
 	private function classifyFailure(string $rawMessage): string {
 		$message = strtolower($rawMessage);

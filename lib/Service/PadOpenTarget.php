@@ -36,15 +36,15 @@ class PadOpenTarget {
 		 * a public field of an argument ends up in a serialized trace.
 		 */
 		private readonly string $cookieHeader,
-		// Required, unlike every optional convenience above it: these decide
-		// whether somebody may edit, and a default would let a future
-		// construction site grant that by forgetting.
+		// Required: $mayWrite decides whether somebody may edit,
+		// $isReadOnlyView what they are shown, and a default would let a
+		// future construction site decide either by forgetting.
 		//
 		// Two fields, because they are two things. A public pad opened
 		// read-only is Etherpad's own read-only view in an iframe, not this
-		// app's viewer — but it is still not writable, and anything that
-		// follows from "may not write" has to follow from that rather than
-		// from which surface is shown.
+		// app's viewer, unless Etherpad cannot give its address; either way
+		// the reader may not write. Anything that follows from "may not write"
+		// follows from $mayWrite, not from which surface is shown.
 		public readonly bool $isReadOnlyView,
 		public readonly bool $mayWrite,
 	) {

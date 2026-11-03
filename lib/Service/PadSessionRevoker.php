@@ -124,19 +124,22 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * Every session of the groups of the protected pads $padIds, which are
-	 * leaving Files - to a trash, or past it (RevokeSessionsOnDeleteListener).
-	 * A session an open made gives its pad until it expires, and the file no
-	 * longer does.
+	 * The sessions of the groups of the protected pads $padIds, which are
+	 * leaving Files: to a trash, or past it (RevokeSessionsOnDeleteListener).
+	 * A session made by an open grants its pad until it expires, although the
+	 * file no longer does.
 	 *
-	 * What fits is taken here, bounded as a logout is but for the ceiling:
-	 * a pad opened often holds more sessions than a cookie can, and those
-	 * that expire last go first - most often whoever is at it now. Each
-	 * group's sessions go before the next group is asked, so a slow
-	 * Etherpad spends the budget on deletes, not on listing. Then every
-	 * group goes to a background job (GroupSessionRevoker), which takes
-	 * what did not fit and what an open under way makes after the listing
-	 * here.
+	 * What fits is taken here, from a group that holds nothing but the pads
+	 * leaving (takeNow()), bounded like a logout except for the ceiling:
+	 * a pad opened often holds more sessions than a cookie can. The sessions
+	 * that expire last go first, most often those of whoever is at the pad
+	 * now. Each group's sessions go before the next group is asked, so a slow
+	 * Etherpad spends the budget on deletes, not on listing.
+	 *
+	 * Then each group goes to a background job (GroupSessionRevoker), which
+	 * takes what did not fit and what an open under way makes after the
+	 * listing here. A group Etherpad answers is gone goes to no job. The
+	 * sessions left in a group that cannot be queued expire on their own.
 	 *
 	 * @param list<string> $padIds
 	 * @return int how many were removed

@@ -20,8 +20,8 @@ use OCP\IUser;
 use OCP\IUserSession;
 
 /**
- * Create-side endpoints for `.pad` files. Spans empty creates, copies in
- * a parent folder, template-based creates, and external-URL imports.
+ * Create endpoints for `.pad` files: by path, by parent folder and name, from
+ * a template, and from the address of a pad on another server.
  * @psalm-api
  */
 class PadCreateController extends AbstractPadController {

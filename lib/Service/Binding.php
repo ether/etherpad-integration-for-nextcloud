@@ -24,7 +24,7 @@ final class Binding {
 		public readonly string $state,
 		/**
 		 * When the file was seen deleted for good (pending_delete). Null in
-		 * every other state, and on a row an early version left without one.
+		 * every other state.
 		 */
 		public readonly ?int $deletedAt = null,
 		public readonly int $updatedAt = 0,
@@ -64,8 +64,7 @@ final class Binding {
 	/**
 	 * No run has tried this row since the file was seen deleted for good:
 	 * updated_at is still at deleted_at. Asked of rows the sweep takes,
-	 * which it finds by their deleted_at; every version that writes
-	 * pending_delete sets it, 1.1.0-beta.1 included.
+	 * which findGone() finds by their deleted_at, so it is set.
 	 */
 	public function untouchedSinceOwed(): bool {
 		return $this->updatedAt <= (int)$this->deletedAt;

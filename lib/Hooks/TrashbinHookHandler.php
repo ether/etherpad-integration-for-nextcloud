@@ -19,10 +19,11 @@ use Psr\Log\LoggerInterface;
  * The restore's legacy hook, which lets nothing out. The file is restored
  * by the time post_restore fires, and whatever this slot threw would only
  * turn that into a failed restore: OC_Hook::emit does not catch an error on
- * Nextcloud 31, 32 before 32.0.14, 33 before 33.0.8 and 34 before 34.0.3,
+ * Nextcloud 32 before 32.0.14, 33 before 33.0.8 and 34 before 34.0.3,
  * passes HintException and ServerNotAvailableException on everywhere, and
  * writes its entry without the app.
  *
+ * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/legacy/OC_Hook.php
  * @psalm-api
  */
 class TrashbinHookHandler {

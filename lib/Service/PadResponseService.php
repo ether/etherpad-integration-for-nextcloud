@@ -120,7 +120,8 @@ class PadResponseService {
 	/** @return array<string,mixed> */
 	public function syncStatusResponse(PadSyncStatus $status): array {
 		$payload = ['status' => $status->status];
-		// Emitted unconditionally — the viewer treats null as a distinct state.
+		// Always present: null says the state is unavailable (a pad on another
+		// server), not out of sync.
 		$payload['in_sync'] = $status->inSync;
 		if ($status->snapshotRev !== null) {
 			$payload['snapshot_rev'] = $status->snapshotRev;

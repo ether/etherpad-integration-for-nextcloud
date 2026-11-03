@@ -24,10 +24,6 @@ class CookieDomainMessages {
 
 	/**
 	 * Empty when there is nothing worth telling the admin.
-	 *
-	 * Placeholders are substituted here rather than handed to IL10N, matching
-	 * what EtherpadHealthCheckService does: Nextcloud's L10NString has been
-	 * seen leaking the literal placeholder through in some catalog setups.
 	 */
 	public function describe(CookieDomainDecision $decision): string {
 		$hosts = $this->hostSentence($decision);
@@ -91,7 +87,12 @@ class CookieDomainMessages {
 		);
 	}
 
-	/** @param array<string,string> $parameters */
+	/**
+	 * Filled after translating: IL10N fills parameters with vsprintf(), which
+	 * knows no {name}.
+	 *
+	 * @param array<string,string> $parameters
+	 */
 	private function fill(string $text, array $parameters): string {
 		foreach ($parameters as $key => $value) {
 			$text = str_replace('{' . $key . '}', $value, $text);

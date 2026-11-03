@@ -23,12 +23,11 @@ use Psr\Log\LoggerInterface;
  * to take it away again.
  *
  * A public pad is a pad. A protected pad is a pad inside a group, plus the
- * sessions that grant access to that group — and `deletePad` removes only
- * the first of those three, leaving the group and every session issued for
- * it behind with nothing to collect them.
+ * sessions that grant access to that group. `deletePad` removes only the pad
+ * (EtherpadClient::deleteGroup() says what stays).
  */
 class ManagedPadLifecycle {
-	/** How long whether a pad is lost may take to answer (howLost()). */
+	/** How long each question howLost() asks Etherpad may wait. It asks at most two. */
 	public const PROBE_TIMEOUT_SECONDS = 3;
 
 	public function __construct(
@@ -272,8 +271,7 @@ class ManagedPadLifecycle {
 	 * behind the snapshot is not lost: files a restore in 1.1.0-beta.1 left
 	 * kept the old pad's revision count. A pad an admin made anew through
 	 * the API with other text than the file saved counts as made anew; the
-	 * recovery leaves it in place. Quiet, unlike probe(): an open asks this
-	 * every time.
+	 * recovery leaves it in place. Quiet, as an open asks this every time.
 	 *
 	 * Each question to Etherpad waits PROBE_TIMEOUT_SECONDS at most - the
 	 * revision count, and at revision 0 the text: an open that may write,
@@ -349,9 +347,9 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Whether losing the pad would lose anything the file holds: always for
-	 * a protected pad, whose session opens nothing without it, and for a
-	 * public pad once its file has saved content.
+	 * Whether it matters if Etherpad has lost the pad: always for a protected
+	 * pad, whose session opens nothing without it, and for a public pad once
+	 * its file has saved content.
 	 */
 	public static function holdsSavedContent(string $accessMode, ParsedPadFile $pad): bool {
 		return $accessMode === BindingService::ACCESS_PROTECTED || self::savedAnything($pad);
@@ -413,9 +411,9 @@ class ManagedPadLifecycle {
 	 * call's to remove; a group that cannot be read stays, and the reason
 	 * reaches the caller.
 	 *
-	 * $budget: a sweep's run, or an open's few seconds; each call gets what
-	 * is left, and one that would not finish is not made. Nothing is
-	 * removed before the last call, so stopping leaves the pad as it was.
+	 * $budget: a sweep's run. Each call gets what is left, and one that would
+	 * not finish is not made. Nothing is removed before the last call, so
+	 * stopping leaves the pad as it was.
 	 *
 	 * $retried: the caller keeps its row when this throws, and tries again.
 	 * A group that cannot be read then fails the call, with nothing
@@ -476,7 +474,7 @@ class ManagedPadLifecycle {
 		// Either something else lives in that group — an Ownpad-era group
 		// with more than one pad, or a group that was never ours — or the
 		// question could not be answered. Both mean the same thing here:
-		// take the pad only, which is what every delete did before.
+		// take the pad only.
 		$this->logger->debug('Removing only the pad, not its Etherpad group.', [
 			'app' => 'etherpad_nextcloud',
 			'padId' => $padId,
@@ -487,16 +485,14 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * What the group holds, or nothing when that cannot be found out.
+	 * What the group holds, or null when it could not be read and the caller
+	 * gives the group up.
 	 *
-	 * Reading the group is what makes removing the *group* safe. It is not
-	 * what makes removing the *pad* safe — that was a plain `deletePad`
-	 * before any of this. So a read that fails for its own reasons does not
-	 * veto the delete: not knowing gives up the group and keeps the pad
-	 * delete, which is the half that was always safe. The group then stays
-	 * behind, empty once the pad is gone, and nothing leads back to it; its
-	 * sessions open nothing. Only a caller that will try again ($retried)
-	 * gets the failed read instead, to report, and loses nothing.
+	 * Deleting the pad does not require knowing the group's other pads. If
+	 * the listing fails, a caller that will not try again deletes only the
+	 * pad and leaves the group and its sessions in place; the group may still
+	 * hold other pads. A caller that will ($retried) gets the error instead,
+	 * so a later attempt can still remove the group safely.
 	 *
 	 * An answer that the group does not exist is no failed read: it goes to
 	 * the caller as it came.

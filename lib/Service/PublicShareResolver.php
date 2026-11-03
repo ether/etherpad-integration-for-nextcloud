@@ -97,8 +97,7 @@ class PublicShareResolver {
 					continue;
 				}
 				// Scoped to this folder by contract, so null should not
-				// happen; if it ever did, the id stops here rather than
-				// falling back.
+				// happen; such a candidate is skipped.
 				$relativePath = $shareFolder->getRelativePath($candidate->getPath());
 				if ($relativePath === null) {
 					continue;
@@ -157,7 +156,8 @@ class PublicShareResolver {
 		$requestedPath = '';
 
 		if ($requestedId !== null) {
-			// Only when sent: a single-file share has nothing to select.
+			// A path is optional beside an id, so only a non-empty string is
+			// read; requestedPath() would refuse anything that is not a string.
 			if (is_string($fileParam) && $fileParam !== '') {
 				$requestedPath = $this->requestedPath($fileParam, $token);
 			}

@@ -161,10 +161,10 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * One vanished file's pad deleted on the admin's word
-	 * (ConsistencyCheckService::markVanishedFile()). `fileId` is required:
-	 * all of them is a route of its own, never what a request that sent
-	 * no readable id falls to.
+	 * Marks one vanished file's pad for deletion on the admin's word
+	 * (ConsistencyCheckService::markVanishedFile()); the sweep deletes it.
+	 * `fileId` is required: a request with no readable id must not fall
+	 * through to all vanished files, which have a route of their own.
 	 */
 	public function deleteVanished(): DataResponse {
 		return $this->errors->run(
@@ -194,11 +194,12 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * The pads of all vanished files deleted on the admin's word
-	 * (ConsistencyCheckService::markVanished()), as many as `expected`
-	 * says: the count the admin was shown and confirmed. A list that no
-	 * longer has that many is not taken - the answer carries it as it is
-	 * now, to be confirmed again.
+	 * Marks the pads of all vanished files for deletion on the admin's word
+	 * (ConsistencyCheckService::markVanished()), as many as `expected` says:
+	 * the count the admin was shown and confirmed. A list that no longer has
+	 * that many is not marked, and a run that spends its budget leaves the
+	 * rest for the next call. The answer carries the list as it is now, to be
+	 * confirmed again.
 	 */
 	public function deleteAllVanished(): DataResponse {
 		return $this->errors->run(

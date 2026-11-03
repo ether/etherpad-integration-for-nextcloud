@@ -21,11 +21,10 @@ use OCP\IL10N;
 use Psr\Log\LoggerInterface;
 
 /**
- * Maps embed-controller exceptions to embed-shaped TemplateResponses.
- *
- * Endpoints provide an `error_title` so the noviewer template can show a
- * context-appropriate heading (e.g. "Could not open pad" vs. "Could not create
- * pad"). Unhandled errors are logged and rendered with a generic message.
+ * Maps embed-controller exceptions to the noviewer template. Each endpoint
+ * passes its own `$errorTitle`, so the page can say "Could not open pad" or
+ * "Could not create pad". Unhandled errors are logged and shown with a generic
+ * message.
  *
  * The embed page only resolves its file here; Etherpad, the binding and
  * the file's content are the pad API's, which the page calls next and
