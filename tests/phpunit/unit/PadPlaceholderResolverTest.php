@@ -149,6 +149,12 @@ class PadPlaceholderResolverTest extends TestCase {
 		];
 	}
 
+	/** A list written with keys of its own still names its characters. */
+	public function testApplyForPathReadsAForbiddenListWithKeys(): void {
+		$resolver = $this->resolver(['forbidden_filename_characters' => ['colon' => ':', 3 => '?']]);
+		$this->assertSame('Anna Müller', $resolver->applyForPath('{{user}}', $this->user('Anna:Müller?')));
+	}
+
 	/** A UID keeps its leading dots, as another user may have the same UID without them. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('uidsInAPath')]
 	public function testApplyForPathKeepsAUidApartFromAnother(string $uid, string $expected): void {
