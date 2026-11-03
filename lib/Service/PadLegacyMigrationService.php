@@ -200,7 +200,7 @@ class PadLegacyMigrationService {
 		}
 
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
-		// Checked before any row is looked up by this id, on every way below,
+		// Checked before any row is looked up by this id, on every path below,
 		// a copy and a finish too. An id Etherpad's API rewrites would reach
 		// another file's pad past the collision rule, and PostgreSQL refuses
 		// invalid UTF-8 and NUL. The document is built here so the format

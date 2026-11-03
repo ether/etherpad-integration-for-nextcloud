@@ -197,8 +197,9 @@ class AdminController extends Controller {
 	 * Marks the pads of all vanished files for deletion on the admin's word
 	 * (ConsistencyCheckService::markVanished()), as many as `expected` says:
 	 * the count the admin was shown and confirmed. A list that no longer has
-	 * that many is not marked. The answer carries the list as it is now, to
-	 * be confirmed again.
+	 * that many is not marked, and a run that spends its budget leaves the
+	 * rest for the next call. The answer carries the list as it is now, to be
+	 * confirmed again.
 	 */
 	public function deleteAllVanished(): DataResponse {
 		return $this->errors->run(

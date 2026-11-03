@@ -27,9 +27,9 @@ class EtherpadClient {
 	 * is cumulative, so a newer server accepts any older version while
 	 * rejecting one higher than it supports. Requesting a low version
 	 * therefore maximises compatibility in exactly the degraded path where
-	 * this constant matters, and the plugin
-	 * uses no method newer than ~1.2 (it never passes the authorId param that
-	 * 1.3.0 added). Only raise this if we start relying on a newer-API feature.
+	 * this constant matters, and the plugin uses no method newer than ~1.2
+	 * (it never passes the authorId param that 1.3.0 added). Only raise this
+	 * if we start relying on a newer-API feature.
 	 */
 	public const DEFAULT_API_VERSION = '1.2.15';
 
@@ -160,12 +160,12 @@ class EtherpadClient {
 	 * that is not there, which for a pad inside it means the pad is not
 	 * there either.
 	 *
-	 * Read strictly, because of what an empty answer means. The caller
-	 * takes `[]` as "this group holds nothing, removing it takes nothing
-	 * with it" — so a shrugged-off answer would be a licence to delete. A
-	 * missing field, a non-array, a member that is not a string: each of
-	 * those is an Etherpad that did not answer the question, not a group
-	 * that is empty.
+	 * Read strictly, because of what an empty answer means. The callers that
+	 * remove a group, or the sessions in it, take `[]` as "this group holds
+	 * nothing, removing it takes nothing with it", so a shrugged-off answer
+	 * would be a licence to delete. A missing field, a non-array, a member
+	 * that is not a string: each of those is an Etherpad that did not answer
+	 * the question, not a group that is empty.
 	 *
 	 * @return list<string>
 	 */
@@ -188,9 +188,9 @@ class EtherpadClient {
 	/**
 	 * Removes the group, every pad inside it, and every session that grants
 	 * access to it, which makes it the right call for a protected pad.
-	 * deletePad() on a group pad leaves the group behind, which no sweep
-	 * collects, and its sessions valid until they expire and a sweep collects
-	 * them (ExpiredSessionCollector).
+	 * deletePad() on a group pad leaves the group behind, which nothing goes
+	 * looking for, and its sessions, which stay valid until they expire;
+	 * ExpiredSessionCollector removes them after that.
 	 */
 	public function deleteGroup(string $groupId, ?int $timeoutSeconds = null): void {
 		$this->apiCall('deleteGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);

@@ -60,10 +60,10 @@ class RestoreFromTrashListener implements IEventListener {
 			return;
 		}
 
-		// The event can carry a node that is not resolvable yet, so anything
-		// reading its id throws: every .pad restored through the event would
-		// get no pad back, through the web UI, WebDAV or occ alike. Re-resolve
-		// it from its path before handing it on.
+		// The event's node may not be resolvable yet, and reading its id then
+		// throws: the event pass could neither see what the hook pass decided
+		// nor try again, and would log a failed restore. Re-resolve it from
+		// its path before handing it on.
 		$node = $this->materialize($node);
 		if ($node === null) {
 			return;

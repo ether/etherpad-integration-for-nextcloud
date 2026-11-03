@@ -120,13 +120,13 @@ class GroupSessionRevoker {
 	 * to go. The mounts are checked before the first delete and again after
 	 * a file moved.
 	 *
-	 * The answer is the collector's shape. `remaining` counts the sessions
-	 * it found and did not take, failed deletes included; it is 0 for a pass
-	 * stopped by a file back or a failed lookup. `retry` says something
-	 * failed. `nextDueAt` is always null: expired sessions are the
-	 * collector's. `ended` says the job is over whatever is left: a file back
-	 * in Files, a pad of no file, the group gone. It gets no second look
-	 * (SessionSweepJob).
+	 * The answer is the collector's shape, plus `ended`. `remaining` counts
+	 * the sessions it found and did not take, failed deletes included; it is
+	 * 0 for a pass stopped by a file back or a failed lookup. `retry` says
+	 * something failed. `nextDueAt` is always null: expired sessions are the
+	 * collector's. `ended` says the job is over whatever is left, with no
+	 * second look (SessionSweepJob): a file back in Files, a pad of no file,
+	 * the group gone.
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:null,ended:bool}
 	 */

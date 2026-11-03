@@ -156,8 +156,8 @@ class PublicShareResolver {
 		$requestedPath = '';
 
 		if ($requestedId !== null) {
-			// A path is optional beside an id, and requestedPath() refuses an
-			// absent one.
+			// A path is optional beside an id, so only a non-empty string is
+			// read; requestedPath() would refuse anything that is not a string.
 			if (is_string($fileParam) && $fileParam !== '') {
 				$requestedPath = $this->requestedPath($fileParam, $token);
 			}

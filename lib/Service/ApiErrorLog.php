@@ -23,9 +23,10 @@ use OCP\IRequest;
 use Psr\Log\LoggerInterface;
 
 /**
- * Logs the errors both error mappers answer, one line each. Jobs and
- * listeners use reportIfKeyRejected() for a rejected key where no answer
- * logs it.
+ * Logs the errors PadControllerErrorMapper and
+ * PublicViewerControllerErrorMapper answer, one line each. Some jobs and
+ * listeners, where no answer logs a rejected key, write its line through
+ * reportIfKeyRejected().
  *
  * Services keep their own lines where the answer cannot explain a refusal:
  * a name another create has locked (PadFileCreator: a stale lock looks like

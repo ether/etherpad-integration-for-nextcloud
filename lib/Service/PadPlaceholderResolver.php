@@ -76,7 +76,7 @@ class PadPlaceholderResolver {
 
 	private function resolveDate(string $arg, string $format, string $original): string {
 		// UTC, so the result does not depend on the server's timezone: `today`
-		// and `next monday` would otherwise differ by a day between hosts.
+		// and `next monday` could otherwise differ by a day between hosts.
 		$reference = $this->timeFactory->getTime();
 		$expression = $arg === '' ? 'today' : $arg;
 		try {
@@ -122,7 +122,9 @@ class PadPlaceholderResolver {
 	 * Keeps a display name or UID to one filename segment when it goes into a
 	 * user-supplied path (e.g. a target file name in `createFromTemplate`): NUL,
 	 * tabs and line breaks go, runs of separators become a space so the result
-	 * stays readable, and leading dots go.
+	 * stays readable, and leading dots go before the value is trimmed, so dots
+	 * after a leading separator survive: `/..` becomes `..`, which
+	 * PathNormalizer then refuses as a segment.
 	 */
 	private function sanitizePathLikeValue(string $value): string {
 		$cleaned = str_replace(["\0", "\r", "\n", "\t"], '', $value);

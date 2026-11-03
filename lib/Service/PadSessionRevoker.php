@@ -129,7 +129,8 @@ class PadSessionRevoker {
 	 * A session made by an open grants its pad until it expires, although the
 	 * file no longer does.
 	 *
-	 * What fits is taken here, bounded like a logout except for the ceiling:
+	 * What fits is taken here, from a group that holds nothing but the pads
+	 * leaving (takeNow()), bounded like a logout except for the ceiling:
 	 * a pad opened often holds more sessions than a cookie can. The sessions
 	 * that expire last go first, most often those of whoever is at the pad
 	 * now. Each group's sessions go before the next group is asked, so a slow
@@ -137,8 +138,8 @@ class PadSessionRevoker {
 	 *
 	 * Then each group goes to a background job (GroupSessionRevoker), which
 	 * takes what did not fit and what an open under way makes after the
-	 * listing here. A group Etherpad no longer has goes to no job. What a
-	 * group that cannot be queued left will expire.
+	 * listing here. A group Etherpad answers is gone goes to no job. The
+	 * sessions left in a group that cannot be queued expire on their own.
 	 *
 	 * @param list<string> $padIds
 	 * @return int how many were removed

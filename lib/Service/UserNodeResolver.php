@@ -125,7 +125,7 @@ class UserNodeResolver {
 	 * neither of which is a NotFoundException — and the callers of this
 	 * class catch that one type to degrade gracefully: a metadata lookup
 	 * answers "not a pad", the legacy migration reports a collision. Left
-	 * to escape, an unavailable home storage would turn both into a 500.
+	 * to escape, either exception would turn both of those into a 500.
 	 * Not being able to look inside a user's files is, for every caller
 	 * here, the same answer as not finding the file.
 	 *

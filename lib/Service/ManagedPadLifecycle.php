@@ -347,7 +347,7 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Whether it matters that Etherpad lost the pad: always for a protected
+	 * Whether it matters if Etherpad has lost the pad: always for a protected
 	 * pad, whose session opens nothing without it, and for a public pad once
 	 * its file has saved content.
 	 */

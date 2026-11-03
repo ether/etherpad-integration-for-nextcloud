@@ -38,10 +38,11 @@ class PadMetadataService {
 	 * "Open the original" in the recovery UI when a copy was made.
 	 *
 	 * Authorization: only an active row whose file resolves in the
-	 * requester's own files answers `found: true`; every other miss answers
-	 * the same `found: false`, so crafted frontmatter cannot probe for `.pad`
-	 * files in other users' accounts. The lookup checks the file's place,
-	 * not read permission.
+	 * requester's file tree, their own files and those shared with them,
+	 * answers `found: true`; every other miss answers the same
+	 * `found: false`, so crafted frontmatter cannot probe for `.pad` files
+	 * the requester cannot reach. The lookup checks the file's place, not
+	 * read permission.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {

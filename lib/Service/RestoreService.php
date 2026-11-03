@@ -245,9 +245,10 @@ class RestoreService {
 	 * The API's recovery of an active row whose pad Etherpad has lost
 	 * (ManagedPadLifecycle::howLost()): a new pad from the file's content,
 	 * the row moved onto it. Whether the pad is lost is asked again, as the
-	 * open that offered the recovery may be stale. A row that does not
-	 * qualify is refused with PadAlreadyHasBindingException; errors reading
-	 * the file or asking Etherpad reach the caller as they are.
+	 * open that offered the recovery may be stale. A row that waits, or one
+	 * lostPadOf() finds no case for a new pad (another pad named, nothing
+	 * saved, the pad present), is refused with PadAlreadyHasBindingException;
+	 * errors reading the file or asking Etherpad reach the caller as they are.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadAlreadyHasBindingException
@@ -450,12 +451,13 @@ class RestoreService {
 	 * write that fails takes the new pad and the row back (letGoOfNewPad()),
 	 * and the failure reaches the caller as it is.
 	 *
-	 * A write that threw has two exceptions, told apart by reading the file
-	 * again (fileNames()):
+	 * Two cases of a write that threw break that rule, told apart by reading
+	 * the file again (fileNames()):
 	 * - The file names the new pad: the write landed and something after it
 	 *   failed. Row and pad stay, and the restore counts as done.
-	 * - The file cannot be read: which pad it names stays open. Its row goes,
-	 *   so none contradicts the file. The new pad stays, named in the log, as
+	 * - The file cannot be read: which pad it names stays open. Its row is
+	 *   removed where it can be (removeRowOf()), so none contradicts the
+	 *   file. The new pad stays, named in the log, as
 	 *   a write that broke off may have cut the file short, leaving the new
 	 *   pad its last whole copy. That failure is the restore's own
 	 *   (LifecycleException): a retry would make another pad over it.
