@@ -14,11 +14,9 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
-use Psr\Log\LoggerInterface;
 
 class PadOpenService {
 	public function __construct(
@@ -31,7 +29,6 @@ class PadOpenService {
 		private ManagedPadLifecycle $padLifecycle,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
-		private LoggerInterface $logger,
 	) {
 	}
 
@@ -109,7 +106,7 @@ class PadOpenService {
 		// on the pad server being reachable to say so — and the URL built
 		// here would only be discarded.
 		if (!$mayWrite && $accessMode === BindingService::ACCESS_PROTECTED) {
-			return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
+			return $this->readOnlyViewTarget($path, $fileId, $padId);
 		}
 
 		// Etherpad may have lost the pad: without a word, a public pad's
@@ -131,22 +128,12 @@ class PadOpenService {
 		} elseif ($mayWrite) {
 			$effectivePadUrl = $this->etherpadClient->buildPadUrl($padId);
 		} else {
-			// A public pad has no session to withhold, so the editable URL is
-			// the whole of the access. Etherpad's own read-only view is the
-			// one thing that cannot be typed into — and if the pad server
-			// cannot say what it is, this app's own read-only view is a
-			// better answer than an error, and far better than the editable
-			// URL.
-			try {
-				$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
-			} catch (\Throwable $e) {
-				$this->logger->warning('Could not resolve the read-only pad URL; showing the read-only view instead.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					...SafeError::context($e),
-				]);
-				return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
-			}
+			// A public pad has no session to withhold: its editable URL lets
+			// whoever has it write. A reader gets Etherpad's read-only URL.
+			// Where Etherpad cannot name it, the open fails as other calls to
+			// it do: this app's own view would ask the same Etherpad for the
+			// content.
+			$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
 		}
 
 		$cookieHeader = '';
@@ -177,24 +164,22 @@ class PadOpenService {
 	}
 
 	/**
-	 * What a reader of a protected pad gets, or of a public pad whose
-	 * read-only address Etherpad cannot give: no address of any kind.
+	 * What a reader of a protected pad gets: no address of any kind.
 	 *
 	 * `padUrl` is emptied too. The response ships it as `pad_url`, and
 	 * handing back the editable address under a second key would undo the
-	 * withholding — no client reads it today, which is exactly why it would
-	 * be missed. The content arrives over the separate content endpoint,
+	 * withholding. The content arrives over the separate content endpoint,
 	 * which never discloses an address either.
 	 *
 	 * Only reached for pads this app holds itself, so there is no external
 	 * URL to carry.
 	 */
-	private function readOnlyViewTarget(string $path, int $fileId, string $padId, string $accessMode): PadOpenTarget {
+	private function readOnlyViewTarget(string $path, int $fileId, string $padId): PadOpenTarget {
 		return new PadOpenTarget(
 			file: $path,
 			fileId: $fileId,
 			padId: $padId,
-			accessMode: $accessMode,
+			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
 			originalPadUrl: '',

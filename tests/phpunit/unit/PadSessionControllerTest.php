@@ -159,7 +159,6 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(ManagedPadLifecycle::class),
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
-			$logger,
 		);
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
@@ -359,7 +358,6 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(ManagedPadLifecycle::class),
 			$externalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
-			$logger,
 		);
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
@@ -475,7 +473,6 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(ManagedPadLifecycle::class),
 			$resolvedExternalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
-			$logger,
 		);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(

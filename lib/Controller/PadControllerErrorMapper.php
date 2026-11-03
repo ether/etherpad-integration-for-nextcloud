@@ -170,7 +170,8 @@ class PadControllerErrorMapper {
 		} catch (PadFileFormatException $e) {
 			return $this->answer($options, $e, ['message' => $this->l10n->t('The selected .pad file has an invalid format.')], Http::STATUS_BAD_REQUEST);
 		} catch (EtherpadRefusedException $e) {
-			// Etherpad answered, and trying again gives the same answer.
+			// Etherpad answered. A pad or parameter it refuses stays refused,
+			// and its own internal error is answered the same: no retry.
 			return $this->answer($options, $e, ['message' => $this->l10n->t('Etherpad refused the request. Please contact your administrator.')], Http::STATUS_BAD_REQUEST);
 		} catch (ExternalPadException $e) {
 			// What was wrong with the link to another server, or with that

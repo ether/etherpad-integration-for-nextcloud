@@ -230,9 +230,10 @@ same way and reach the same two answers.
   presentation rather than enforcement: a public pad is editable by anyone
   who has its id, and its id is in the `.pad` file. Nothing can be enforced
   there, so Etherpad's own live view is preferred. When the pad server
-  cannot say what that URL is, a signed-in user gets this app's read-only
-  view rather than the editable address; a public link answers `503`, as
-  when Etherpad is down.
+  cannot say what that URL is, the open fails as other calls to it do:
+  `503` where it does not answer, `400` where it refuses the pad. This
+  app's own view would ask the same Etherpad for the content, and the
+  editable address never stands in.
 
 The decision is `isUpdateable()` on the file as this user sees it, which
 is the update permission bit – `(permissions & UPDATE)` – and not a lock
@@ -256,14 +257,16 @@ pad it belongs to.
 
 ## Share Permission Mapping
 
-Both open paths map Nextcloud share permissions the same way, but for the
-fallback of a public pad above –
+Both open paths map Nextcloud share permissions the same way –
 `PublicViewerController` for links, `PadOpenService` and
 `PadMetadataService` for authenticated users:
 
 - protected share without update permission -> this app's read-only view, its content fetched on every open and refresh, no Etherpad cookie
 - public pad share without update permission -> Etherpad read-only URL
 - share with update permission -> Etherpad editable
+
+Where Etherpad cannot name the read-only URL, the open fails and the
+metadata leaves the address empty.
 
 ## Error Handling
 
