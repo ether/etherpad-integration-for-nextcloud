@@ -14,9 +14,11 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\TrustedEmbedOriginsNormalizer;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\IL10N;
 use OCP\IURLGenerator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use OCA\EtherpadNextcloud\Tests\Support\ScriptedClock;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -109,7 +111,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $configuredApiHost = 'https://pad-api.example.test',
 		string $sameSiteSetting = 'lax',
 		string $unrecognisedSameSite = '',
-		array $trustedEmbedOrigins = [],
 		string $nextcloudSameSite = '',
 	): EtherpadHealthCheckService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
@@ -135,8 +136,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				: \OCA\EtherpadNextcloud\Service\PadSessionService::SAME_SITE_LAX
 		);
 		$padSessions->method('unrecognisedSameSite')->willReturn($unrecognisedSameSite);
-		$appConfig = $this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class);
-		$appConfig->method('getTrustedEmbedOrigins')->willReturn($trustedEmbedOrigins);
 
 		// There is no session in a unit test, so the runtime read of
 		// Nextcloud's own cookie needs a seam to be exercised at all.
@@ -149,7 +148,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$urlGenerator,
 			$releasePolicy,
 			$padSessions,
-			$appConfig,
+			new TrustedEmbedOriginsNormalizer($this->buildL10n()),
 			$nextcloudSameSite,
 		) extends EtherpadHealthCheckService {
 			public function __construct(
@@ -161,10 +160,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				IURLGenerator $urlGenerator,
 				\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy $releasePolicy,
 				\OCA\EtherpadNextcloud\Service\PadSessionService $padSessionService,
-				\OCA\EtherpadNextcloud\Service\AppConfigService $appConfigService,
+				TrustedEmbedOriginsNormalizer $trustedEmbedOrigins,
 				private string $nextcloudSameSite,
 			) {
-				parent::__construct($etherpadClient, $bindingService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $appConfigService, new FixedClock());
+				parent::__construct($etherpadClient, $bindingService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $trustedEmbedOrigins, new FixedClock());
 			}
 
 			protected function nextcloudSessionSameSite(): string {
@@ -187,21 +186,22 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $configuredApiHost = 'https://pad-api.example.test',
 		string $sameSiteSetting = 'lax',
 		string $unrecognisedSameSite = '',
-		array $trustedEmbedOrigins = [],
 		string $nextcloudSameSite = '',
+		string $nextcloudUrl = 'https://cloud.example.test',
+		?ValidatedAdminSettings $settings = null,
 	): HealthCheckItem {
 		$result = $this->buildService(
 			$etherpad,
 			$this->bindingCounts(),
+			$nextcloudUrl,
 			httpOnlyOverride: $override,
 			knownRelease: $knownRelease,
 			unrecognisedOverride: $unrecognisedOverride,
 			configuredApiHost: $configuredApiHost,
 			sameSiteSetting: $sameSiteSetting,
 			unrecognisedSameSite: $unrecognisedSameSite,
-			trustedEmbedOrigins: $trustedEmbedOrigins,
 			nextcloudSameSite: $nextcloudSameSite,
-		)->check($this->settings());
+		)->check($settings ?? $this->settings());
 		foreach ($result->checks as $item) {
 			if ($item->id === 'session_cookie') {
 				return $item;
@@ -401,9 +401,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testAnEmbedOriginOutsideTheCookieDomainIsNamed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
-		$etherpad->method('getConfiguredOrigin')->willReturn('https://pad.example.test');
 
-		$line = $this->sessionCookieLine($etherpad, trustedEmbedOrigins: ['https://partner.example.com']);
+		$line = $this->sessionCookieLine($etherpad, settings: $this->settings(trustedEmbedOrigins: 'https://partner.example.com'));
 		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
 		self::assertStringContainsString('partner.example.com', $line->detail);
 	}
@@ -412,10 +411,37 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testAnEmbedOriginInsideTheCookieDomainIsNotNamed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
-		$etherpad->method('getConfiguredOrigin')->willReturn('https://pad.example.test');
 
-		$line = $this->sessionCookieLine($etherpad, trustedEmbedOrigins: ['https://portal.example.test']);
+		$line = $this->sessionCookieLine($etherpad, settings: $this->settings(trustedEmbedOrigins: 'https://portal.example.test'));
 		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
+	}
+
+	public static function cookieDomainsForTheEmbedNote(): iterable {
+		yield 'a set domain wider than the derived one' => ['https://nc.team.example.test', 'https://pad.team.example.test', '.example.test', 'https://www.example.test', null];
+		// The protected-pads line says the cookie never reaches Etherpad.
+		yield 'host-only across two hosts' => ['https://cloud.example.test', 'https://pad.example.test', '', 'https://partner.example.com', null];
+		yield 'one host for both' => ['https://cloud.example.test', 'https://cloud.example.test', '', 'https://partner.example.com', '(host-only)'];
+	}
+
+	/**
+	 * The note reads the domain the protected-pads line is decided on, not
+	 * one derived beside it.
+	 */
+	#[DataProvider('cookieDomainsForTheEmbedNote')]
+	public function testTheEmbedNoteReadsTheDecidedCookieDomain(string $nextcloudUrl, string $etherpadHost, string $cookieDomain, string $origin, ?string $named): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		$line = $this->sessionCookieLine(
+			$etherpad,
+			nextcloudUrl: $nextcloudUrl,
+			settings: $this->settings($etherpadHost, cookieDomain: $cookieDomain, trustedEmbedOrigins: $origin, cookieDomainConfigured: true),
+		);
+
+		self::assertSame($named === null ? HealthCheckItem::STATUS_OK : HealthCheckItem::STATUS_WARNING, $line->status);
+		if ($named !== null) {
+			self::assertStringContainsString($named, $line->detail);
+		}
 	}
 
 	/** A value that is neither lax nor none is said out loud, like its sibling. */
@@ -533,7 +559,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$urlGenerator,
 			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadSessionService::class),
-			$this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class),
+			new TrustedEmbedOriginsNormalizer($this->buildL10n()),
 			new ScriptedClock([100.0000, 100.1246]),
 		);
 
@@ -777,6 +803,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		bool $enableProtectedPads = true,
 		string $cookieDomain = '.example.test',
 		string $apiKey = 'ep-api-0123456789abcdef',
+		string $trustedEmbedOrigins = '',
+		bool $cookieDomainConfigured = false,
 	): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			$etherpadHost,
@@ -789,8 +817,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			true,
 			true,
 			'',
-			'',
+			$trustedEmbedOrigins,
 			$enableProtectedPads,
+			cookieDomainConfigured: $cookieDomainConfigured,
 		);
 	}
 

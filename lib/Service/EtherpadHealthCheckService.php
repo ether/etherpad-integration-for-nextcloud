@@ -44,7 +44,7 @@ class EtherpadHealthCheckService {
 		private IURLGenerator $urlGenerator,
 		private EtherpadReleasePolicy $releasePolicy,
 		private PadSessionService $padSessionService,
-		private AppConfigService $appConfigService,
+		private TrustedEmbedOriginsNormalizer $trustedEmbedOrigins,
 		private ITimeFactory $timeFactory,
 	) {
 	}
@@ -141,7 +141,7 @@ class EtherpadHealthCheckService {
 				'etherpad_api_key',
 			),
 			$this->baseUrlCheck->check($settings->etherpadHost),
-			$this->sessionCookieCheck($settings),
+			$this->sessionCookieCheck($settings, $cookieDomain),
 		];
 
 		return new HealthCheckResult(
@@ -174,15 +174,16 @@ class EtherpadHealthCheckService {
 	 * highest severity per field, so sharing one with the API lines means
 	 * losing to them.
 	 */
-	private function sessionCookieCheck(ValidatedAdminSettings $settings): HealthCheckItem {
-		if (!$settings->enableProtectedPads) {
+	private function sessionCookieCheck(ValidatedAdminSettings $settings, ?CookieDomainDecision $cookieDomain): HealthCheckItem {
+		// check() decides the cookie domain exactly when protected pads are on.
+		if ($cookieDomain === null) {
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_SKIPPED,
 				$this->l10n->t('Session cookie: not checked, protected pads are off'),
 			);
 		}
 
-		return $this->withCrossSiteNote($this->sessionCookieDiagnosis($settings));
+		return $this->withCrossSiteNote($this->sessionCookieDiagnosis($settings), $settings, $cookieDomain);
 	}
 
 	private function sessionCookieDiagnosis(ValidatedAdminSettings $settings): HealthCheckItem {
@@ -295,8 +296,8 @@ class EtherpadHealthCheckService {
 	 * why that cookie does not reach such a frame; it does not confirm that
 	 * a frame is logged in.
 	 */
-	private function withCrossSiteNote(HealthCheckItem $item): HealthCheckItem {
-		$note = $this->crossSiteNote();
+	private function withCrossSiteNote(HealthCheckItem $item, ValidatedAdminSettings $settings, CookieDomainDecision $cookieDomain): HealthCheckItem {
+		$note = $this->crossSiteNote($settings, $cookieDomain);
 		if ($note === '') {
 			return $item;
 		}
@@ -317,7 +318,7 @@ class EtherpadHealthCheckService {
 	}
 
 	/** What is worth saying about how far the cookie travels, or ''. */
-	private function crossSiteNote(): string {
+	private function crossSiteNote(ValidatedAdminSettings $settings, CookieDomainDecision $cookieDomain): string {
 		$unrecognised = $this->padSessionService->unrecognisedSameSite();
 		if ($unrecognised !== '') {
 			return $this->fill(
@@ -327,7 +328,7 @@ class EtherpadHealthCheckService {
 		}
 
 		if ($this->padSessionService->sameSiteMode() !== PadSessionService::SAME_SITE_NONE) {
-			return $this->embedOriginNote();
+			return $this->embedOriginNote($settings, $cookieDomain);
 		}
 
 		$note = $this->l10n->t('The session cookie is also sent to other sites (SameSite=None), set by hand so a foreign site can frame the embed routes. It only works where Nextcloud authenticates without a cookie — proxy REMOTE_USER, Kerberos, SAML in environment mode.');
@@ -346,26 +347,26 @@ class EtherpadHealthCheckService {
 	 * The configuration that breaks silently: an embed origin outside the
 	 * cookie's domain while the cookie stays same-site.
 	 *
-	 * The domain is the one derived for the configured hosts; an admin's own
-	 * setting is not asked here. CookieDomainPolicy::isCoveredBy() says why
-	 * 'outside' only means 'worth checking'. Over-warning is acceptable: this
-	 * asks an admin to check, where deciding the cookie from the same
-	 * comparison would need a public suffix list.
+	 * The origins and the domain are the form's, the domain from the same
+	 * decision as the protected-pads line. Where that decision is not ok,
+	 * the line already says the cookie may not reach Etherpad at all;
+	 * SameSite=None would not mend that, so nothing is added.
+	 *
+	 * CookieDomainPolicy::isCoveredBy() says why 'outside' only means
+	 * 'worth checking'. Over-warning is acceptable: this asks an admin to
+	 * check, where deciding the cookie from the same comparison would need
+	 * a public suffix list.
 	 */
-	private function embedOriginNote(): string {
-		$origins = $this->appConfigService->getTrustedEmbedOrigins();
-		if ($origins === []) {
+	private function embedOriginNote(ValidatedAdminSettings $settings, CookieDomainDecision $cookieDomain): string {
+		$origins = $this->trustedEmbedOrigins->parse($settings->trustedEmbedOrigins);
+		if ($origins === [] || !$cookieDomain->isOk()) {
 			return '';
 		}
 
-		$cookieDomain = $this->cookieDomainPolicy->resolve(
-			$this->urlGenerator->getBaseUrl(),
-			$this->etherpadClient->getConfiguredOrigin(),
-			null,
-		);
+		$domain = $cookieDomain->effectiveDomain;
 		$outside = array_values(array_filter(
 			$origins,
-			fn (string $origin): bool => !$this->cookieDomainPolicy->isCoveredBy($origin, $cookieDomain),
+			fn (string $origin): bool => !$this->cookieDomainPolicy->isCoveredBy($origin, $domain),
 		));
 		if ($outside === []) {
 			return '';
@@ -373,7 +374,7 @@ class EtherpadHealthCheckService {
 
 		return $this->fill(
 			$this->l10n->t('{origins} may frame the embed routes but is not covered by the session cookie domain {domain}. If it is on another site, the embedded pad gets no Etherpad session unless etherpad_session_cookie_samesite is set to none.'),
-			['origins' => DiagnosticText::shorten(implode(', ', $outside)), 'domain' => $cookieDomain !== '' ? $cookieDomain : '(host-only)'],
+			['origins' => DiagnosticText::shorten(implode(', ', $outside)), 'domain' => $domain !== '' ? $domain : '(host-only)'],
 		);
 	}
 
