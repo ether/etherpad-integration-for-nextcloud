@@ -37,12 +37,14 @@ class PadMetadataService {
 	 * points at another `.pad` in the requester's userspace. Used to offer
 	 * "Open the original" in the recovery UI when a copy was made.
 	 *
-	 * Authorization: only an active row whose file resolves in the
-	 * requester's file tree, their own files and those shared with them,
-	 * answers `found: true`; every other miss answers the same
-	 * `found: false`, so crafted frontmatter cannot probe for `.pad` files
-	 * the requester cannot reach. The lookup checks the file's place, not
-	 * read permission.
+	 * Only an active row whose file is a `.pad` this request may read, in
+	 * the requester's file tree with what is shared with them, answers
+	 * `found: true`. Every other miss answers the same `found: false`, so
+	 * crafted frontmatter cannot probe for rows the requester cannot reach.
+	 *
+	 * File Access Control may judge the later open differently, so this does
+	 * not promise that the open succeeds. readPadMetadata() says why finding
+	 * a file is no check that it may be read.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {
@@ -55,8 +57,13 @@ class PadMetadataService {
 		}
 
 		try {
-			$padId = $this->padFileService->readPad((string)$node->getContent())->padId;
-		} catch (\Throwable) {
+			$padId = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node))->padId;
+		} catch (\Throwable $e) {
+			$this->logger->debug('Could not read a copy to look for its original.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
 			return new PadOriginalLookup(found: false);
 		}
 		if ($padId === '' || str_starts_with($padId, 'ext.')) {
@@ -76,6 +83,9 @@ class PadMetadataService {
 		try {
 			$originalNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
 		} catch (NotFoundException) {
+			return new PadOriginalLookup(found: false);
+		}
+		if (!$originalNode->isReadable() || !PadFileType::isPad($originalNode->getName())) {
 			return new PadOriginalLookup(found: false);
 		}
 

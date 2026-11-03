@@ -412,16 +412,46 @@ class PadMetadataServiceTest extends TestCase {
 		return $bindingService;
 	}
 
-	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {
-		$orphan = $this->buildPadNode(701, 'Copy.pad', "---\npad_id: original-pad\naccess_mode: protected\n---\n");
-		$originalNode = $this->createMock(File::class);
+	/** A copy that cannot be read is a miss with a line that tells it apart from the others. */
+	public function testFindOriginalForCopyLogsACopyItCannotRead(): void {
+		$orphan = $this->buildPadNode(701, 'Copy.pad', '');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($orphan);
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->method('readContentWithOpenLockRetry')->willThrowException(new LockedException('Copy.pad'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('debug')
+			->with('Could not read a copy to look for its original.', $this->callback(
+				static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud'
+					&& $context['fileId'] === 701
+					&& $context['error'] === LockedException::class,
+			));
+
+		$result = $this->buildService(userNodeResolver: $userNodeResolver, lockRetryService: $lockRetryService, logger: $logger)
+			->findOriginalForCopy('alice', 701);
+
+		$this->assertFalse($result->found);
+	}
+
+	/** @return iterable<string,array{bool,string,bool}> */
+	public static function boundFiles(): iterable {
+		yield 'a .pad the requester may read' => [true, 'Original.pad', true];
+		yield 'one File Access Control blocks' => [false, 'Original.pad', false];
+		yield 'one renamed away from .pad' => [true, 'Original.txt', false];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('boundFiles')]
+	public function testFindOriginalForCopyOffersOnlyAReadablePadFile(bool $readable, string $name, bool $found): void {
+		$orphan = $this->buildPadNode(701, 'Copy.pad', "---\npad_id: original-pad\n---\n");
+		$originalNode = $this->createConfiguredMock(File::class, ['isReadable' => $readable, 'getName' => $name]);
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturnMap([
 			['alice', 701, $orphan],
 			['alice', 42, $originalNode],
 		]);
-		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $originalNode)->willReturn('/Folder/Original.pad');
+		$userNodeResolver->expects($found ? $this->once() : $this->never())
+			->method('toUserAbsolutePath')->with('alice', $originalNode)->willReturn('/Folder/Original.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
@@ -435,20 +465,25 @@ class PadMetadataServiceTest extends TestCase {
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())
-			->method('findByPadId')
-			->with('original-pad', BindingService::STATE_ACTIVE)
+		$bindingService->method('findByPadId')->with('original-pad', BindingService::STATE_ACTIVE)
 			->willReturn(new Binding(fileId: 42, padId: 'original-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+
+		// Read as an open reads it, waiting out a lock.
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->expects($this->once())->method('readContentWithOpenLockRetry')->with($orphan)->willReturn('doc');
 
 		$result = $this->buildService(
 			padFileService: $padFileService,
 			userNodeResolver: $userNodeResolver,
+			lockRetryService: $lockRetryService,
 			bindingService: $bindingService,
 		)->findOriginalForCopy('alice', 701);
 
-		$this->assertTrue($result->found);
-		$this->assertSame(42, $result->fileId);
-		$this->assertSame('/Folder/Original.pad', $result->path);
+		$this->assertSame($found, $result->found);
+		if ($found) {
+			$this->assertSame(42, $result->fileId);
+			$this->assertSame('/Folder/Original.pad', $result->path);
+		}
 	}
 
 	public function testFindOriginalForCopyMissesWhenBoundFileNotInRequestersUserspace(): void {

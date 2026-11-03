@@ -387,6 +387,7 @@ class PadLifecycleControllerTest extends TestCase {
 			'getName' => 'Original.pad',
 			'getContent' => 'doc',
 			'getPath' => '/alice/files/Folder/Original.pad',
+			'isReadable' => true,
 		]);
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getById')->willReturnMap([

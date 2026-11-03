@@ -195,10 +195,52 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$resolver->expects($this->once())
 			->method('resolveUserFileNodeById')
 			->with('alice', 999)
-			->willReturn($this->createMock(File::class));
+			->willReturn($this->readableFile());
 
 		$this->buildService(
 			logger: $this->migrationLine('info', 'Migrated legacy Ownpad .pad as copy of an already-bound pad.', 404, BindingService::ACCESS_PROTECTED, 'alice', 'with_access', ['boundFileId' => 999]),
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			resolver: $resolver,
+		)->migrate($this->claimOn('alice', $file), [
+			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
+			'pad_id' => 'g.abcdefghijklmnop$x',
+		]);
+	}
+
+	/** File Access Control can leave the bound file found and block it: that is no access. */
+	public function testSameOriginCollisionWithAFileFoundButBlockedRefuses(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(404);
+		$file->expects($this->never())->method('putContent');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')->willReturn(BindingService::ACCESS_PROTECTED);
+		// This file's document, not the bound file's.
+		$padFileService->method('buildInitialDocument')
+			->with(404, 'g.abcdefghijklmnop$x', BindingService::ACCESS_PROTECTED, null, 'https://pad.our-server.test/p/g.abcdefghijklmnop$x')
+			->willReturn('frontmatter');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abcdefghijklmnop$x');
+		// The pad a legacy file names has to be in the group it names.
+		$etherpadClient->method('listPads')->with('g.abcdefghijklmnop')->willReturn(['g.abcdefghijklmnop$x']);
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 999, padId: 'g.abcdefghijklmnop$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
+		$binding->expects($this->never())->method('createBinding');
+
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->once())
+			->method('resolveUserFileNodeById')
+			->with('alice', 999)
+			->willReturn($this->createConfiguredMock(File::class, ['isReadable' => false]));
+
+		$this->expectException(LegacyPadCollisionException::class);
+		$this->buildService(
 			binding: $binding,
 			padFileService: $padFileService,
 			etherpadClient: $etherpadClient,
@@ -288,7 +330,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$resolver->expects($this->once())
 			->method('resolveUserFileNodeById')
 			->with('alice', 808)
-			->willReturn($this->createMock(File::class));
+			->willReturn($this->readableFile());
 
 		$lines = [];
 		$logger = $this->createMock(LoggerInterface::class);
@@ -409,7 +451,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$resolver->expects($this->once())
 			->method('resolveUserFileNodeById')
 			->with('alice', 808)
-			->willReturn($this->createMock(File::class));
+			->willReturn($this->readableFile());
 
 		$this->migrateWithARowWaitingOn(808, $file, $resolver, madeActive: 1);
 	}
@@ -913,6 +955,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	public function testARefusedCopyLeavesTheRowOfTheBoundFileAlone(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getContent')->willReturn("[InternetShortcut]\nURL=https://pad.our-server.test/p/other-pad\n");
+		$file->method('isReadable')->willReturn(true);
 		$file->expects($this->never())->method('putContent');
 		$this->claimedFile = $file;
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -1189,6 +1232,10 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			'url' => 'https://pad.our-server.test/p/g.abcdefghijklmnop$x',
 			'pad_id' => 'g.abcdefghijklmnop$x',
 		]);
+	}
+
+	private function readableFile(): File {
+		return $this->createConfiguredMock(File::class, ['isReadable' => true]);
 	}
 
 	private function buildService(
