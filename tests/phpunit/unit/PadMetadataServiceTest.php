@@ -441,7 +441,7 @@ class PadMetadataServiceTest extends TestCase {
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('boundFiles')]
-	public function testFindOriginalForCopyOffersOnlyAPadThatOpens(bool $readable, string $name, bool $found): void {
+	public function testFindOriginalForCopyOffersOnlyAReadablePadFile(bool $readable, string $name, bool $found): void {
 		$orphan = $this->buildPadNode(701, 'Copy.pad', "---\npad_id: original-pad\n---\n");
 		$originalNode = $this->createConfiguredMock(File::class, ['isReadable' => $readable, 'getName' => $name]);
 

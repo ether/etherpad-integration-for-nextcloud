@@ -271,8 +271,8 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		// Neither a file gone for good, its row still waiting, nor a found file
-		// File Access Control blocks can be read.
+		// Finding the bound file is no proof it may be read: File Access
+		// Control can leave it found and refuse the read.
 		try {
 			$readable = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId)->isReadable();
 		} catch (NotFoundException) {

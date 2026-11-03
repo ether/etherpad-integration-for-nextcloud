@@ -290,8 +290,8 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadLifecycleController::findOriginalByFileId`
   - Purpose: look up whether the orphan's frontmatter `pad_id` is bound to another `.pad` the requester can read. Used by the recovery UI to offer "Open the original" when a copy is detected.
   - Result:
-    - `200` with `{ found: true, file_id, path, viewer_url, embed_url }` when the lookup hits **and** the bound file is a `.pad` this request may read: File Access Control can leave a file found that it blocks.
-    - `200` with `{ found: false }` for every miss path (no row, ext.* pad id, a binding whose file was deleted for good (`pending_delete`), binding for a file not addressable in the requester's userspace, a bound file this request may not read or no longer named `.pad`, unparseable frontmatter, orphan itself not readable, self-loop). Payload shape and status are intentionally identical so the endpoint cannot be used to probe for binding rows that belong to other users.
+    - `200` with `{ found: true, file_id, path, viewer_url, embed_url }` when an active row names another `.pad` in the requester's file tree that this request may read.
+    - `200` with `{ found: false }` when there is no such original, also when the copy itself cannot be read or parsed. Every miss answers alike, so the endpoint does not tell rows the requester cannot reach.
 
 - `POST /api/v1/admin/settings`
   - Controller: `AdminController::saveSettings`

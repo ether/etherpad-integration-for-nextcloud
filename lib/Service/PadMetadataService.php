@@ -37,14 +37,14 @@ class PadMetadataService {
 	 * points at another `.pad` in the requester's userspace. Used to offer
 	 * "Open the original" in the recovery UI when a copy was made.
 	 *
-	 * Authorization: only an active row whose file resolves in the
-	 * requester's file tree, their own files and those shared with them, and
-	 * is a `.pad` this request may read (readPadMetadata() says why
-	 * readability is asked), answers `found: true`. Every other miss answers
-	 * the same `found: false`, so crafted frontmatter cannot probe for `.pad`
-	 * files the requester cannot reach. If a File Access Control rule answers
-	 * the open differently than this lookup, the original offered fails to
-	 * open.
+	 * Only an active row whose file is a `.pad` this request may read, in
+	 * the requester's file tree with what is shared with them, answers
+	 * `found: true`. Every other miss answers the same `found: false`, so
+	 * crafted frontmatter cannot probe for rows the requester cannot reach.
+	 *
+	 * File Access Control may judge the later open differently, so this does
+	 * not promise that the open succeeds. readPadMetadata() says why finding
+	 * a file is no check that it may be read.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {
