@@ -271,8 +271,8 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		// A file gone for good, its row still waiting, cannot be read either,
-		// nor can one File Access Control leaves found and blocks.
+		// Neither a file gone for good, its row still waiting, nor a found file
+		// File Access Control blocks can be read.
 		try {
 			$readable = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId)->isReadable();
 		} catch (NotFoundException) {

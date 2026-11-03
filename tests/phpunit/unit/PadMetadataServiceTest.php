@@ -422,7 +422,9 @@ class PadMetadataServiceTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('debug')
 			->with('Could not read a copy to look for its original.', $this->callback(
-				static fn (array $context): bool => $context['fileId'] === 701,
+				static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud'
+					&& $context['fileId'] === 701
+					&& $context['error'] === LockedException::class,
 			));
 
 		$result = $this->buildService(userNodeResolver: $userNodeResolver, lockRetryService: $lockRetryService, logger: $logger)

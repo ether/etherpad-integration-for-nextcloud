@@ -39,12 +39,12 @@ class PadMetadataService {
 	 *
 	 * Authorization: only an active row whose file resolves in the
 	 * requester's file tree, their own files and those shared with them, and
-	 * is a `.pad` this request may read (readPadMetadata() says why that is
-	 * asked), answers `found: true`. Every other miss answers the same
-	 * `found: false`, so crafted frontmatter cannot probe for `.pad` files
-	 * the requester cannot reach. A File Access Control rule that turns
-	 * between this lookup and the open can still offer an original that
-	 * then fails to open.
+	 * is a `.pad` this request may read (readPadMetadata() says why
+	 * readability is asked), answers `found: true`. Every other miss answers
+	 * the same `found: false`, so crafted frontmatter cannot probe for `.pad`
+	 * files the requester cannot reach. If a File Access Control rule answers
+	 * the open differently than this lookup, the original offered fails to
+	 * open.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {
