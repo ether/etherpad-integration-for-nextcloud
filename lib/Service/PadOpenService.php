@@ -128,11 +128,11 @@ class PadOpenService {
 		} elseif ($mayWrite) {
 			$effectivePadUrl = $this->etherpadClient->buildPadUrl($padId);
 		} else {
-			// A public pad has no session to withhold, so the editable URL is
-			// the whole of the access. Etherpad's own read-only view is the
-			// one thing that cannot be typed into. Where Etherpad cannot name
-			// it, the open fails as other calls to it do: this app's own view
-			// would ask the same Etherpad for the content.
+			// A public pad has no session to withhold: its editable URL lets
+			// whoever has it write. A reader gets Etherpad's read-only URL.
+			// Where Etherpad cannot name it, the open fails as other calls to
+			// it do: this app's own view would ask the same Etherpad for the
+			// content.
 			$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
 		}
 
@@ -168,8 +168,7 @@ class PadOpenService {
 	 *
 	 * `padUrl` is emptied too. The response ships it as `pad_url`, and
 	 * handing back the editable address under a second key would undo the
-	 * withholding — no client reads it today, which is exactly why it would
-	 * be missed. The content arrives over the separate content endpoint,
+	 * withholding. The content arrives over the separate content endpoint,
 	 * which never discloses an address either.
 	 *
 	 * Only reached for pads this app holds itself, so there is no external
