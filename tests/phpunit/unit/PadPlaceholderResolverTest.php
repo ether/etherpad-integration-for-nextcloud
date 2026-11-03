@@ -72,9 +72,8 @@ class PadPlaceholderResolverTest extends TestCase {
 	}
 
 	public function testRelativeDatesAreDeterministicUnderWesternTimezone(): void {
-		// Regression: strtotime/date previously depended on
-		// date_default_timezone_get(), so "today" and "next monday" drifted on
-		// hosts west of UTC. Resolver now pins to UTC internally.
+		// At midnight UTC, Los Angeles is still on the day before: relative
+		// dates must take UTC whatever the server's timezone.
 		$previous = date_default_timezone_get();
 		date_default_timezone_set('America/Los_Angeles');
 		try {
@@ -96,7 +95,7 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('etc passwd', $result);
 	}
 
-	/** One segment of a name, with no leading dot; a name that leaves nothing gives way to the UID. */
+	/** One segment of a name; a name that leaves nothing gives way to the UID, which keeps its leading dots. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('displayNamesInAPath')]
 	public function testApplyForPathKeepsADisplayNameToOneSegment(string $name, string $expected, string $uid = 'user1'): void {
 		$this->assertSame($expected, $this->resolver()->applyForPath('{{user}}', $this->user($name, $uid)));
