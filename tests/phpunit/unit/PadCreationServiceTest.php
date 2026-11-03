@@ -996,7 +996,7 @@ class PadCreationServiceTest extends TestCase {
 		?\Closure $onRemoval = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
-			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000));
+			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000), $this->createMock(\OCP\IConfig::class));
 		}
 		$padFileService = $padFileService ?? $this->createMock(PadFileService::class);
 		$etherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);

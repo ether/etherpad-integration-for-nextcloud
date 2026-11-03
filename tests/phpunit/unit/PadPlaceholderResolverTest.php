@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PadPlaceholderResolver;
+use OCP\IConfig;
 use OCP\IUser;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
@@ -72,9 +73,8 @@ class PadPlaceholderResolverTest extends TestCase {
 	}
 
 	public function testRelativeDatesAreDeterministicUnderWesternTimezone(): void {
-		// Regression: strtotime/date previously depended on
-		// date_default_timezone_get(), so "today" and "next monday" drifted on
-		// hosts west of UTC. Resolver now pins to UTC internally.
+		// At midnight UTC, Los Angeles is still on the day before: relative
+		// dates must take UTC whatever the server's timezone.
 		$previous = date_default_timezone_get();
 		date_default_timezone_set('America/Los_Angeles');
 		try {
@@ -94,6 +94,96 @@ class PadPlaceholderResolverTest extends TestCase {
 		// user-supplied target file path.
 		$result = $this->resolver()->applyForPath('{{user}}', $this->user('../etc/passwd'));
 		$this->assertSame('etc passwd', $result);
+	}
+
+	/** One segment of a name; a name that leaves nothing gives way to the UID, which keeps its leading dots. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('displayNamesInAPath')]
+	public function testApplyForPathKeepsADisplayNameToOneSegment(string $name, string $expected, string $uid = 'user1'): void {
+		$this->assertSame($expected, $this->resolver()->applyForPath('{{user}}', $this->user($name, $uid)));
+	}
+
+	/** @return array<string,array{0:string,1:string,2?:string}> */
+	public static function displayNamesInAPath(): array {
+		return [
+			'dots behind a separator' => ['/..', 'user1'],
+			'dots between spaces' => [' .. ', 'user1'],
+			'dots behind a vertical tab' => ["\v..", 'user1'],
+			'dots and spaces in turn' => ['. . Anna', 'Anna'],
+			'dots before a name' => ['..Anna', 'Anna'],
+			'a dot after a name' => ['Anna.', 'Anna.'],
+			'a separator at the end' => ['Anna/', 'Anna'],
+			'a tab between words' => ["Anna\tMüller", 'Anna Müller'],
+			'a control character' => ["An\x01na", 'An na'],
+			'the delete character' => ["An\x7Fna", 'An na'],
+			'a backslash' => ['Anna\\Müller', 'Anna Müller'],
+			'two separators in a row' => ['Anna//Müller', 'Anna Müller'],
+			'dots alone, a UID with a dot' => ['/..', '.bob', '.bob'],
+		];
+	}
+
+	/** The fallback is what keeps a folder or a name in the path. */
+	public function testApplyForPathKeepsTheSegmentOfAnEmptiedName(): void {
+		$this->assertSame('user1/notes', $this->resolver()->applyForPath('{{user}}/notes', $this->user('/..')));
+		$this->assertSame('user1.pad', $this->resolver()->applyForPath('{{user}}.pad', $this->user('/..')));
+	}
+
+	/** What the admin forbids in a name, for Windows clients for example, becomes a space as a separator does, before the trims. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('namesWithForbiddenCharacters')]
+	public function testApplyForPathReplacesWhatTheAdminForbids(string $name, string $expected, string $key = 'forbidden_filename_characters'): void {
+		$resolver = $this->resolver([$key => [':', '?', '*', 7, '€']]);
+		$this->assertSame($expected, $resolver->applyForPath('{{user}}', $this->user($name)));
+	}
+
+	/** @return array<string,array{0:string,1:string,2?:string}> */
+	public static function namesWithForbiddenCharacters(): array {
+		return [
+			'a colon' => ['Anna:Müller', 'Anna Müller'],
+			'a run of them' => ['Anna::Müller', 'Anna Müller'],
+			'one at the end' => ['Anna?', 'Anna'],
+			'one before a dot' => ['?.', 'user1'],
+			'one before two dots' => ['?..', 'user1'],
+			'one before a hidden name' => ['?.hidden', 'hidden'],
+			'under the older key' => ['Anna*Müller', 'Anna Müller', 'forbidden_chars'],
+			'a number listed, which is no character' => ['Anna7', 'Anna7'],
+			'a character of several bytes, beside another one' => ['Anna–Müller€5', 'Anna–Müller 5'],
+		];
+	}
+
+	/** A UID that leaves nothing refuses the path rather than drop a folder from it. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('uidsThatLeaveNothing')]
+	public function testApplyForPathRefusesAUidThatLeavesNothing(string $template, string $uid, array $system = []): void {
+		$this->expectException(\InvalidArgumentException::class);
+		$this->resolver($system)->applyForPath($template, $this->user('/..', $uid));
+	}
+
+	/** @return array<string,array{0:string,1:string,2?:array<string,mixed>}> */
+	public static function uidsThatLeaveNothing(): array {
+		return [
+			'two dots' => ['{{user.uid}}/notes', '..'],
+			'one dot' => ['{{user.uid}}/notes', '.'],
+			'forbidden whole, as the fallback' => ['{{user}}/notes', 'x', ['forbidden_filename_characters' => ['x']]],
+		];
+	}
+
+	/** A list written with keys of its own still names its characters. */
+	public function testApplyForPathReadsAForbiddenListWithKeys(): void {
+		$resolver = $this->resolver(['forbidden_filename_characters' => ['colon' => ':', 3 => '?']]);
+		$this->assertSame('Anna Müller', $resolver->applyForPath('{{user}}', $this->user('Anna:Müller?')));
+	}
+
+	/** A UID keeps its leading dots, as another user may have the same UID without them. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('uidsInAPath')]
+	public function testApplyForPathKeepsAUidApartFromAnother(string $uid, string $expected): void {
+		$this->assertSame($expected, $this->resolver()->applyForPath('{{user.uid}}', $this->user('Anna', $uid)));
+	}
+
+	/** @return array<string,array{string,string}> */
+	public static function uidsInAPath(): array {
+		return [
+			'a leading dot' => ['.anna', '.anna'],
+			'dots alone, which Nextcloud takes as a login' => ['...', '...'],
+			'a separator' => ['an/na', 'an na'],
+		];
 	}
 
 	public function testLeavesDotedDateDirectiveAsLiteral(): void {
@@ -119,8 +209,13 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('Autor: {{user}}, Datum: 2026-05-17', $result);
 	}
 
-	private function resolver(): PadPlaceholderResolver {
-		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW));
+	/** @param array<string,mixed> $system Nextcloud's system config */
+	private function resolver(array $system = []): PadPlaceholderResolver {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getSystemValue')->willReturnCallback(
+			static fn (string $key, mixed $default = ''): mixed => $system[$key] ?? $default,
+		);
+		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW), $config);
 	}
 
 	private function user(string $displayName, string $uid = 'user1'): IUser {

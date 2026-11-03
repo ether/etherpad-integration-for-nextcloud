@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Constants;
+use OCP\IConfig;
 use OCP\IUser;
 
 class PadPlaceholderResolver {
@@ -18,6 +20,7 @@ class PadPlaceholderResolver {
 
 	public function __construct(
 		private ITimeFactory $timeFactory,
+		private IConfig $config,
 	) {
 	}
 
@@ -31,9 +34,12 @@ class PadPlaceholderResolver {
 
 	/**
 	 * Resolve placeholders for a target file name or path. Display name and
-	 * UID pass through sanitizePathLikeValue(), as a free-form display name
-	 * must not add path segments. Use this when the resolved string is fed
-	 * into a path normaliser / file-create call.
+	 * UID pass through pathSegment(), as a free-form value must not add path
+	 * segments. Use this when the resolved string is fed into a path
+	 * normaliser / file-create call.
+	 *
+	 * @throws \InvalidArgumentException when a user leaves nothing to name a
+	 *   path segment by
 	 */
 	public function applyForPath(string $content, ?IUser $user): string {
 		return $this->applyInternal($content, $user, sanitizeUserValues: true);
@@ -107,31 +113,78 @@ class PadPlaceholderResolver {
 		}
 		switch (strtolower($arg)) {
 			case '':
-				$value = $user->getDisplayName();
-				break;
+				if (!$sanitize) {
+					return $user->getDisplayName();
+				}
+				// A display name that leaves nothing gives way to the UID: an
+				// empty value would drop a folder or name a bare `.pad`.
+				$name = $this->pathSegment($user->getDisplayName(), dropLeadingDots: true);
+				return $name !== '' ? $name : $this->uidSegment($user);
 			case 'uid':
-				$value = $user->getUID();
-				break;
+				return $sanitize ? $this->uidSegment($user) : $user->getUID();
 			default:
 				return $original;
 		}
-		return $sanitize ? $this->sanitizePathLikeValue($value) : $value;
 	}
 
 	/**
-	 * Keeps a display name or UID to one filename segment when it goes into a
-	 * user-supplied path (e.g. a target file name in `createFromTemplate`): NUL,
-	 * tabs and line breaks go, runs of separators become a space so the result
-	 * stays readable, and leading dots go before the value is trimmed, so dots
-	 * after a leading separator survive: `/..` becomes `..`, which
-	 * PathNormalizer then refuses as a segment.
+	 * The UID as one segment. Its leading dots stay: `.anna` and `anna` are
+	 * two users. One that leaves nothing refuses the path rather than drop a
+	 * folder from it.
+	 *
+	 * @throws \InvalidArgumentException
 	 */
-	private function sanitizePathLikeValue(string $value): string {
-		$cleaned = str_replace(["\0", "\r", "\n", "\t"], '', $value);
-		$cleaned = preg_replace('#[/\\\\]+#', ' ', $cleaned) ?? $cleaned;
-		// A display name of `..` would otherwise become a parent segment in a
-		// path that goes on after the placeholder.
-		$cleaned = preg_replace('/^\.+/', '', $cleaned) ?? $cleaned;
-		return trim($cleaned);
+	private function uidSegment(IUser $user): string {
+		$segment = $this->pathSegment($user->getUID(), dropLeadingDots: false);
+		if ($segment === '') {
+			throw new \InvalidArgumentException('The user leaves nothing to name a path segment by.');
+		}
+		return $segment;
+	}
+
+	/**
+	 * A user's value as one filename segment, its words kept apart.
+	 * Nextcloud refuses a name with a C0 control character or a character
+	 * it forbids; those, DEL and separators become a space before anything
+	 * is trimmed, so none of them can shield a dot from the trim. `.` and
+	 * `..`, a current or parent folder, give nothing. A display name also
+	 * loses its leading spaces and dots, so it names nothing hidden; a UID
+	 * keeps its dots.
+	 *
+	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/FilenameValidator.php
+	 */
+	private function pathSegment(string $value, bool $dropLeadingDots): string {
+		// A forbidden character becomes a NUL first, so a run of them and of
+		// control characters turns into one space.
+		$cleaned = str_replace($this->forbiddenCharacters(), "\0", $value);
+		$cleaned = (string)preg_replace('/[\x00-\x1F\x7F]+/', ' ', $cleaned);
+		$cleaned = rtrim(ltrim($cleaned, $dropLeadingDots ? ' .' : ' '), ' ');
+		return $cleaned === '.' || $cleaned === '..' ? '' : $cleaned;
+	}
+
+	/**
+	 * What Nextcloud forbids in a name: the separators and what the admin
+	 * lists, under the current key and its predecessor. Read here, as the
+	 * public IFilenameValidator answers only for a whole name and this is a
+	 * part of one.
+	 *
+	 * @return list<string>
+	 */
+	private function forbiddenCharacters(): array {
+		$characters = str_split(Constants::FILENAME_INVALID_CHARS);
+		foreach (['forbidden_filename_characters', 'forbidden_chars'] as $key) {
+			array_push($characters, ...self::strings($this->config->getSystemValue($key, [])));
+		}
+		return $characters;
+	}
+
+	/**
+	 * The strings of a list in the system config: only a string names a
+	 * character.
+	 *
+	 * @return list<string>
+	 */
+	private static function strings(mixed $value): array {
+		return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
 	}
 }
