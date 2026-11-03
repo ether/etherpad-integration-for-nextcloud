@@ -259,13 +259,14 @@ pad it belongs to.
 
 Both open paths map Nextcloud share permissions the same way –
 `PublicViewerController` for links, `PadOpenService` and
-`PadMetadataService` for authenticated users. Where Etherpad cannot name
-the read-only URL, the metadata answers the address empty and the open
-fails:
+`PadMetadataService` for authenticated users:
 
 - protected share without update permission -> this app's read-only view, its content fetched on every open and refresh, no Etherpad cookie
 - public pad share without update permission -> Etherpad read-only URL
 - share with update permission -> Etherpad editable
+
+Where Etherpad cannot name the read-only URL, the open fails and the
+metadata leaves the address empty.
 
 ## Error Handling
 

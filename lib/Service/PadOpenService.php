@@ -131,7 +131,7 @@ class PadOpenService {
 			// A public pad has no session to withhold, so the editable URL is
 			// the whole of the access. Etherpad's own read-only view is the
 			// one thing that cannot be typed into. Where Etherpad cannot name
-			// it, the open fails as when Etherpad is down: this app's own view
+			// it, the open fails as other calls to it do: this app's own view
 			// would ask the same Etherpad for the content.
 			$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
 		}
