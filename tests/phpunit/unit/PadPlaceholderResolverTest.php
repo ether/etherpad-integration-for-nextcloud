@@ -98,11 +98,11 @@ class PadPlaceholderResolverTest extends TestCase {
 
 	/** One segment of a name, with no leading dot; a name that leaves nothing gives way to the UID. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('displayNamesInAPath')]
-	public function testApplyForPathKeepsADisplayNameToOneSegment(string $name, string $expected): void {
-		$this->assertSame($expected, $this->resolver()->applyForPath('{{user}}', $this->user($name)));
+	public function testApplyForPathKeepsADisplayNameToOneSegment(string $name, string $expected, string $uid = 'user1'): void {
+		$this->assertSame($expected, $this->resolver()->applyForPath('{{user}}', $this->user($name, $uid)));
 	}
 
-	/** @return array<string,array{string,string}> */
+	/** @return array<string,array{0:string,1:string,2?:string}> */
 	public static function displayNamesInAPath(): array {
 		return [
 			'dots behind a separator' => ['/..', 'user1'],
@@ -114,6 +114,10 @@ class PadPlaceholderResolverTest extends TestCase {
 			'a separator at the end' => ['Anna/', 'Anna'],
 			'a tab between words' => ["Anna\tMüller", 'Anna Müller'],
 			'a control character' => ["An\x01na", 'An na'],
+			'the delete character' => ["An\x7Fna", 'An na'],
+			'a backslash' => ['Anna\\Müller', 'Anna Müller'],
+			'two separators in a row' => ['Anna//Müller', 'Anna Müller'],
+			'dots alone, a UID with a dot' => ['/..', '.bob', '.bob'],
 		];
 	}
 

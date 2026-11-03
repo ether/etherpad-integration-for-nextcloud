@@ -129,7 +129,8 @@ class PadPlaceholderResolver {
 	 * separators become a space, so the words stay apart and no segment is
 	 * added, as Nextcloud refuses a control character in a name. A value of
 	 * dots alone, a parent or current folder, gives nothing. A display name
-	 * also loses its leading dots, which would hide the file.
+	 * also loses its leading dots, which hide a file or folder whose name
+	 * starts with it.
 	 */
 	private function pathSegment(string $value, bool $dropLeadingDots): string {
 		$cleaned = (string)preg_replace('/[\x00-\x1F\x7F\/\\\\]+/', ' ', $value);
