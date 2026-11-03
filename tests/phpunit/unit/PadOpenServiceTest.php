@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
@@ -20,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCP\Files\File;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PadOpenServiceTest extends TestCase {
@@ -132,18 +134,21 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/r.readonlyid', $target->url());
 	}
 
+	public static function readOnlyUrlFailures(): iterable {
+		yield 'Etherpad not reachable' => [new EtherpadClientException('Connection timed out')];
+		yield 'Etherpad refusing' => [new EtherpadRefusedException('Etherpad API error (getReadOnlyID): padID does not exist')];
+	}
+
 	/**
-	 * Where Etherpad cannot name the read-only URL, the open fails: this
-	 * app's own view would ask the same Etherpad for the content. Never the
-	 * editable address in its place.
+	 * The editable address must not stand in for the read-only one.
 	 */
-	public function testFailsWhereTheReadOnlyUrlCannotBeResolved(): void {
-		$outage = new EtherpadClientException('Connection timed out');
+	#[DataProvider('readOnlyUrlFailures')]
+	public function testFailsWhereTheReadOnlyUrlCannotBeResolved(EtherpadClientException $failure): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('buildPadUrl');
-		$client->method('getReadOnlyPadUrl')->willThrowException($outage);
+		$client->method('getReadOnlyPadUrl')->willThrowException($failure);
 
-		$this->expectExceptionObject($outage);
+		$this->expectExceptionObject($failure);
 
 		$this->openWith(
 			BindingService::ACCESS_PUBLIC,

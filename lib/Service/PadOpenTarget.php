@@ -40,11 +40,10 @@ class PadOpenTarget {
 		// $isReadOnlyView what they are shown, and a default would let a
 		// future construction site decide either by forgetting.
 		//
-		// Two fields, because they are two things. A public pad opened
-		// read-only is Etherpad's own read-only view in an iframe, not this
-		// app's viewer, unless Etherpad cannot give its address; either way
-		// the reader may not write. Anything that follows from "may not write"
-		// follows from $mayWrite, not from which surface is shown.
+		// Two fields, because they are two things. A reader of a public pad
+		// is shown Etherpad's own read-only view in an iframe, not this app's
+		// viewer, and still may not write. Anything that follows from "may
+		// not write" follows from $mayWrite, not from which surface is shown.
 		public readonly bool $isReadOnlyView,
 		public readonly bool $mayWrite,
 	) {

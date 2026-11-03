@@ -106,7 +106,7 @@ class PadOpenService {
 		// on the pad server being reachable to say so — and the URL built
 		// here would only be discarded.
 		if (!$mayWrite && $accessMode === BindingService::ACCESS_PROTECTED) {
-			return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
+			return $this->readOnlyViewTarget($path, $fileId, $padId);
 		}
 
 		// Etherpad may have lost the pad: without a word, a public pad's
@@ -164,8 +164,7 @@ class PadOpenService {
 	}
 
 	/**
-	 * What a reader of a protected pad gets, or of a public pad whose
-	 * read-only address Etherpad cannot give: no address of any kind.
+	 * What a reader of a protected pad gets: no address of any kind.
 	 *
 	 * `padUrl` is emptied too. The response ships it as `pad_url`, and
 	 * handing back the editable address under a second key would undo the
@@ -176,12 +175,12 @@ class PadOpenService {
 	 * Only reached for pads this app holds itself, so there is no external
 	 * URL to carry.
 	 */
-	private function readOnlyViewTarget(string $path, int $fileId, string $padId, string $accessMode): PadOpenTarget {
+	private function readOnlyViewTarget(string $path, int $fileId, string $padId): PadOpenTarget {
 		return new PadOpenTarget(
 			file: $path,
 			fileId: $fileId,
 			padId: $padId,
-			accessMode: $accessMode,
+			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
 			originalPadUrl: '',
