@@ -114,11 +114,11 @@ class GroupSessionRevoker {
 	 * One pass over the group's live sessions, the latest to expire first,
 	 * within a run's budget and MAX_PER_RUN.
 	 *
-	 * Before every delete it looks again where the files are - batched
-	 * lookups; the mounts before the first delete, and then when a file
-	 * moved - since a file
-	 * can be restored and opened during the pass, while the sessions are
-	 * listed too, and its opener's session would be the first to go.
+	 * The files' places are checked before every delete, in batched lookups,
+	 * because a file may be restored and opened during the pass, even while
+	 * the sessions are listed, and its opener's session would be the first
+	 * to go. The mounts are checked before the first delete and again after
+	 * a file moved.
 	 *
 	 * The answer is the collector's shape. `remaining` counts the sessions
 	 * it found and did not take, failed deletes included; it is 0 for a pass

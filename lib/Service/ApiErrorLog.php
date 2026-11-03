@@ -23,15 +23,16 @@ use OCP\IRequest;
 use Psr\Log\LoggerInterface;
 
 /**
- * The one line an error a client is answered for gets, for both error
- * mappers; the services under them leave it to this. Of a key Etherpad
- * rejected, some jobs and listeners write the same line where no answer
- * logs it (reportIfKeyRejected()). Kept on purpose are
- * the lines a service writes to explain a refusal nothing else would: a
- * name another create has locked (PadFileCreator - a stale lock looks like
- * a taken name), a file a create will not write over, and the refusals of
- * a legacy Ownpad migration, the trail docs/legacy-ownpad-migration.md
- * points admins to. At the level it deserves:
+ * Logs the errors both error mappers answer, one line each. Jobs and
+ * listeners use reportIfKeyRejected() for a rejected key where no answer
+ * logs it.
+ *
+ * Services keep their own lines where the answer cannot explain a refusal:
+ * a name another create has locked (PadFileCreator: a stale lock looks like
+ * a taken name), a file a create will not write over, and the refusals of a
+ * legacy Ownpad migration (docs/legacy-ownpad-migration.md).
+ *
+ * Levels and rate limits:
  *
  * - A key Etherpad rejected (EtherpadKeyRejectedException says why it is
  *   answered as an outage): an error once a minute for the instance, at

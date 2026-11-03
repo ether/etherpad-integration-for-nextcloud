@@ -244,11 +244,10 @@ class RestoreService {
 	/**
 	 * The API's recovery of an active row whose pad Etherpad has lost
 	 * (ManagedPadLifecycle::howLost()): a new pad from the file's content,
-	 * the row moved onto it. Asked here again, not taken from the open that
-	 * sent the user: the answer must hold for the row as it is now. Any
-	 * other row is refused: one that waits, or one lostPadOf() names a reason
-	 * for. What fails reading the file or asking Etherpad reaches the caller
-	 * as it is.
+	 * the row moved onto it. Whether the pad is lost is asked again, as the
+	 * open that offered the recovery may be stale. A row that does not
+	 * qualify is refused with PadAlreadyHasBindingException; errors reading
+	 * the file or asking Etherpad reach the caller as they are.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadAlreadyHasBindingException
