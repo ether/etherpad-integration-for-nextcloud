@@ -149,6 +149,22 @@ class PadPlaceholderResolverTest extends TestCase {
 		];
 	}
 
+	/** A UID that leaves nothing refuses the path rather than drop a folder from it. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('uidsThatLeaveNothing')]
+	public function testApplyForPathRefusesAUidThatLeavesNothing(string $template, string $uid, array $system = []): void {
+		$this->expectException(\InvalidArgumentException::class);
+		$this->resolver($system)->applyForPath($template, $this->user('/..', $uid));
+	}
+
+	/** @return array<string,array{0:string,1:string,2?:array<string,mixed>}> */
+	public static function uidsThatLeaveNothing(): array {
+		return [
+			'two dots' => ['{{user.uid}}/notes', '..'],
+			'one dot' => ['{{user.uid}}/notes', '.'],
+			'forbidden whole, as the fallback' => ['{{user}}/notes', 'x', ['forbidden_filename_characters' => ['x']]],
+		];
+	}
+
 	/** A list written with keys of its own still names its characters. */
 	public function testApplyForPathReadsAForbiddenListWithKeys(): void {
 		$resolver = $this->resolver(['forbidden_filename_characters' => ['colon' => ':', 3 => '?']]);
@@ -166,8 +182,6 @@ class PadPlaceholderResolverTest extends TestCase {
 		return [
 			'a leading dot' => ['.anna', '.anna'],
 			'dots alone, which Nextcloud takes as a login' => ['...', '...'],
-			'two dots, which it does not' => ['..', ''],
-			'one dot' => ['.', ''],
 			'a separator' => ['an/na', 'an na'],
 		];
 	}

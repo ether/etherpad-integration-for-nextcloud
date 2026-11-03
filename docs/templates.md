@@ -87,7 +87,7 @@ file=/Meetings/Protokoll {{date:next monday|d.m.Y}}.pad&templateFileId=1234
 
 Differences from the NC-native flow:
 
-- **Filename placeholders are applied.** Pass `{{date}}` / `{{user}}` tokens in `file` and the endpoint resolves them on the server side before creating the file. A user value fills one segment: separators, control characters and what the admin forbids in a name become a space, a display name loses its leading spaces and dots, and one that leaves nothing gives way to the UID. The NC web flow can't do this because of how `TemplateManager` re-fetches by the user-typed path.
+- **Filename placeholders are applied.** Pass `{{date}}` / `{{user}}` tokens in `file` and the endpoint resolves them on the server side before creating the file. A user value fills one segment: separators, control characters and what the admin forbids in a name become a space, a display name loses its leading spaces and dots, and one that leaves nothing gives way to the UID; a UID that leaves nothing refuses the create. The NC web flow can't do this because of how `TemplateManager` re-fetches by the user-typed path.
 - **Any `.pad` in the user's userspace works as a template.** Pass any `templateFileId` the user has read access to; the source doesn't have to live in the *Templates* folder. Caller-side filtering (current folder, ancestor scan, explicit team list) is up to the frontend.
 - **Single atomic call.** The endpoint provisions the pad, writes the file, creates the binding, and returns `file_id` + `pad_id` + `viewer_url` in one response.
 

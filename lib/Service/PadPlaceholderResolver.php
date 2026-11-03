@@ -37,6 +37,9 @@ class PadPlaceholderResolver {
 	 * UID pass through pathSegment(), as a free-form value must not add path
 	 * segments. Use this when the resolved string is fed into a path
 	 * normaliser / file-create call.
+	 *
+	 * @throws \InvalidArgumentException when a user leaves nothing to name a
+	 *   path segment by
 	 */
 	public function applyForPath(string $content, ?IUser $user): string {
 		return $this->applyInternal($content, $user, sanitizeUserValues: true);
@@ -116,15 +119,27 @@ class PadPlaceholderResolver {
 				// A display name that leaves nothing gives way to the UID: an
 				// empty value would drop a folder or name a bare `.pad`.
 				$name = $this->pathSegment($user->getDisplayName(), dropLeadingDots: true);
-				return $name !== '' ? $name : $this->pathSegment($user->getUID(), dropLeadingDots: false);
+				return $name !== '' ? $name : $this->uidSegment($user);
 			case 'uid':
-				// Its leading dots stay: `.anna` and `anna` are two users.
-				return $sanitize
-					? $this->pathSegment($user->getUID(), dropLeadingDots: false)
-					: $user->getUID();
+				return $sanitize ? $this->uidSegment($user) : $user->getUID();
 			default:
 				return $original;
 		}
+	}
+
+	/**
+	 * The UID as one segment. Its leading dots stay: `.anna` and `anna` are
+	 * two users. One that leaves nothing refuses the path rather than drop a
+	 * folder from it.
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	private function uidSegment(IUser $user): string {
+		$segment = $this->pathSegment($user->getUID(), dropLeadingDots: false);
+		if ($segment === '') {
+			throw new \InvalidArgumentException('The user leaves nothing to name a path segment by.');
+		}
+		return $segment;
 	}
 
 	/**
