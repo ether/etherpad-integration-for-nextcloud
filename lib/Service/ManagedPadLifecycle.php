@@ -488,13 +488,11 @@ class ManagedPadLifecycle {
 	 * What the group holds, or null when it could not be read and the caller
 	 * gives the group up.
 	 *
-	 * Reading the group is what makes removing the *group* safe; removing
-	 * the *pad* needs no such check. So a read that fails for its own reasons
-	 * does not veto the delete: not knowing gives up the group and keeps the
-	 * pad delete. The group then stays behind, empty once the pad is gone,
-	 * and nothing leads back to it; its sessions open nothing. Only a caller
-	 * that will try again ($retried) gets the failed read instead, to report,
-	 * and loses nothing.
+	 * Deleting the pad does not require knowing the group's other pads. If
+	 * the listing fails, a caller that will not try again deletes only the
+	 * pad and leaves the group and its sessions in place; the group may still
+	 * hold other pads. A caller that will ($retried) gets the error instead,
+	 * so a later attempt can still remove the group safely.
 	 *
 	 * An answer that the group does not exist is no failed read: it goes to
 	 * the caller as it came.

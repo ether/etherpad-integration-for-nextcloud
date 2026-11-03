@@ -23,6 +23,7 @@ use Psr\Log\LoggerInterface;
  * passes HintException and ServerNotAvailableException on everywhere, and
  * writes its entry without the app.
  *
+ * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/legacy/OC_Hook.php
  * @psalm-api
  */
 class TrashbinHookHandler {

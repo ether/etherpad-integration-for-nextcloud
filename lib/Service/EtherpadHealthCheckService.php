@@ -288,11 +288,11 @@ class EtherpadHealthCheckService {
 	 * Adds what crossSiteNote() has to say about how far the cookie travels
 	 * to whatever the line says.
 	 *
-	 * `SameSite=None` is set by hand for one deployment: a foreign site frames
-	 * the embed routes where Nextcloud authenticates without a cookie. This
-	 * app cannot decide whether that holds. Nextcloud's own session cookie is
-	 * readable at runtime and shows whether a cross-site frame is logged in
-	 * through it, so the note reports that.
+	 * A cross-site embed needs `SameSite=None` on the Etherpad cookie, set by
+	 * hand, and Nextcloud authenticating without its session cookie. This app
+	 * cannot tell whether that holds. Nextcloud's SameSite setting, read at
+	 * runtime, can say why its session cookie does not reach such a frame; it
+	 * does not confirm that a frame is logged in.
 	 */
 	private function withCrossSiteNote(HealthCheckItem $item): HealthCheckItem {
 		$note = $this->crossSiteNote();

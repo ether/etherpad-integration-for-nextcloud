@@ -11,9 +11,8 @@ namespace OCA\EtherpadNextcloud\Service;
 /**
  * Content a `.pad` starts out with, as one value.
  *
- * A document either carries a snapshot or does not. Passing the text, its
- * HTML half and the revision separately would let a caller ask for half of
- * one and half of the other.
+ * A snapshot's text, optional HTML and revision travel together; a document
+ * without a snapshot has no PadSnapshot.
  *
  * Text and HTML are private fields behind methods, for the reason given at
  * ParsedPadFile: a public field of an argument ends up in a serialized

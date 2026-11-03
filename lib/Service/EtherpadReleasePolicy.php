@@ -55,8 +55,8 @@ class EtherpadReleasePolicy {
 	/**
 	 * The first major that reads the session cookie server-side. Measured
 	 * against 2.7.3, 3.0.0 and 3.3.3. By major rather than
-	 * `version_compare`, because the e2e spec restates this rule and reads
-	 * `3.0.0-beta.1` as a 3 where PHP does not.
+	 * `version_compare`, so a prerelease such as `3.0.0-beta.1` counts as a
+	 * 3, which version_compare() places below 3.0.0.
 	 */
 	private const HTTP_ONLY_SINCE_MAJOR = 3;
 

@@ -56,10 +56,9 @@ class ExternalPadSeeder {
 			'pad_url' => $external['pad_url'],
 		];
 		if (!empty($external['snapshot_unavailable'])) {
-			// The pad's address validated, but its export answered 404, so the
-			// snapshot stays empty. The file keeps the link, as the pad may still
-			// open. The caller gets the code: PadCreationService hands it on,
-			// FileCreatedFromTemplateListener logs it for the admin.
+			// The pad's address validated, but its export answered 404. The
+			// document keeps the link with an empty snapshot, as the pad may
+			// still open.
 			$result['snapshot_warning_code'] = 'remote_export_unavailable';
 		}
 
