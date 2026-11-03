@@ -41,8 +41,9 @@ class PadMetadataService {
 	 * requester's file tree, their own files and those shared with them,
 	 * answers `found: true`; every other miss answers the same
 	 * `found: false`, so crafted frontmatter cannot probe for `.pad` files
-	 * the requester cannot reach. The lookup checks the file's place, not
-	 * read permission.
+	 * the requester cannot reach. The lookup checks the file's place, and
+	 * that the requester may read it, as File Access Control can leave a file
+	 * found without that.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {
@@ -76,6 +77,9 @@ class PadMetadataService {
 		try {
 			$originalNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
 		} catch (NotFoundException) {
+			return new PadOriginalLookup(found: false);
+		}
+		if (!$originalNode->isReadable()) {
 			return new PadOriginalLookup(found: false);
 		}
 
