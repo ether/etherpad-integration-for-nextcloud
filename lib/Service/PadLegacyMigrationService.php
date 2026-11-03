@@ -271,10 +271,14 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		// A file gone for good, its row still waiting, cannot be read either.
+		// A file gone for good, its row still waiting, cannot be read either,
+		// nor can one File Access Control leaves found and blocks.
 		try {
-			$this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
+			$readable = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId)->isReadable();
 		} catch (NotFoundException) {
+			$readable = false;
+		}
+		if (!$readable) {
 			$this->logger->warning('Refused legacy Ownpad migration — pad already bound to a file the user cannot read.', [
 				...$this->sameOriginContext($uid, $fileId, $sourceUrl, $accessMode, 'no_access'),
 				'boundFileId' => $boundFileId,

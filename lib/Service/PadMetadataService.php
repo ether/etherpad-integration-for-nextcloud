@@ -38,12 +38,13 @@ class PadMetadataService {
 	 * "Open the original" in the recovery UI when a copy was made.
 	 *
 	 * Authorization: only an active row whose file resolves in the
-	 * requester's file tree, their own files and those shared with them,
-	 * answers `found: true`; every other miss answers the same
+	 * requester's file tree, their own files and those shared with them, and
+	 * is a `.pad` this request may read (readPadMetadata() says why that is
+	 * asked), answers `found: true`. Every other miss answers the same
 	 * `found: false`, so crafted frontmatter cannot probe for `.pad` files
-	 * the requester cannot reach. The lookup checks the file's place, and
-	 * that the requester may read it, as File Access Control can leave a file
-	 * found without that.
+	 * the requester cannot reach. A File Access Control rule that turns
+	 * between this lookup and the open can still offer an original that
+	 * then fails to open.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
 		try {
@@ -56,8 +57,13 @@ class PadMetadataService {
 		}
 
 		try {
-			$padId = $this->padFileService->readPad((string)$node->getContent())->padId;
-		} catch (\Throwable) {
+			$padId = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node))->padId;
+		} catch (\Throwable $e) {
+			$this->logger->debug('Could not read a copy to look for its original.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
 			return new PadOriginalLookup(found: false);
 		}
 		if ($padId === '' || str_starts_with($padId, 'ext.')) {
@@ -79,7 +85,7 @@ class PadMetadataService {
 		} catch (NotFoundException) {
 			return new PadOriginalLookup(found: false);
 		}
-		if (!$originalNode->isReadable()) {
+		if (!$originalNode->isReadable() || !PadFileType::isPad($originalNode->getName())) {
 			return new PadOriginalLookup(found: false);
 		}
 
