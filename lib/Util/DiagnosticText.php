@@ -10,9 +10,10 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Util;
 
 /**
- * Upstream wording on its way to an admin panel or a log. Both operations
- * are one-liners and both were wrong once in a way the other was not, so
- * they live here rather than beside each reader of them.
+ * Text from outside on its way to an admin panel or a log: shortened
+ * (shorten()), reduced to a host (hostOf()), or rid of a known secret
+ * (withoutSecret()). Each has a trap, named on its method, so all readers
+ * share one implementation.
  */
 class DiagnosticText {
 	/** What one line of a check may occupy. */

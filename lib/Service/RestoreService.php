@@ -32,7 +32,8 @@ use Psr\Log\LoggerInterface;
  * there and does nothing. It makes a new pad from the file's snapshot for
  * a file without a row - its pad went with the trash of an earlier
  * version - and for one whose pad Etherpad lost while the file was away.
- * The pad id comes from the row, never from the file.
+ * A new pad's id is never the one the file names, so a file's text cannot
+ * point a row at an existing pad.
  *
  * Two ways in: a restore from the trash (restore(), from
  * RestoreFromTrashListener), and the recovery the API offers when an open
@@ -41,7 +42,7 @@ use Psr\Log\LoggerInterface;
 class RestoreService {
 	/** Etherpad gave no answer for a restored file's pad: the next open asks again. */
 	public const REASON_PRESENCE_UNKNOWN = 'pad_presence_unknown';
-	/** The file could not be read, so there was no revision to hold its pad to. */
+	/** The file could not be read, or reads as no `.pad`: its next open reads it again. */
 	public const REASON_FILE_UNREADABLE = 'file_unreadable';
 	/** A file back with an active row whose pad Etherpad has: taken back as it is. */
 	private const REASON_PAD_PRESENT = 'pad_present';
@@ -244,10 +245,10 @@ class RestoreService {
 	 * The API's recovery of an active row whose pad Etherpad has lost
 	 * (ManagedPadLifecycle::howLost()): a new pad from the file's content,
 	 * the row moved onto it. Asked here again, not taken from the open that
-	 * sent the user: the answer must hold for the row as it is now. A row
-	 * that waits, one naming another pad than the file, or one whose pad
-	 * Etherpad has, is refused; what fails reading the file or asking
-	 * Etherpad reaches the caller as it is.
+	 * sent the user: the answer must hold for the row as it is now. Any
+	 * other row is refused: one that waits, or one lostPadOf() names a reason
+	 * for. What fails reading the file or asking Etherpad reaches the caller
+	 * as it is.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadAlreadyHasBindingException
@@ -360,7 +361,7 @@ class RestoreService {
 	private function replaceLostPad(File $file, int $fileId, Binding $binding, ParsedPadFile $pad, PadPresence $lost): array {
 		if (PadAccessMode::tryFrom($binding->accessMode) === null) {
 			// No pad can be made on this row, a record the app did not write.
-			// It stays as it is, as a row does on any failure here.
+			// The row stays as it is.
 			return LifecycleResult::skipped('unknown_access_mode', $fileId, $this->logger);
 		}
 
@@ -450,12 +451,15 @@ class RestoreService {
 	 * write that fails takes the new pad and the row back (letGoOfNewPad()),
 	 * and the failure reaches the caller as it is.
 	 *
-	 * But for one: a write that failed on a file that cannot be read after
-	 * it (fileNames()) leaves open which pad the file names. Its row goes,
-	 * so none contradicts the file, and the new pad stays, named in the log:
-	 * a write that broke off may have cut the file short, leaving the new
-	 * pad its last whole copy. That failure is the restore's own
-	 * (LifecycleException): a retry would make another pad over it.
+	 * A write that threw has two exceptions, told apart by reading the file
+	 * again (fileNames()):
+	 * - The file names the new pad: the write landed and something after it
+	 *   failed. Row and pad stay, and the restore counts as done.
+	 * - The file cannot be read: which pad it names stays open. Its row goes,
+	 *   so none contradicts the file. The new pad stays, named in the log, as
+	 *   a write that broke off may have cut the file short, leaving the new
+	 *   pad its last whole copy. That failure is the restore's own
+	 *   (LifecycleException): a retry would make another pad over it.
 	 *
 	 * @param \Closure(string): bool $claim
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}

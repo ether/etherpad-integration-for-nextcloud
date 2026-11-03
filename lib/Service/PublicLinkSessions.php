@@ -24,7 +24,7 @@ use Psr\Log\LoggerInterface;
  *
  * A link opens as a visitor of its own, or as the link itself
  * (PublicLinkVisitors). A session Etherpad confirms is handed out again to
- * the same opener for the same pad for up to an hour; one it does not
+ * the same opener in the same group for up to an hour; one it does not
  * confirm is replaced sooner, and opens that miss the cache at once make
  * one each. With only a local cache this holds for each web server on its
  * own; without any, every open makes a session.

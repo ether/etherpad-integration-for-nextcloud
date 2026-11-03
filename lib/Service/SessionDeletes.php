@@ -67,10 +67,10 @@ class SessionDeletes {
 
 	/**
 	 * $sessions deleted in their order, up to $maxAttempts deletes and
-	 * within $budget. `handled` counts what is no longer there, however it
-	 * went - the only honest basis for what is left over -, `attempted` the
-	 * deletes made, and `refused` says Etherpad refused at least one, which
-	 * asks for a retry.
+	 * within $budget. `handled` counts what is no longer there, deleted or
+	 * found gone: the only honest basis for what is left over. `attempted`
+	 * counts the deletes made. `refused` says at least one delete failed,
+	 * refused or unanswered, which asks for a retry.
 	 *
 	 * The ceiling counts attempts, whatever the answer. A refusal does not
 	 * end the run, or a session Etherpad never deletes would block the ones

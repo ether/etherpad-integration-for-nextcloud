@@ -12,10 +12,10 @@ namespace OCA\EtherpadNextcloud\Service;
 use Psr\Log\LoggerInterface;
 
 /**
- * What a trash or a restore answers: a status, and what that status
- * carries. The listeners log a step that was skipped, and the API answers
- * it with 409 (PadResponseService::lifecycleResponse()). Which file it was
- * about, each caller knows already.
+ * What a restore or a recovery answers: a status, and what that status
+ * carries. RestoreFromTrashListener logs a step that was skipped, and the API
+ * answers it with 409 (PadResponseService::lifecycleResponse()). Each caller
+ * already knows which file it was about.
  */
 final class LifecycleResult {
 	public const RESTORED = 'restored';

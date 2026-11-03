@@ -58,8 +58,9 @@ class CookieDomainPolicy {
 	 *
 	 * Installations from before the "was configured" flag existed carry only
 	 * the value, so a non-empty one counts as chosen. Treating it as unset
-	 * would silently re-derive over a domain an admin had picked. Every caller
-	 * goes through here so they cannot feed the policy different inputs.
+	 * would silently re-derive over a domain an admin had picked. Callers that
+	 * hold a stored value go through here, so they feed the policy the same
+	 * input.
 	 */
 	public function storedValue(string $stored, bool $configuredFlag): ?string {
 		$trimmed = trim($stored);

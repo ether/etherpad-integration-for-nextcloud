@@ -17,16 +17,14 @@ use OCP\IConfig;
 /**
  * Which pad types an instance offers.
  *
- * Both types default to enabled, so an installation that never touches the
- * settings behaves exactly as before. The policy governs *creation* only:
- * pads that already exist keep opening whatever the settings say, which is
- * why the checks live in the create paths and not in
- * `PadBootstrapService::provisionPadId()` — that one also serves
- * `initializeMissingFrontmatter` for existing files.
+ * Both types default to enabled. The policy governs *creation* only: pads
+ * that already exist keep opening whatever the settings say. So the checks
+ * live in the create paths and not in `PadBootstrapService::provisionPadId()`,
+ * which also serves `initializeMissingFrontmatter` for existing files.
  *
- * External pads are deliberately not covered here. They are always public in
- * Etherpad terms but are governed solely by `allow_external_pads`, enforced
- * in ExternalPadExportFetcher and CSPListener.
+ * External pads are not covered here. They are always public in Etherpad
+ * terms and follow `allow_external_pads` alone: ExternalPadExportFetcher
+ * enforces it, and the template picker asks it for its tile.
  */
 class PadTypePolicy {
 	public const SETTING_PROTECTED = 'enable_protected_pads';

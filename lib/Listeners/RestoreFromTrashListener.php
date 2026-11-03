@@ -60,10 +60,10 @@ class RestoreFromTrashListener implements IEventListener {
 			return;
 		}
 
-		// On Nextcloud 31 the event carries a node that is not resolvable
-		// yet, so anything reading its id throws: every .pad restored through
-		// the event would get no pad back, through the web UI, WebDAV or occ
-		// alike. Re-resolve it from its path before handing it on.
+		// The event can carry a node that is not resolvable yet, so anything
+		// reading its id throws: every .pad restored through the event would
+		// get no pad back, through the web UI, WebDAV or occ alike. Re-resolve
+		// it from its path before handing it on.
 		$node = $this->materialize($node);
 		if ($node === null) {
 			return;
@@ -172,7 +172,8 @@ class RestoreFromTrashListener implements IEventListener {
 	}
 
 	/**
-	 * The id for a log line, or null when the node cannot supply one.
+	 * The id for log lines and for $decidedByHook, or null when the node
+	 * cannot supply one.
 	 * Reading it must never throw: an id that cannot be read must keep
 	 * neither the restore from running nor its failure from being logged.
 	 */

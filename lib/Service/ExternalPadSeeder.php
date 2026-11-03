@@ -56,12 +56,10 @@ class ExternalPadSeeder {
 			'pad_url' => $external['pad_url'],
 		];
 		if (!empty($external['snapshot_unavailable'])) {
-			// The pad URL itself validated, but the public-text export
-			// endpoint refused to serve content (404). Common causes:
-			// the remote Etherpad has authentication on /p/<id>/export,
-			// or the pad is restricted despite a public-looking URL.
-			// We keep the file (the viewer still links to the pad) and
-			// surface a stable code the frontend translates into a toast.
+			// The pad's address validated, but its export answered 404, so the
+			// snapshot stays empty. The file keeps the link, as the pad may still
+			// open. The caller gets the code: PadCreationService hands it on,
+			// FileCreatedFromTemplateListener logs it for the admin.
 			$result['snapshot_warning_code'] = 'remote_export_unavailable';
 		}
 

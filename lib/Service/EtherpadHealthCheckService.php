@@ -83,13 +83,8 @@ class EtherpadHealthCheckService {
 			if ($hint !== '') {
 				$detail .= ' ' . $hint;
 			}
-			// We render the template ourselves and pass a plain string into
-			// the exception instead of relying on IL10N's placeholder
-			// substitution: the Exception constructor coerces non-strings
-			// via __toString, but at least on Nextcloud 30 the L10NString
-			// path leaks the literal '{detail}' through to consumers in
-			// some catalog setups. Doing the substitution here removes that
-			// surface area.
+			// Filled after translating: IL10N fills parameters with vsprintf(),
+			// which knows no {name}.
 			$template = $this->l10n->t('Etherpad connection test failed: {detail}');
 			throw new AdminHealthCheckException(
 				str_replace('{detail}', $detail, $template),
@@ -290,13 +285,14 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * What `SameSite=None` costs, added to whatever else the line says.
+	 * Adds what crossSiteNote() has to say about how far the cookie travels
+	 * to whatever the line says.
 	 *
-	 * Set by hand, for one deployment: a foreign site framing the embed
-	 * routes where Nextcloud authenticates without a cookie. Whether that
-	 * holds is not this app's to decide, but Nextcloud's own session cookie
-	 * is readable at runtime and says which half of the question the admin
-	 * is in — reported rather than assumed.
+	 * `SameSite=None` is set by hand for one deployment: a foreign site frames
+	 * the embed routes where Nextcloud authenticates without a cookie. This
+	 * app cannot decide whether that holds. Nextcloud's own session cookie is
+	 * readable at runtime and shows whether a cross-site frame is logged in
+	 * through it, so the note reports that.
 	 */
 	private function withCrossSiteNote(HealthCheckItem $item): HealthCheckItem {
 		$note = $this->crossSiteNote();
@@ -347,14 +343,13 @@ class EtherpadHealthCheckService {
 
 	/**
 	 * The configuration that breaks silently: an embed origin outside the
-	 * cookie's own domain while the cookie stays same-site.
+	 * cookie's domain while the cookie stays same-site.
 	 *
-	 * Compared against the domain the cookie actually carries, not against
-	 * a guess at the registrable domain — an origin the cookie already
-	 * covers is certainly same-site, and anything else is worth a second
-	 * look. Over-warning is the acceptable direction here: this asks an
-	 * admin to check, where deciding the cookie from the same comparison
-	 * would need a public suffix list to be right.
+	 * The domain is the one derived for the configured hosts; an admin's own
+	 * setting is not asked here. CookieDomainPolicy::isCoveredBy() says why
+	 * 'outside' only means 'worth checking'. Over-warning is acceptable: this
+	 * asks an admin to check, where deciding the cookie from the same
+	 * comparison would need a public suffix list.
 	 */
 	private function embedOriginNote(): string {
 		$origins = $this->appConfigService->getTrustedEmbedOrigins();

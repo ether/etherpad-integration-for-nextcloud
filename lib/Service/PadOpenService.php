@@ -177,7 +177,8 @@ class PadOpenService {
 	}
 
 	/**
-	 * What a share without write permission gets: no address of any kind.
+	 * What a reader of a protected pad gets, or of a public pad whose
+	 * read-only address Etherpad cannot give: no address of any kind.
 	 *
 	 * `padUrl` is emptied too. The response ships it as `pad_url`, and
 	 * handing back the editable address under a second key would undo the

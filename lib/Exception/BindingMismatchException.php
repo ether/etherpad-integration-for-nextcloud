@@ -11,7 +11,7 @@ namespace OCA\EtherpadNextcloud\Exception;
 
 /**
  * A file's row names another pad, or another access mode, than the file:
- * data an admin has to mend, and the one binding error worth a warning.
+ * data an admin has to mend.
  */
 final class BindingMismatchException extends BindingException {
 }

@@ -12,8 +12,8 @@ namespace OCA\EtherpadNextcloud\Service;
  * Content a `.pad` starts out with, as one value.
  *
  * A document either carries a snapshot or does not. Passing the text, its
- * HTML half and the revision separately let a caller ask for half of one and
- * half of the other.
+ * HTML half and the revision separately would let a caller ask for half of
+ * one and half of the other.
  *
  * Text and HTML are private fields behind methods, for the reason given at
  * ParsedPadFile: a public field of an argument ends up in a serialized
@@ -21,9 +21,9 @@ namespace OCA\EtherpadNextcloud\Service;
  */
 class PadSnapshot {
 	/**
-	 * @param string $html the HTML half, empty where there is none - an
-	 *                     external pad's HTML is deliberately never fetched.
-	 *                     A stored snapshot writes the section either way.
+	 * @param string $html the HTML half, empty where there is none: an
+	 *                     external pad's snapshot holds text only. A stored
+	 *                     snapshot writes the section either way.
 	 * @throws \InvalidArgumentException
 	 */
 	public function __construct(

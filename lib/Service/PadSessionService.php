@@ -484,8 +484,9 @@ class PadSessionService {
 	}
 
 	/**
-	 * Only reached with a uid whose state is persisted — resolveCachedAuthorId
-	 * answers '' for the others and the caller stops there.
+	 * Only reached with a uid whose state is persisted: a link has no kept
+	 * author, so the sync is skipped, and a link's visitor has no display
+	 * name, so the sync stops before this.
 	 */
 	private function cachedAuthorName(string $uid): string {
 		return trim((string)$this->config->getUserValue(

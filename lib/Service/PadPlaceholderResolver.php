@@ -30,11 +30,10 @@ class PadPlaceholderResolver {
 	}
 
 	/**
-	 * Resolve placeholders for use inside a target filename or path. Display
-	 * name and UID are stripped of `/`, `\`, NUL and leading dots so a
-	 * free-form display name can't smuggle path-traversal segments into the
-	 * resolved path. Use this when the resolved string is fed into a path
-	 * normaliser / file-create call.
+	 * Resolve placeholders for a target file name or path. Display name and
+	 * UID pass through sanitizePathLikeValue(), as a free-form display name
+	 * must not add path segments. Use this when the resolved string is fed
+	 * into a path normaliser / file-create call.
 	 */
 	public function applyForPath(string $content, ?IUser $user): string {
 		return $this->applyInternal($content, $user, sanitizeUserValues: true);
@@ -76,9 +75,8 @@ class PadPlaceholderResolver {
 	}
 
 	private function resolveDate(string $arg, string $format, string $original): string {
-		// Pin to UTC so resolver output is deterministic across server timezones —
-		// otherwise `strtotime`/`date` follow `date_default_timezone_get()` and
-		// "today" / "next monday" drift by ±1 day on western-tz hosts.
+		// UTC, so the result does not depend on the server's timezone: `today`
+		// and `next monday` would otherwise differ by a day between hosts.
 		$reference = $this->timeFactory->getTime();
 		$expression = $arg === '' ? 'today' : $arg;
 		try {
@@ -121,18 +119,16 @@ class PadPlaceholderResolver {
 	}
 
 	/**
-	 * Strip characters that could break out of a filename segment when the
-	 * resolved value is interpolated into a user-supplied path (e.g. a target
-	 * file name in `createFromTemplate`). Display names are free-form and may
-	 * contain `/`, `\`, NUL or `..` — none of which belong inside a single
-	 * filename segment. We collapse runs of separators to a single space so
-	 * the result remains human-readable.
+	 * Keeps a display name or UID to one filename segment when it goes into a
+	 * user-supplied path (e.g. a target file name in `createFromTemplate`): NUL,
+	 * tabs and line breaks go, runs of separators become a space so the result
+	 * stays readable, and leading dots go.
 	 */
 	private function sanitizePathLikeValue(string $value): string {
 		$cleaned = str_replace(["\0", "\r", "\n", "\t"], '', $value);
 		$cleaned = preg_replace('#[/\\\\]+#', ' ', $cleaned) ?? $cleaned;
-		// Disallow leading dots so a display name "..foo" can't become "../foo"
-		// after concatenation with separators.
+		// A display name of `..` would otherwise become a parent segment in a
+		// path that goes on after the placeholder.
 		$cleaned = preg_replace('/^\.+/', '', $cleaned) ?? $cleaned;
 		return trim($cleaned);
 	}
