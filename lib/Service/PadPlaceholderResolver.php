@@ -145,11 +145,11 @@ class PadPlaceholderResolver {
 	/**
 	 * A user's value as one filename segment, its words kept apart.
 	 * Nextcloud refuses a name with a C0 control character or a character
-	 * it forbids; those, DEL and separators become a space before the trims,
-	 * so none of them can shield a dot from those. `.` and `..`, a
-	 * current or parent folder, give nothing. A display name also loses its
-	 * leading spaces and dots, so it names nothing hidden; a UID keeps its
-	 * dots.
+	 * it forbids; those, DEL and separators become a space before anything
+	 * is trimmed, so none of them can shield a dot from the trim. `.` and
+	 * `..`, a current or parent folder, give nothing. A display name also
+	 * loses its leading spaces and dots, so it names nothing hidden; a UID
+	 * keeps its dots.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/FilenameValidator.php
 	 */
