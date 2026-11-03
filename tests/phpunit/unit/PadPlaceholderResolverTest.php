@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PadPlaceholderResolver;
-use OCP\Files\IFilenameValidator;
+use OCP\IConfig;
 use OCP\IUser;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
@@ -127,10 +127,25 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('user1.pad', $this->resolver()->applyForPath('{{user}}.pad', $this->user('/..')));
 	}
 
-	/** What the admin forbids in a name, for Windows clients for example, becomes a space as a separator does. */
-	public function testApplyForPathReplacesWhatTheAdminForbids(): void {
-		$this->assertSame('Anna Müller', $this->resolver([':'])->applyForPath('{{user}}', $this->user('Anna:Müller')));
-		$this->assertSame('Anna', $this->resolver(['?'])->applyForPath('{{user}}', $this->user('Anna?')));
+	/** What the admin forbids in a name, for Windows clients for example, becomes a space as a separator does, before the trims. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('namesWithForbiddenCharacters')]
+	public function testApplyForPathReplacesWhatTheAdminForbids(string $name, string $expected, string $key = 'forbidden_filename_characters'): void {
+		$resolver = $this->resolver([$key => [':', '?', '*', 7]]);
+		$this->assertSame($expected, $resolver->applyForPath('{{user}}', $this->user($name)));
+	}
+
+	/** @return array<string,array{0:string,1:string,2?:string}> */
+	public static function namesWithForbiddenCharacters(): array {
+		return [
+			'a colon' => ['Anna:Müller', 'Anna Müller'],
+			'a run of them' => ['Anna::Müller', 'Anna Müller'],
+			'one at the end' => ['Anna?', 'Anna'],
+			'one before a dot' => ['?.', 'user1'],
+			'one before two dots' => ['?..', 'user1'],
+			'one before a hidden name' => ['?.hidden', 'hidden'],
+			'under the older key' => ['Anna*Müller', 'Anna Müller', 'forbidden_chars'],
+			'a number listed, which is no character' => ['Anna7', 'Anna7'],
+		];
 	}
 
 	/** A UID keeps its leading dots, as another user may have the same UID without them. */
@@ -145,6 +160,7 @@ class PadPlaceholderResolverTest extends TestCase {
 			'a leading dot' => ['.anna', '.anna'],
 			'dots alone, which Nextcloud takes as a login' => ['...', '...'],
 			'two dots, which it does not' => ['..', ''],
+			'one dot' => ['.', ''],
 			'a separator' => ['an/na', 'an na'],
 		];
 	}
@@ -172,13 +188,13 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('Autor: {{user}}, Datum: 2026-05-17', $result);
 	}
 
-	/** @param list<string> $forbidden what the admin forbids in a name, as sanitizeFilename() replaces it */
-	private function resolver(array $forbidden = []): PadPlaceholderResolver {
-		$validator = $this->createMock(IFilenameValidator::class);
-		$validator->method('sanitizeFilename')->willReturnCallback(
-			static fn (string $name, ?string $replacement = null): string => str_replace($forbidden, (string)$replacement, $name),
+	/** @param array<string,mixed> $system Nextcloud's system config */
+	private function resolver(array $system = []): PadPlaceholderResolver {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getSystemValue')->willReturnCallback(
+			static fn (string $key, mixed $default = ''): mixed => $system[$key] ?? $default,
 		);
-		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW), $validator);
+		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW), $config);
 	}
 
 	private function user(string $displayName, string $uid = 'user1'): IUser {

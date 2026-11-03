@@ -10,7 +10,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\AppFramework\Utility\ITimeFactory;
-use OCP\Files\IFilenameValidator;
+use OCP\Constants;
+use OCP\IConfig;
 use OCP\IUser;
 
 class PadPlaceholderResolver {
@@ -19,7 +20,7 @@ class PadPlaceholderResolver {
 
 	public function __construct(
 		private ITimeFactory $timeFactory,
-		private IFilenameValidator $filenameValidator,
+		private IConfig $config,
 	) {
 	}
 
@@ -128,20 +129,47 @@ class PadPlaceholderResolver {
 
 	/**
 	 * A user's value as one filename segment, its words kept apart.
-	 * Nextcloud refuses a name with a C0 control character; those, DEL and
-	 * separators become a space, and so does what the admin forbids in a
-	 * name (sanitizeFilename()). `.` and `..`, a current or parent folder,
-	 * give nothing. A display name also loses its leading spaces and dots,
-	 * so it names nothing hidden; a UID keeps its dots.
+	 * Nextcloud refuses a name with a C0 control character or a character
+	 * it forbids; those, DEL and separators become a space before the trims,
+	 * so none of them can shield a dot from those. `.` and `..`, a
+	 * current or parent folder, give nothing. A display name also loses its
+	 * leading spaces and dots, so it names nothing hidden; a UID keeps its
+	 * dots.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/FilenameValidator.php
 	 */
 	private function pathSegment(string $value, bool $dropLeadingDots): string {
-		$cleaned = (string)preg_replace('/[\x00-\x1F\x7F\/\\\\]+/', ' ', $value);
+		// A forbidden character becomes a NUL first, so a run of them and of
+		// control characters turns into one space.
+		$cleaned = str_replace($this->forbiddenCharacters(), "\0", $value);
+		$cleaned = (string)preg_replace('/[\x00-\x1F\x7F]+/', ' ', $cleaned);
 		$cleaned = rtrim(ltrim($cleaned, $dropLeadingDots ? ' .' : ' '), ' ');
-		if ($cleaned === '' || $cleaned === '.' || $cleaned === '..') {
-			return '';
+		return $cleaned === '.' || $cleaned === '..' ? '' : $cleaned;
+	}
+
+	/**
+	 * What Nextcloud forbids in a name: the separators and what the admin
+	 * lists, under the current key and its predecessor. Read here, as the
+	 * public IFilenameValidator answers only for a whole name and this is a
+	 * part of one.
+	 *
+	 * @return list<string>
+	 */
+	private function forbiddenCharacters(): array {
+		$characters = str_split(Constants::FILENAME_INVALID_CHARS);
+		foreach (['forbidden_filename_characters', 'forbidden_chars'] as $key) {
+			array_push($characters, ...self::strings($this->config->getSystemValue($key, [])));
 		}
-		return trim($this->filenameValidator->sanitizeFilename($cleaned, ' '), ' ');
+		return $characters;
+	}
+
+	/**
+	 * The strings of a list in the system config: only a string names a
+	 * character.
+	 *
+	 * @return list<string>
+	 */
+	private static function strings(mixed $value): array {
+		return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
 	}
 }
