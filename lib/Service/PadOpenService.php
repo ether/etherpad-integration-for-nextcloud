@@ -14,11 +14,9 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
-use Psr\Log\LoggerInterface;
 
 class PadOpenService {
 	public function __construct(
@@ -31,7 +29,6 @@ class PadOpenService {
 		private ManagedPadLifecycle $padLifecycle,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
-		private LoggerInterface $logger,
 	) {
 	}
 
@@ -133,20 +130,10 @@ class PadOpenService {
 		} else {
 			// A public pad has no session to withhold, so the editable URL is
 			// the whole of the access. Etherpad's own read-only view is the
-			// one thing that cannot be typed into — and if the pad server
-			// cannot say what it is, this app's own read-only view is a
-			// better answer than an error, and far better than the editable
-			// URL.
-			try {
-				$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
-			} catch (\Throwable $e) {
-				$this->logger->warning('Could not resolve the read-only pad URL; showing the read-only view instead.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					...SafeError::context($e),
-				]);
-				return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
-			}
+			// one thing that cannot be typed into. Where Etherpad cannot name
+			// it, the open fails as when Etherpad is down: this app's own view
+			// would ask the same Etherpad for the content.
+			$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
 		}
 
 		$cookieHeader = '';

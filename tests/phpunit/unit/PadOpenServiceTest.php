@@ -21,7 +21,6 @@ use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 
 class PadOpenServiceTest extends TestCase {
 
@@ -134,29 +133,24 @@ class PadOpenServiceTest extends TestCase {
 	}
 
 	/**
-	 * A pad server that cannot say what the read-only URL is must not turn
-	 * a view-only open into a failure — the writable users on the same pad
-	 * would keep working, so the outage would present as "only the people
-	 * who may not edit cannot open it".
+	 * Where Etherpad cannot name the read-only URL, the open fails: this
+	 * app's own view would ask the same Etherpad for the content. Never the
+	 * editable address in its place.
 	 */
-	public function testFallsBackToTheReadOnlyViewWhenTheReadOnlyUrlCannotBeResolved(): void {
+	public function testFailsWhereTheReadOnlyUrlCannotBeResolved(): void {
+		$outage = new EtherpadClientException('Connection timed out');
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad-1');
-		$client->method('getReadOnlyPadUrl')
-			->willThrowException(new EtherpadClientException('Connection timed out'));
+		$client->expects($this->never())->method('buildPadUrl');
+		$client->method('getReadOnlyPadUrl')->willThrowException($outage);
 
-		$target = $this->openWith(
+		$this->expectExceptionObject($outage);
+
+		$this->openWith(
 			BindingService::ACCESS_PUBLIC,
 			updateable: false,
 			etherpadClient: $client,
 			padId: 'pad-1',
 		);
-
-		$this->assertTrue($target->isReadOnlyView);
-		$this->assertSame('', $target->url(), 'no pad to open');
-		$this->assertSame('', $target->padUrl(), 'and not under the other name either');
-		$this->assertSame('', $target->cookieHeader(), 'and no session');
-		$this->assertSame('', $target->answeredPadId(), 'and not the id that edits it');
 	}
 
 	/**
@@ -265,7 +259,6 @@ class PadOpenServiceTest extends TestCase {
 			$padLifecycle ?? $this->createMock(ManagedPadLifecycle::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
-			$this->createMock(LoggerInterface::class),
 		);
 
 		return $service->openById('alice', $displayName, 138);
@@ -283,7 +276,6 @@ class PadOpenServiceTest extends TestCase {
 			$this->createMock(ManagedPadLifecycle::class),
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
-			$this->createMock(LoggerInterface::class),
 		);
 	}
 }
