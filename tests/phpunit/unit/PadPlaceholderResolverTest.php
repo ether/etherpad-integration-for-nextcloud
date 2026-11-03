@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PadPlaceholderResolver;
+use OCP\Files\IFilenameValidator;
 use OCP\IUser;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
@@ -120,6 +121,18 @@ class PadPlaceholderResolverTest extends TestCase {
 		];
 	}
 
+	/** The fallback is what keeps a folder or a name in the path. */
+	public function testApplyForPathKeepsTheSegmentOfAnEmptiedName(): void {
+		$this->assertSame('user1/notes', $this->resolver()->applyForPath('{{user}}/notes', $this->user('/..')));
+		$this->assertSame('user1.pad', $this->resolver()->applyForPath('{{user}}.pad', $this->user('/..')));
+	}
+
+	/** What the admin forbids in a name, for Windows clients for example, becomes a space as a separator does. */
+	public function testApplyForPathReplacesWhatTheAdminForbids(): void {
+		$this->assertSame('Anna Müller', $this->resolver([':'])->applyForPath('{{user}}', $this->user('Anna:Müller')));
+		$this->assertSame('Anna', $this->resolver(['?'])->applyForPath('{{user}}', $this->user('Anna?')));
+	}
+
 	/** A UID keeps its leading dots, as another user may have the same UID without them. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('uidsInAPath')]
 	public function testApplyForPathKeepsAUidApartFromAnother(string $uid, string $expected): void {
@@ -130,7 +143,8 @@ class PadPlaceholderResolverTest extends TestCase {
 	public static function uidsInAPath(): array {
 		return [
 			'a leading dot' => ['.anna', '.anna'],
-			'dots alone' => ['...', ''],
+			'dots alone, which Nextcloud takes as a login' => ['...', '...'],
+			'two dots, which it does not' => ['..', ''],
 			'a separator' => ['an/na', 'an na'],
 		];
 	}
@@ -158,8 +172,13 @@ class PadPlaceholderResolverTest extends TestCase {
 		$this->assertSame('Autor: {{user}}, Datum: 2026-05-17', $result);
 	}
 
-	private function resolver(): PadPlaceholderResolver {
-		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW));
+	/** @param list<string> $forbidden what the admin forbids in a name, as sanitizeFilename() replaces it */
+	private function resolver(array $forbidden = []): PadPlaceholderResolver {
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->method('sanitizeFilename')->willReturnCallback(
+			static fn (string $name, ?string $replacement = null): string => str_replace($forbidden, (string)$replacement, $name),
+		);
+		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW), $validator);
 	}
 
 	private function user(string $displayName, string $uid = 'user1'): IUser {

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Files\IFilenameValidator;
 use OCP\IUser;
 
 class PadPlaceholderResolver {
@@ -18,6 +19,7 @@ class PadPlaceholderResolver {
 
 	public function __construct(
 		private ITimeFactory $timeFactory,
+		private IFilenameValidator $filenameValidator,
 	) {
 	}
 
@@ -127,15 +129,19 @@ class PadPlaceholderResolver {
 	/**
 	 * A user's value as one filename segment, its words kept apart.
 	 * Nextcloud refuses a name with a C0 control character; those, DEL and
-	 * separators become a space. A value of dots alone, a parent or current
-	 * folder, gives nothing. A display name also loses its leading spaces
-	 * and dots, so it names nothing hidden; a UID keeps its dots.
+	 * separators become a space, and so does what the admin forbids in a
+	 * name (sanitizeFilename()). `.` and `..`, a current or parent folder,
+	 * give nothing. A display name also loses its leading spaces and dots,
+	 * so it names nothing hidden; a UID keeps its dots.
 	 *
 	 * @see https://github.com/nextcloud/server/blob/v32.0.9/lib/private/Files/FilenameValidator.php
 	 */
 	private function pathSegment(string $value, bool $dropLeadingDots): string {
 		$cleaned = (string)preg_replace('/[\x00-\x1F\x7F\/\\\\]+/', ' ', $value);
 		$cleaned = rtrim(ltrim($cleaned, $dropLeadingDots ? ' .' : ' '), ' ');
-		return trim($cleaned, '.') === '' ? '' : $cleaned;
+		if ($cleaned === '' || $cleaned === '.' || $cleaned === '..') {
+			return '';
+		}
+		return trim($this->filenameValidator->sanitizeFilename($cleaned, ' '), ' ');
 	}
 }

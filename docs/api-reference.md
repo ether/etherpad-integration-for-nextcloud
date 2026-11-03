@@ -177,7 +177,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/pads/from-template`
   - Controller: `PadCreateController::createFromTemplate`
   - Params:
-    - `file` (required) — target path. Body placeholders (`{{date}}`, `{{user}}` etc.) are resolved server-side.
+    - `file` (required) — target path. Body placeholders (`{{date}}`, `{{user}}` etc.) are resolved server-side; a user value fills one segment, as `docs/templates.md` says.
     - `templateFileId` (required) — id of any `.pad` in the user's userspace; doesn't have to live in the *Templates* folder.
   - Purpose: create-from-template path for custom frontends that need filename templating or want to pick the source file outside `/Templates`. Bypasses NC's `TemplateManager`.
   - Behaviour: resolves `{{...}}` in `file` and template body, provisions a fresh Etherpad pad, writes the new `.pad` content + snapshot, creates the binding. Returns `viewer_url` alongside the regular create response shape.

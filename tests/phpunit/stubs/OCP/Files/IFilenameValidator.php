@@ -9,5 +9,7 @@ if (!interface_exists(IFilenameValidator::class)) {
 		public function isFilenameValid(string $filename): bool;
 
 		public function validateFilename(string $filename): void;
+
+		public function sanitizeFilename(string $name, ?string $charReplacement = null): string;
 	}
 }
