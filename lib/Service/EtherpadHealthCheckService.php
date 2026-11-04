@@ -11,14 +11,15 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 
 class EtherpadHealthCheckService {
-	private const REASON_API_KEY_MODE = 'api_key_mode';
 	private const REASON_API_KEY_REJECTED = 'api_key_rejected';
+	private const REASON_DENIED_IN_FRONT = 'denied_in_front';
 	private const REASON_API_NOT_FOUND = 'api_not_found';
 	private const REASON_SERVER_ERROR = 'server_error';
 	private const REASON_DNS = 'dns';
@@ -72,7 +73,7 @@ class EtherpadHealthCheckService {
 			// losing it would drop both the hint and the field. Only what the
 			// admin reads is shortened — a transport failure can carry a long
 			// tail of internal hostnames and addresses.
-			$reason = $this->classifyFailure($detail);
+			$reason = $this->classifyFailure($e, $detail);
 			// Redacted before it is cut, or a key straddling the cut survives
 			// as a prefix, and before the hint is appended, which is
 			// translated and would make the log follow the admin's language.
@@ -395,7 +396,7 @@ class EtherpadHealthCheckService {
 		if ($previous instanceof \Throwable && $previous->getMessage() !== '') {
 			$detail .= ' (' . $previous->getMessage() . ')';
 		}
-		$hint = $this->hintForReason($this->classifyFailure($detail));
+		$hint = $this->hintForReason($this->classifyFailure($error, $detail));
 
 		return DiagnosticText::shorten($detail) . ($hint !== '' ? ' ' . $hint : '');
 	}
@@ -442,24 +443,25 @@ class EtherpadHealthCheckService {
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
 	 *
-	 * Matching is on substrings rather than exception subtypes because
-	 * EtherpadClient puts many failure shapes into one message, Etherpad's own
-	 * wording among them. If that wording changes the classification just
+	 * A key Etherpad does not take is told by its type: Etherpad answers a
+	 * wrong key and another authenticationMethod alike, with its code 4,
+	 * under a 200 or a 401/403, and its wording is no contract. The rest is
+	 * matched on substrings, because EtherpadClient puts many failure shapes
+	 * into one message. If that wording changes the classification just
 	 * falls through to REASON_UNKNOWN; the error itself still surfaces.
 	 */
-	private function classifyFailure(string $rawMessage): string {
-		$message = strtolower($rawMessage);
-
-		if (str_contains($message, 'no or wrong api key')
-			|| str_contains($message, 'wrong api key')
-			|| str_contains($message, 'invalid apikey')) {
-			return self::REASON_API_KEY_MODE;
+	private function classifyFailure(\Throwable $e, string $rawMessage): string {
+		if (EtherpadKeyRejectedException::foundIn($e) !== null) {
+			return self::REASON_API_KEY_REJECTED;
 		}
+
+		$message = strtolower($rawMessage);
 
 		// HTTP statuses come before transport reasons because they distinguish
 		// "Etherpad reachable but unhappy" from "cannot reach Etherpad at all".
+		// A 401 or 403 without Etherpad's code 4 is not Etherpad's answer.
 		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)')) {
-			return self::REASON_API_KEY_REJECTED;
+			return self::REASON_DENIED_IN_FRONT;
 		}
 		if (str_contains($message, 'http error (404)')) {
 			return self::REASON_API_NOT_FOUND;
@@ -503,8 +505,8 @@ class EtherpadHealthCheckService {
 	/** Empty when no hint applies — the bare error stays in the detail field. */
 	private function hintForReason(string $reason): string {
 		return match ($reason) {
-			self::REASON_API_KEY_MODE => $this->l10n->t('Hint: Set "authenticationMethod": "apikey" in Etherpad\'s settings.json.'),
-			self::REASON_API_KEY_REJECTED => $this->l10n->t('Hint: Etherpad rejected the API key. Check that the key matches Etherpad\'s APIKEY.txt.'),
+			self::REASON_API_KEY_REJECTED => $this->l10n->t('Hint: Etherpad rejected the API key. Check that the key matches Etherpad\'s APIKEY.txt and that Etherpad\'s settings.json has "authenticationMethod": "apikey".'),
+			self::REASON_DENIED_IN_FRONT => $this->l10n->t('Hint: Something in front of Etherpad, such as a proxy or a firewall, refused the request; the answer is not Etherpad\'s. Check the API URL and what sits in front of Etherpad.'),
 			self::REASON_API_NOT_FOUND => $this->l10n->t('Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.'),
 			self::REASON_SERVER_ERROR => $this->l10n->t('Hint: Etherpad returned a server error. Check the Etherpad server logs.'),
 			self::REASON_DNS => $this->l10n->t('Hint: The configured Etherpad host did not resolve. Check the hostname for typos and that DNS reaches it from this server.'),
@@ -536,9 +538,9 @@ class EtherpadHealthCheckService {
 		$apiField = $this->apiField($settings);
 
 		return match ($reason) {
-			self::REASON_API_KEY_MODE,
 			self::REASON_API_KEY_REJECTED,
 			self::REASON_API_KEY_OTHER => 'etherpad_api_key',
+			self::REASON_DENIED_IN_FRONT,
 			self::REASON_API_NOT_FOUND,
 			self::REASON_DNS,
 			self::REASON_CONNECTION_REFUSED,

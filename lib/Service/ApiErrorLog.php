@@ -115,11 +115,9 @@ final class ApiErrorLog {
 	 * key would show only once someone opens a pad. On the answers' minute.
 	 */
 	public function reportIfKeyRejected(\Throwable $e): void {
-		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
-			if ($cause instanceof EtherpadKeyRejectedException) {
-				$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($cause)]);
-				return;
-			}
+		$rejected = EtherpadKeyRejectedException::foundIn($e);
+		if ($rejected !== null) {
+			$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($rejected)]);
 		}
 	}
 

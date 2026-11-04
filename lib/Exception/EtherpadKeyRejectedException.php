@@ -27,4 +27,13 @@ namespace OCA\EtherpadNextcloud\Exception;
  * @see https://docs.etherpad.org/api/http_api.html#response-format
  */
 class EtherpadKeyRejectedException extends EtherpadClientException {
+	/** The rejected key in $e or among its causes, or null. */
+	public static function foundIn(\Throwable $e): ?self {
+		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof self) {
+				return $cause;
+			}
+		}
+		return null;
+	}
 }
