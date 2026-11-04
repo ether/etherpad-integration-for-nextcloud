@@ -660,6 +660,13 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'etherpad_api_host',
 			'timeout',
 		];
+		// A transport failure none of the above names.
+		yield 'other transport failure' => [
+			new EtherpadClientException('Etherpad transport error: cURL error 56: Recv failure: Connection reset by peer'),
+			'Could not reach Etherpad',
+			'etherpad_api_host',
+			'transport',
+		];
 		yield 'tls handshake' => [
 			new EtherpadClientException('Etherpad transport error: SSL operation failed with code 1. OpenSSL Error'),
 			'TLS handshake failed',
