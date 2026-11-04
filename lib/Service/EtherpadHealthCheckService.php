@@ -365,10 +365,10 @@ class EtherpadHealthCheckService {
 		}
 
 		$domain = $cookieDomain->effectiveDomain;
-		$outside = array_values(array_filter(
+		$outside = array_filter(
 			$origins,
 			fn (string $origin): bool => !$this->cookieDomainPolicy->isCoveredBy($origin, $domain),
-		));
+		);
 		if ($outside === []) {
 			return '';
 		}
