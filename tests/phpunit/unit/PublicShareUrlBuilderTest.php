@@ -57,6 +57,11 @@ class PublicShareUrlBuilderTest extends TestCase {
 		$this->assertSame('/s/share-token?dir=%2F', $this->buildBuilder()->buildShareRedirectUrl('share-token', $file));
 	}
 
+	/** Spaces around the file, as a pasted link can carry, still name the pad. */
+	public function testBuildShareRedirectUrlTrimsTheFile(): void {
+		$this->assertSame('/s/share-token?path=%2FSub&files=A.pad', $this->buildBuilder()->buildShareRedirectUrl('share-token', ' /Sub/A.pad '));
+	}
+
 	/** The common case in a shared folder: the pad at its top. */
 	public function testBuildShareRedirectUrlSelectsAPadAtTheRoot(): void {
 		$this->assertSame('/s/share-token?path=%2F&files=A.pad', $this->buildBuilder()->buildShareRedirectUrl('share-token', '/A.pad'));
