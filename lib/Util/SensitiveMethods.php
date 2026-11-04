@@ -163,7 +163,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Controller\PublicShareRedirectController::class => ['showPad', 'targetFor'],
 		\OCA\EtherpadNextcloud\Service\PublicPadOpenService::class => ['open'],
 		\OCA\EtherpadNextcloud\Service\PublicShareResolver::class => ['resolveShare', 'requestedPath', 'resolvePadFile'],
-		\OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder::class => ['buildShareBaseUrl', 'buildShareRedirectUrl'],
+		\OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder::class => ['buildShareBaseUrl', 'buildShareRedirectUrl', 'fileSelection'],
 		\OCA\EtherpadNextcloud\Service\PublicPadContextService::class => ['resolve', 'resolveContent', 'buildContentUrl'],
 		// And inside the `file` a request names, which may be a public DAV
 		// address with the token in its path: again by hand, under names

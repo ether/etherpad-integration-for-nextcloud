@@ -14,7 +14,6 @@ use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\IURLGenerator;
-use OCP\Share\Exceptions\ShareNotFound;
 
 /**
  * Builds URLs that point back into Nextcloud public shares.
@@ -32,27 +31,30 @@ class PublicShareUrlBuilder {
 	/**
 	 * Through Nextcloud's own route, so the link carries index.php where
 	 * the front controller is off.
-	 *
-	 * @throws ShareNotFound Without files_sharing: its route is not loaded,
-	 *   the router answers '' for it, and a redirect to '' leads back here.
 	 */
 	public function buildShareBaseUrl(string $token): string {
-		$base = $this->urlGenerator->linkToRoute('files_sharing.sharecontroller.showShare', ['token' => $token]);
-		if ($base === '') {
-			throw new ShareNotFound('There is no share page without files_sharing.');
-		}
-		return $base;
+		return $this->urlGenerator->linkToRoute('files_sharing.sharecontroller.showShare', ['token' => $token]);
 	}
 
 	public function buildShareRedirectUrl(string $token, mixed $fileParam): string {
-		$base = $this->buildShareBaseUrl($token);
+		// Before the link: for a file it cannot name, the caller builds the
+		// root's link instead, and this one would be thrown away.
+		$selection = $this->fileSelection($token, $fileParam);
+		return $this->buildShareBaseUrl($token) . $selection;
+	}
+
+	/**
+	 * @throws InvalidShareFilePathException
+	 * @throws NotAPadFileException
+	 */
+	private function fileSelection(string $token, mixed $fileParam): string {
 		if (!is_string($fileParam)) {
 			throw new InvalidShareFilePathException('Invalid file path.');
 		}
 
 		$rawFile = trim($fileParam);
 		if ($rawFile === '') {
-			return $base . '?dir=' . rawurlencode('/');
+			return '?dir=' . rawurlencode('/');
 		}
 
 		try {
@@ -61,12 +63,12 @@ class PublicShareUrlBuilder {
 			throw new InvalidShareFilePathException('Invalid file path.', 0, $e);
 		}
 		if ($normalized === '') {
-			return $base . '?dir=' . rawurlencode('/');
+			return '?dir=' . rawurlencode('/');
 		}
 
 		$path = trim($normalized, '/');
 		if ($path === '') {
-			return $base . '?dir=' . rawurlencode('/');
+			return '?dir=' . rawurlencode('/');
 		}
 
 		$dir = dirname($path);
@@ -80,6 +82,6 @@ class PublicShareUrlBuilder {
 			throw new NotAPadFileException('The selected file is not a .pad document.');
 		}
 
-		return $base . '?path=' . rawurlencode($dir) . '&files=' . rawurlencode($fileName);
+		return '?path=' . rawurlencode($dir) . '&files=' . rawurlencode($fileName);
 	}
 }

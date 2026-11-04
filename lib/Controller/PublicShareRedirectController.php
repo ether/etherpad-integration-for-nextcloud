@@ -12,11 +12,11 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\Http\RedirectResponse;
 use OCP\IRequest;
-use OCP\Share\Exceptions\ShareNotFound;
 
 /**
  * The app's old address for a pad in a public share, handed on to
@@ -36,6 +36,7 @@ class PublicShareRedirectController extends Controller {
 		string $appName,
 		IRequest $request,
 		private PublicShareUrlBuilder $shareUrlBuilder,
+		private IAppManager $appManager,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -43,12 +44,12 @@ class PublicShareRedirectController extends Controller {
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	public function showPad(string $token): RedirectResponse|NotFoundResponse {
-		try {
-			return new RedirectResponse($this->targetFor($token));
-		} catch (ShareNotFound) {
-			// Sharing is off: there is no share page to hand on to.
+		// Without files_sharing there is no share page to hand on to, and
+		// the router has no address for it.
+		if (!$this->appManager->isEnabledForAnyone('files_sharing')) {
 			return new NotFoundResponse();
 		}
+		return new RedirectResponse($this->targetFor($token));
 	}
 
 	/**

@@ -10,5 +10,7 @@ if (!interface_exists(IAppManager::class)) {
 
 		/** @param \OCP\IUser|null $user */
 		public function isEnabledForUser($appId, $user = null);
+
+		public function isEnabledForAnyone(string $appId): bool;
 	}
 }

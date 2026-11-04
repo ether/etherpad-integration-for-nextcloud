@@ -7,13 +7,16 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Controller\PublicShareRedirectController;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Tests\Support\StandsInForTheShareRoute;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\PublicShareController;
 use OCP\IRequest;
-use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 
 class PublicShareRedirectControllerTest extends TestCase {
+	use StandsInForTheShareRoute;
+
 	public function testItHandsOnToTheSharePageWithTheFileNamed(): void {
 		$this->assertSame('/s/share-token?path=%2FSub&files=A.pad', $this->buildController('/Sub/A.pad')->showPad('share-token')->getRedirectURL());
 		$this->assertSame('/s/share-token?dir=%2F', $this->buildController('')->showPad('share-token')->getRedirectURL());
@@ -55,24 +58,19 @@ class PublicShareRedirectControllerTest extends TestCase {
 		];
 	}
 
-	/** Without files_sharing there is no share page, and no loop back here. */
-	public function testWithoutSharingItAnswersNotFound(): void {
-		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('linkToRoute')->willReturn('');
-		$controller = new PublicShareRedirectController('etherpad_nextcloud', $this->createMock(IRequest::class), new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()));
-
-		$this->assertInstanceOf(NotFoundResponse::class, $controller->showPad('share-token'));
+	public function testWithoutFilesSharingItAnswersNotFound(): void {
+		$this->assertInstanceOf(NotFoundResponse::class, $this->buildController('/Sub/A.pad', sharing: false)->showPad('share-token'));
 	}
 
-	private function buildController(string $file): PublicShareRedirectController {
+	private function buildController(string $file, bool $sharing = true): PublicShareRedirectController {
 		$request = $this->createMock(IRequest::class);
 		$request->method('getParam')->willReturnCallback(
 			static fn (string $key, mixed $default = null): mixed => $key === 'file' ? $file : $default
 		);
-		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('linkToRoute')->willReturnCallback(
-			static fn (string $route, array $arguments): string => '/s/' . rawurlencode((string)$arguments['token']),
+		$appManager = $this->createMock(IAppManager::class);
+		$appManager->method('isEnabledForAnyone')->willReturnCallback(
+			fn (string $appId): bool => $appId === 'files_sharing' ? $sharing : $this->fail('asked about ' . $appId),
 		);
-		return new PublicShareRedirectController('etherpad_nextcloud', $request, new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()));
+		return new PublicShareRedirectController('etherpad_nextcloud', $request, new PublicShareUrlBuilder($this->shareRoute(), new PathNormalizer()), $appManager);
 	}
 }

@@ -8,32 +8,42 @@ use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Tests\Support\StandsInForTheShareRoute;
 use OCP\IURLGenerator;
-use OCP\Share\Exceptions\ShareNotFound;
 use PHPUnit\Framework\TestCase;
 
 class PublicShareUrlBuilderTest extends TestCase {
-	/** Nextcloud's route, which knows whether the link needs index.php. */
+	use StandsInForTheShareRoute;
+
 	public function testBuildShareBaseUrlTakesNextcloudsRoute(): void {
 		$this->assertSame('/nc/index.php/s/share-token', $this->buildBuilder('/nc/index.php')->buildShareBaseUrl('share-token'));
 	}
 
-	/** The redirect builds on that link, index.php and all. */
-	public function testBuildShareRedirectUrlKeepsTheFrontController(): void {
+	/** The router encodes the token: passed encoded, it would be twice. */
+	public function testBuildShareBaseUrlHandsTheTokenOnAsItIs(): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->expects($this->once())->method('linkToRoute')
+			->with('files_sharing.sharecontroller.showShare', ['token' => 'a b'])
+			->willReturn('/s/a%20b');
+
+		$this->assertSame('/s/a%20b', (new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()))->buildShareBaseUrl('a b'));
+	}
+
+	public function testBuildShareRedirectUrlKeepsTheRoutesPrefix(): void {
 		$builder = $this->buildBuilder('/index.php');
 
 		$this->assertSame('/index.php/s/share-token?dir=%2F', $builder->buildShareRedirectUrl('share-token', ''));
 		$this->assertSame('/index.php/s/share-token?path=%2FSub&files=A.pad', $builder->buildShareRedirectUrl('share-token', '/Sub/A.pad'));
 	}
 
-	/** A redirect to '' would lead back to the address it came from. */
-	public function testBuildShareBaseUrlRefusesWithoutTheShareRoute(): void {
+	/** The caller builds the root's link then; this one would go unused. */
+	public function testAFileTheLinkCannotNameBuildsNoLink(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('linkToRoute')->willReturn('');
+		$urlGenerator->expects($this->never())->method('linkToRoute');
 
-		$this->expectException(ShareNotFound::class);
+		$this->expectException(NotAPadFileException::class);
 
-		(new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()))->buildShareBaseUrl('share-token');
+		(new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()))->buildShareRedirectUrl('share-token', '/Text.txt');
 	}
 
 	public function testBuildShareRedirectUrlDefaultsToRootDirectory(): void {
@@ -77,14 +87,7 @@ class PublicShareUrlBuilderTest extends TestCase {
 		}
 	}
 
-	/** As Nextcloud's router answers: the prefix it puts before /s/<token>. */
 	private function buildBuilder(string $prefix = ''): PublicShareUrlBuilder {
-		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('linkToRoute')->willReturnCallback(
-			static fn (string $route, array $arguments): string => $route === 'files_sharing.sharecontroller.showShare'
-				? $prefix . '/s/' . rawurlencode((string)$arguments['token'])
-				: '',
-		);
-		return new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
+		return new PublicShareUrlBuilder($this->shareRoute($prefix), new PathNormalizer());
 	}
 }

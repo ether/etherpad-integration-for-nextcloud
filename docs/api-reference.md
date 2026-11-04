@@ -83,8 +83,7 @@ When both are sent for a folder share, the path is compared in full: `A.pad` at 
 - `GET /public/{token}`
   - Controller: `PublicShareRedirectController::showPad`
   - Query (folder share): `file=/subfolder/file.pad` - name only, and deliberately: this route builds no viewer address of its own, it hands over to Nextcloud's own share page.
-  - Purpose: compatibility route for public shares; redirects to `/s/{token}` with selected file. It does not look at the share: Nextcloud's share page checks the token, and asks for the password of a share that has one.
-  - The address comes from Nextcloud's own route for the share page, so it carries `index.php` where the front controller is off. Without `files_sharing` there is no such page, and the route answers `404`.
+  - Purpose: compatibility route for public shares; redirects to Nextcloud's share page for the token with the selected file: `/s/{token}`, built by Nextcloud's own route, so with `index.php` where the front controller is off. It does not look at the share: Nextcloud's share page checks the token, and asks for the password of a share that has one. Without `files_sharing` there is no share page, and the route answers `404`.
   - A file it cannot name - no `.pad`, or a path out of the share - leads to the share's root, so a dead token ends on the share page's "Share not found" rather than on an error about the file.
 
 - `GET /api/v1/public/open/{token}`
