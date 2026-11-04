@@ -14,9 +14,9 @@ use OCP\Util;
 
 /**
  * What a page needs to open a pad in Nextcloud's Viewer: the script that
- * registers the handler, and the styles that size the viewer's frame. One
- * list for every listener that loads it, so no page gets a viewer without
- * its styles.
+ * registers the handler, and the styles for its frame and its read-only
+ * view. One list for every listener that loads it, so no page gets a
+ * viewer without its styles.
  */
 final class PadViewerAssets {
 	public static function load(): void {

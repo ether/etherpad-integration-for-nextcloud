@@ -26,10 +26,10 @@ type Account = { uid: string, password: string }
  * a create sent to Nextcloud's template API anyway provisions no pad, and
  * the Files page carries no viewer of the app; a public link still does.
  * The admin, inside the group, gets all of it: the requests are the ones
- * the picker and the pages send. Public and external pads are on while it runs, so that a
- * tile is refused for the user and not for its setting. On an instance
- * where the app is already limited, the spec stays out: putting back a
- * limit it did not set is not its business.
+ * the picker and the pages send. Public and external pads are on while it
+ * runs, so that a tile is refused for the user and not for its setting.
+ * On an instance where the app is already limited, the spec stays out:
+ * putting back a limit it did not set is not its business.
  */
 test.describe('the app limited to groups', () => {
 	const group = uniqueName('pad-users')
