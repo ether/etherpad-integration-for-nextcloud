@@ -24,6 +24,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/AppFramework/Http/DataResponse.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/RedirectResponse.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/TemplateResponse.php',
+	__DIR__ . '/stubs/OCP/AppFramework/Http/NotFoundResponse.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoAdminRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoCSRFRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/PublicPage.php',

@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\IURLGenerator;
+use OCP\Share\Exceptions\ShareNotFound;
 
 /**
  * Builds URLs that point back into Nextcloud public shares.
@@ -28,9 +29,19 @@ class PublicShareUrlBuilder {
 	) {
 	}
 
+	/**
+	 * Through Nextcloud's own route, so the link carries index.php where
+	 * the front controller is off.
+	 *
+	 * @throws ShareNotFound Without files_sharing: its route is not loaded,
+	 *   the router answers '' for it, and a redirect to '' leads back here.
+	 */
 	public function buildShareBaseUrl(string $token): string {
-		$webroot = rtrim($this->urlGenerator->getWebroot(), '/');
-		return $webroot . '/s/' . rawurlencode($token);
+		$base = $this->urlGenerator->linkToRoute('files_sharing.sharecontroller.showShare', ['token' => $token]);
+		if ($base === '') {
+			throw new ShareNotFound('There is no share page without files_sharing.');
+		}
+		return $base;
 	}
 
 	public function buildShareRedirectUrl(string $token, mixed $fileParam): string {
