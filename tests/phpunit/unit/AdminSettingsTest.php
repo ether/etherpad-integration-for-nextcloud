@@ -19,6 +19,7 @@ use OCA\EtherpadNextcloud\Tests\Support\TemplateKeys;
 use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class AdminSettingsTest extends TestCase {
@@ -46,6 +47,19 @@ class AdminSettingsTest extends TestCase {
 		$this->assertSame('', (string)$params['cookie_domain_warning']);
 	}
 
+	public static function storedApiHosts(): iterable {
+		yield 'a copy of the base URL' => ['https://pad.example.test', ''];
+		yield 'an own address' => ['http://etherpad:9001', 'http://etherpad:9001'];
+	}
+
+	/** A copy shows empty, so the next save stops pinning the base URL. */
+	#[DataProvider('storedApiHosts')]
+	public function testShowsTheApiUrlOnlyWhereItIsTheAdminsOwn(string $stored, string $shown): void {
+		$params = $this->renderWith('https://pad.example.test', true, $stored);
+
+		$this->assertSame($shown, $params['etherpad_api_host']);
+	}
+
 	/**
 	 * The template reads its labels, hints and URLs by name, and one the
 	 * controller leaves out renders empty: the section loses its heading, a
@@ -64,9 +78,10 @@ class AdminSettingsTest extends TestCase {
 	}
 
 	/** @return array<string,mixed> */
-	private function renderWith(string $etherpadHost, bool $protectedPadsEnabled): array {
+	private function renderWith(string $etherpadHost, bool $protectedPadsEnabled, string $etherpadApiHost = ''): array {
 		$appValues = [
 			'etherpad_host' => $etherpadHost,
+			'etherpad_api_host' => $etherpadApiHost,
 			'enable_protected_pads' => $protectedPadsEnabled ? 'yes' : 'no',
 		];
 		$config = $this->createMock(IConfig::class);

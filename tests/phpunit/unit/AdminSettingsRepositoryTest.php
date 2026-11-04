@@ -52,6 +52,38 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$this->assertSame('no', $saved['etherpad_cookie_domain_configured']);
 	}
 
+	/** Stored empty, the API follows a later change of the base URL. */
+	public function testPersistStoresTheBaseUrlAgainAsNoApiUrl(): void {
+		$saved = [];
+		$config = $this->createMock(IConfig::class);
+		$config->method('setAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $value) use (&$saved): void {
+				if ($appName === 'etherpad_nextcloud') {
+					$saved[$key] = $value;
+				}
+			}
+		);
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('setValueString')->willReturn(true);
+
+		($this->repository($config, $appConfig))->persist(new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad.example.test',
+			'',
+			'new-key',
+			'new-key',
+			'1.3.0',
+			90,
+			false,
+			true,
+			'',
+			'',
+		));
+
+		$this->assertSame('https://pad.example.test', $saved['etherpad_host']);
+		$this->assertSame('', $saved['etherpad_api_host']);
+	}
+
 	public function testPersistStoresValidatedSettings(): void {
 		$saved = [];
 		$config = $this->createMock(IConfig::class);

@@ -98,6 +98,16 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// $cookieDomain, so summary and payload cannot disagree about it.
 		$this->assertSame(['api', 'api_key', 'base_url', 'session_cookie'], array_keys($byId));
 		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['api']->status);
+		$this->assertSame('etherpad_api_host', $byId['api']->field);
+	}
+
+	/** With no API URL of its own, the base URL supplied the address. */
+	public function testTheApiLineNamesTheBaseUrlFieldWithoutAnApiUrl(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+
+		$result = $this->buildService($etherpad, $this->bindingCounts())->check($this->settingsWithoutSeparateApiHost());
+
+		$this->assertSame('etherpad_host', $result->checks[0]->field);
 	}
 
 

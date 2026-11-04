@@ -121,7 +121,7 @@ class EtherpadHealthCheckService {
 		// the base URL — which every pad link in the browser uses — still read
 		// as a clean pass. An empty API URL falls back to the base URL, so the
 		// API line points at whichever field actually supplied the address.
-		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
+		$apiField = ValidatedAdminSettings::isOwnApiHost($settings->etherpadApiHost, $settings->etherpadHost) ? 'etherpad_api_host' : 'etherpad_host';
 		$checks = [
 			new HealthCheckItem(
 				'api',
@@ -527,7 +527,7 @@ class EtherpadHealthCheckService {
 	 * it is not, so neither field is marked.
 	 */
 	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
-		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
+		$apiField = ValidatedAdminSettings::isOwnApiHost($settings->etherpadApiHost, $settings->etherpadHost) ? 'etherpad_api_host' : 'etherpad_host';
 
 		return match ($reason) {
 			self::REASON_API_KEY_MODE,

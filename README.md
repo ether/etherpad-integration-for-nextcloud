@@ -100,7 +100,7 @@ and configure:
 
 - Etherpad Base URL
 - Etherpad API key (OAuth is not required; Etherpad API key auth is used)
-- Etherpad API URL (optional; saved empty, it is set to the Base URL of that save and does not follow a later change of it)
+- Etherpad API URL (optional; empty, or the Base URL again, the API follows the Base URL)
 - Etherpad session cookie domain (see below)
 - Protected pads, Public pads: which pad types users may create (see below)
 - Import of protected pads from legacy Ownpad files: off by default; leave it off unless this Nextcloud alone creates group pads on your Etherpad server (see [docs/legacy-ownpad-migration.md](docs/legacy-ownpad-migration.md))

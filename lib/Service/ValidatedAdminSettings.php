@@ -45,4 +45,15 @@ class ValidatedAdminSettings {
 	public function effectiveApiKey(): ApiKey {
 		return new ApiKey($this->effectiveApiKey);
 	}
+
+	/**
+	 * Whether an API URL is the admin's own rather than the base URL again.
+	 * The base URL again is stored empty, so the API follows a later change
+	 * of the base URL, as the field's hint says. Only a trailing slash is
+	 * ignored: an address that differs in anything else, http for https or
+	 * its spelling, stays visible as the admin's own.
+	 */
+	public static function isOwnApiHost(string $apiHost, string $baseHost): bool {
+		return rtrim($apiHost, '/') !== rtrim($baseHost, '/');
+	}
 }
