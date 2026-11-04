@@ -932,7 +932,7 @@ class PadFileServiceTest extends TestCase {
 				'demo',
 			],
 			'CR line ends' => [
-				"[InternetShortcut]\rURL=https://pad.example.test/p/demo\r",
+				"[InternetShortcut]\rIconIndex=0\rURL=https://pad.example.test/p/demo\r",
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
@@ -941,7 +941,7 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			'an indented header with spaces after it' => [
+			'an indented header with whitespace after it' => [
 				"  [InternetShortcut] \t\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
 				'demo',
@@ -959,17 +959,23 @@ class PadFileServiceTest extends TestCase {
 			],
 			// A section of over a megabyte: no length stops the reading.
 			'a long section' => [
-				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\n" . str_repeat("Note=x\n", 200000),
+				"[InternetShortcut]\n" . str_repeat("Note=x\n", 200000) . "URL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// Only a line in brackets starts a section.
+			// A [ without a ] starts no section.
 			'a line that only starts like a header' => [
 				"[InternetShortcut]\n[unfinished\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// Etherpad links often carry parameters with = in them.
+			// A query string holds = signs of its own.
+			// A ] further in starts no section either.
+			'a note with brackets in it' => [
+				"[InternetShortcut]\nNote=see [1]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
 			'a query string in the URL' => [
 				"[InternetShortcut]\nURL=https://pad.example.test/p/demo?showChat=false\n",
 				'https://pad.example.test/p/demo?showChat=false',

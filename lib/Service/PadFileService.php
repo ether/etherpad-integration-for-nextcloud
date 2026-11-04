@@ -146,10 +146,11 @@ class PadFileService {
 
 	/**
 	 * The value of the first URL= line in the [InternetShortcut] section, or
-	 * null. A line that starts with [ and holds a ] starts a section; only
-	 * [InternetShortcut] as a whole line is this one. A value ends with its
-	 * line: a URL under another section, or the line after an empty URL=, is
-	 * not this shortcut's.
+	 * null. Lines, keys and values are trimmed, and names match in any case.
+	 * A line that starts with [ and holds a ] starts a section; only
+	 * [InternetShortcut] as a whole line is this one, so a URL under another
+	 * section is not this shortcut's. A value ends with its line: the line
+	 * after an empty URL= is no part of it.
 	 */
 	private function shortcutUrl(string $content): ?string {
 		$inSection = false;
