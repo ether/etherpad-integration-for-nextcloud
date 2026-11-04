@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Util\ApiKey;
 class ValidatedAdminSettings {
 	public function __construct(
 		public readonly string $etherpadHost,
+		/** Empty without an API URL of its own; see effectiveApiHost(). */
 		public readonly string $etherpadApiHost,
 		public readonly string $etherpadCookieDomain,
 		/**
@@ -44,5 +45,10 @@ class ValidatedAdminSettings {
 	/** The key these settings would talk to Etherpad with. */
 	public function effectiveApiKey(): ApiKey {
 		return new ApiKey($this->effectiveApiKey);
+	}
+
+	/** Where these settings would call Etherpad's API. */
+	public function effectiveApiHost(): string {
+		return $this->etherpadApiHost !== '' ? $this->etherpadApiHost : $this->etherpadHost;
 	}
 }

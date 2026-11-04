@@ -73,7 +73,9 @@ class AdminSettingsValidator {
 
 		return new ValidatedAdminSettings(
 			$host,
-			$apiHost,
+			// An API URL that normalizes to the base URL is stored empty, so
+			// the API follows a later change of the base URL.
+			$apiHost === $host ? '' : $apiHost,
 			$cookieDomain,
 			$apiKeyToStore,
 			$effectiveApiKey,

@@ -65,7 +65,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 		$settings = new ValidatedAdminSettings(
 			'https://pad.example.test',
-			'https://pad.example.test',
+			'',
 			'.example.test',
 			'ep-api-0123456789abcdef',
 			'ep-api-0123456789abcdef',
@@ -98,6 +98,32 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// $cookieDomain, so summary and payload cannot disagree about it.
 		$this->assertSame(['api', 'api_key', 'base_url', 'session_cookie'], array_keys($byId));
 		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['api']->status);
+		$this->assertSame('etherpad_api_host', $byId['api']->field);
+	}
+
+	/**
+	 * With no API URL of its own, the base URL is called, named and in use.
+	 * An empty host would reach the client, which takes the saved API host
+	 * in its place, and test that address instead of the form's.
+	 */
+	public function testTheApiLineNamesTheBaseUrlFieldWithoutAnApiUrl(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->once())->method('assertApiKeyAccepted')
+			->with('https://pad.example.test', $this->anything(), '1.3.0');
+		$etherpad->method('detectReleaseVersion')
+			->with('https://pad.example.test', $this->anything())->willReturn('2.7.3');
+
+		$result = $this->buildService($etherpad, $this->bindingCounts(), configuredApiHost: 'https://pad.example.test')
+			->check($this->settingsWithoutSeparateApiHost());
+
+		$this->assertSame('https://pad.example.test', $result->apiHost);
+		$this->assertSame('https://pad.example.test/api/1.3.0/checkToken', $result->target);
+		$this->assertSame('etherpad_host', $result->checks[0]->field);
+		// The release probe sits in a catch-all, so a call to another
+		// address shows only in the line it leaves behind.
+		$session = $result->checks[3];
+		$this->assertStringContainsString('2.7.3', $session->label);
+		$this->assertStringNotContainsString('Not the address currently in use', $session->detail);
 	}
 
 
@@ -282,7 +308,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	private function settingsWithoutSeparateApiHost(): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			'https://pad.example.test',
-			'https://pad.example.test',
+			'',
 			'.example.test',
 			'ep-api-0123456789abcdef',
 			'ep-api-0123456789abcdef',

@@ -47,6 +47,13 @@ class AdminSettings implements ISettings {
 
 		$etherpadHost = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_host', '');
 		$etherpadApiHost = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '');
+		// Older versions stored an empty field as a copy of the base URL. It
+		// shows empty, so the next save stores it empty and the API follows
+		// the base URL from then on. Any other address stays: it may be the
+		// admin's own.
+		if ($etherpadApiHost === $etherpadHost) {
+			$etherpadApiHost = '';
+		}
 		$cookieDomainConfigured = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes';
 		$storedCookieDomain = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '');
 		$configuredCookieDomain = $this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured);

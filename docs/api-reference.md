@@ -581,7 +581,9 @@ Registered in `lib/AppInfo/Application.php`.
 ## App Config Keys
 
 - `etherpad_host`
-- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host` is used. A save of the settings form with the field empty stores `etherpad_host` here, and the form shows it from then on: a later change of `etherpad_host`, through `occ` or the form, leaves the API on the old address until the field is emptied again.
+- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host` is used.
+  - A save of the settings form stores an address that normalizes to `etherpad_host` empty, so the API follows a later change of `etherpad_host`. A server that cannot reach Etherpad at the base URL needs its own address here; the connection test tries it before a save.
+  - Older versions stored an empty field as a copy of `etherpad_host`. While the two match, the form shows the field empty and the next save clears it. A copy of a base URL that has moved since, through `occ` or the form, reads as an address of its own and is kept: check the field after an upgrade.
 - `etherpad_api_key`
 - `etherpad_api_version` (default `1.2.15`)
 - `etherpad_cookie_domain` and `etherpad_cookie_domain_configured` (`yes|no`, default `no`) — the `Domain` of the Etherpad session cookie.
