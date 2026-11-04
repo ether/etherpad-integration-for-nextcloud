@@ -904,7 +904,7 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// Nextcloud's Android client writes .url files with CRLF.
+			// A .pad written or edited on Windows.
 			'CRLF line ends' => [
 				"[InternetShortcut]\r\nURL=https://pad.example.test/p/demo\r\n",
 				'https://pad.example.test/p/demo',
@@ -926,7 +926,45 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// Only a whole header line ends the section.
+			'line ends converted twice' => [
+				"[InternetShortcut]\r\r\nURL=https://pad.example.test/p/demo\r\r\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'CR line ends' => [
+				"[InternetShortcut]\rURL=https://pad.example.test/p/demo\r",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'a byte order mark before it' => [
+				"\u{FEFF}[InternetShortcut]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'an indented header with spaces after it' => [
+				"  [InternetShortcut] \t\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'a bare URL key without a value before it' => [
+				"[InternetShortcut]\nURL\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// A key is URL only as a whole.
+			'a key that ends in URL before it' => [
+				"[InternetShortcut]\nIconURL=https://other.example.test/p/other\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// No limit on what follows, where a pattern over the file would
+			// run out of backtracking.
+			'a long section' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\n" . str_repeat("Note=x\n", 200000),
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// Only a line in brackets starts a section.
 			'a line that only starts like a header' => [
 				"[InternetShortcut]\n[unfinished\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
@@ -988,6 +1026,10 @@ class PadFileServiceTest extends TestCase {
 			'a URL line only under a later section' => ["[InternetShortcut]\nIconIndex=0\n[Other]\nURL=https://pad.example.test/p/demo\n"],
 			// The line after an empty URL= is no part of it.
 			'an empty URL with an address on the next line' => ["[InternetShortcut]\nURL=\nhttps://pad.example.test/p/demo\n"],
+			// The first URL key counts, even an empty one.
+			'an empty URL before another' => ["[InternetShortcut]\nURL=\nURL=https://pad.example.test/p/second\n"],
+			'another header with a note after it' => ["[InternetShortcut]\nIconIndex=0\n[Other] ; note\nURL=https://pad.example.test/p/demo\n"],
+			'an indented header after it' => ["[InternetShortcut]\nIconIndex=0\n\t[Other] \nURL=https://pad.example.test/p/demo\n"],
 			'another scheme' => ["[InternetShortcut]\nURL=ftp://example.test/p/pad\n"],
 			'another scheme with https further in' => ["[InternetShortcut]\nURL=ftp://mirror.example.test/https://pad.example.test/p/demo\n"],
 			'a URL that does not parse' => ["[InternetShortcut]\nURL=https://pad.example.test:99999/p/demo\n"],

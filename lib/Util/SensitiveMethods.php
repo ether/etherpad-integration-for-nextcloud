@@ -94,7 +94,7 @@ final class SensitiveMethods {
 		// stored, a pad's HTML made safe to show.
 		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed', 'provisionSeeded', 'isMadeAnew'],
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
-			'parsePadFile', 'readPad', 'serialize', 'parseLegacyOwnpadShortcut',
+			'parsePadFile', 'readPad', 'serialize', 'parseLegacyOwnpadShortcut', 'shortcutUrl',
 			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',
 			'buildInitialDocument', 'parseFrontmatterBlock',
 			// The frontmatter, which holds an external pad's address: as the

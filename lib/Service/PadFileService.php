@@ -117,19 +117,8 @@ class PadFileService {
 
 	/** @return array{url: string, pad_id: string}|null */
 	public function parseLegacyOwnpadShortcut(string $content): ?array {
-		$normalized = str_replace("\r\n", "\n", $content);
-		// Only the URL line of the [InternetShortcut] section, up to the next
-		// section header: a URL= under another section, or an empty one with
-		// an address on the line after, would name another pad.
-		if (!preg_match('/^[ \t]*\[InternetShortcut\][ \t]*$(.*?)(?=^[ \t]*\[[^\]\n]*\][ \t]*$|\z)/msi', $normalized, $section)) {
-			return null;
-		}
-		if (!preg_match('/^[ \t]*URL[ \t]*=[ \t]*(.*?)[ \t]*$/mi', $section[1], $matches)) {
-			return null;
-		}
-
-		$url = trim($matches[1]);
-		if ($url === '' || preg_match('#^https?://#i', $url) !== 1) {
+		$url = $this->shortcutUrl($content);
+		if ($url === null || preg_match('#^https?://#i', $url) !== 1) {
 			return null;
 		}
 
@@ -153,6 +142,29 @@ class PadFileService {
 			'url' => $url,
 			'pad_id' => $padId,
 		];
+	}
+
+	/**
+	 * The first URL key of the [InternetShortcut] section, read line by line
+	 * as Windows reads a shortcut, or null. Any line in brackets starts
+	 * another section, and a value ends with its line: a URL under another
+	 * section, or the line after an empty URL=, is not this shortcut's.
+	 */
+	private function shortcutUrl(string $content): ?string {
+		$inSection = false;
+		$text = str_starts_with($content, "\u{FEFF}") ? substr($content, 3) : $content;
+		foreach (preg_split('/\r\n|\r|\n/', $text) ?: [] as $line) {
+			$line = trim($line);
+			if (str_starts_with($line, '[') && str_contains($line, ']')) {
+				$inSection = strcasecmp($line, '[InternetShortcut]') === 0;
+				continue;
+			}
+			$pair = explode('=', $line, 2);
+			if ($inSection && count($pair) === 2 && strcasecmp(trim($pair[0]), 'URL') === 0) {
+				return trim($pair[1]);
+			}
+		}
+		return null;
 	}
 
 	public function inferAccessModeFromPadId(string $padId): string {
