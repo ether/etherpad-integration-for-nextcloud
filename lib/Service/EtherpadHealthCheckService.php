@@ -443,10 +443,9 @@ class EtherpadHealthCheckService {
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
 	 *
-	 * A key Etherpad does not take is told by its type, the rest by
-	 * substrings, because EtherpadClient puts many failure shapes into one
-	 * message. If that wording changes the classification just falls through
-	 * to REASON_UNKNOWN; the error itself still surfaces.
+	 * A rejected key is told by its type, other failures by their message,
+	 * as EtherpadClient gives them no types of their own. A message nothing
+	 * matches is REASON_UNKNOWN; the error itself still reaches the admin.
 	 */
 	private function classifyFailure(\Throwable $e, string $rawMessage): string {
 		if ($e instanceof EtherpadKeyRejectedException) {
@@ -457,8 +456,8 @@ class EtherpadHealthCheckService {
 
 		// HTTP statuses come before transport reasons because they distinguish
 		// "Etherpad reachable but unhappy" from "cannot reach Etherpad at all".
-		// A 401 or 403 not in Etherpad's own words, or a 407: a proxy that
-		// wants its own credentials.
+		// A 401 or 403 without Etherpad's code 4 does not say who refused; a
+		// 407 asks for a proxy's own credentials.
 		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)') || str_contains($message, 'http error (407)')) {
 			return self::REASON_DENIED_IN_FRONT;
 		}
@@ -505,7 +504,7 @@ class EtherpadHealthCheckService {
 	private function hintForReason(string $reason): string {
 		return match ($reason) {
 			self::REASON_API_KEY_REJECTED => $this->l10n->t('Hint: Etherpad rejected the API key. Check that the key matches Etherpad\'s APIKEY.txt and that Etherpad\'s settings.json has "authenticationMethod": "apikey".'),
-			self::REASON_DENIED_IN_FRONT => $this->l10n->t('Hint: A proxy or firewall in front of Etherpad refused the request, or replaced Etherpad\'s answer with its own. Check what sits in front of Etherpad, then the API key.'),
+			self::REASON_DENIED_IN_FRONT => $this->l10n->t('Hint: The request was refused, but not with Etherpad\'s answer to a wrong key. Check the access rules of Etherpad and of any proxy or firewall in front of it, then the API key.'),
 			self::REASON_API_NOT_FOUND => $this->l10n->t('Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.'),
 			self::REASON_SERVER_ERROR => $this->l10n->t('Hint: Etherpad returned a server error. Check the Etherpad server logs.'),
 			self::REASON_DNS => $this->l10n->t('Hint: The configured Etherpad host did not resolve. Check the hostname for typos and that DNS reaches it from this server.'),

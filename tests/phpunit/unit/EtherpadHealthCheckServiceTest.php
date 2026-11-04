@@ -692,8 +692,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'etherpad_api_host',
 			'api_not_found',
 		];
-		// Etherpad answered, so the address is right and something behind it
-		// is not: no field to mark.
+		// Neither says which input is wrong: no field to mark.
 		yield 'http 502' => [
 			new EtherpadClientException('Etherpad API HTTP error (502)'),
 			'server error',
