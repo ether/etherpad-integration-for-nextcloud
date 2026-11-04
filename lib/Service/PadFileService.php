@@ -145,15 +145,19 @@ class PadFileService {
 	}
 
 	/**
-	 * The first URL key of the [InternetShortcut] section, read line by line
-	 * as Windows reads a shortcut, or null. Any line in brackets starts
-	 * another section, and a value ends with its line: a URL under another
-	 * section, or the line after an empty URL=, is not this shortcut's.
+	 * The value of the first URL= line in the [InternetShortcut] section, or
+	 * null. A line that starts with [ and holds a ] starts a section; only
+	 * [InternetShortcut] as a whole line is this one. A value ends with its
+	 * line: a URL under another section, or the line after an empty URL=, is
+	 * not this shortcut's.
 	 */
 	private function shortcutUrl(string $content): ?string {
 		$inSection = false;
 		$text = str_starts_with($content, "\u{FEFF}") ? substr($content, 3) : $content;
-		foreach (preg_split('/\r\n|\r|\n/', $text) ?: [] as $line) {
+		// strtok rather than splitting: every .pad without frontmatter comes
+		// here, of any size, and an array of its lines could exhaust memory.
+		// The empty lines it skips say nothing anyway.
+		for ($line = strtok($text, "\r\n"); $line !== false; $line = strtok("\r\n")) {
 			$line = trim($line);
 			if (str_starts_with($line, '[') && str_contains($line, ']')) {
 				$inSection = strcasecmp($line, '[InternetShortcut]') === 0;

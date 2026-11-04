@@ -946,7 +946,7 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			'a bare URL key without a value before it' => [
+			'a URL line without = before it' => [
 				"[InternetShortcut]\nURL\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
 				'demo',
@@ -957,8 +957,7 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// No limit on what follows, where a pattern over the file would
-			// run out of backtracking.
+			// A section of over a megabyte: no length stops the reading.
 			'a long section' => [
 				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\n" . str_repeat("Note=x\n", 200000),
 				'https://pad.example.test/p/demo',
@@ -968,6 +967,12 @@ class PadFileServiceTest extends TestCase {
 			'a line that only starts like a header' => [
 				"[InternetShortcut]\n[unfinished\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// Etherpad links often carry parameters with = in them.
+			'a query string in the URL' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo?showChat=false\n",
+				'https://pad.example.test/p/demo?showChat=false',
 				'demo',
 			],
 			'whitespace around the URL' => [
@@ -1026,7 +1031,7 @@ class PadFileServiceTest extends TestCase {
 			'a URL line only under a later section' => ["[InternetShortcut]\nIconIndex=0\n[Other]\nURL=https://pad.example.test/p/demo\n"],
 			// The line after an empty URL= is no part of it.
 			'an empty URL with an address on the next line' => ["[InternetShortcut]\nURL=\nhttps://pad.example.test/p/demo\n"],
-			// The first URL key counts, even an empty one.
+			// The first URL= counts, even an empty one.
 			'an empty URL before another' => ["[InternetShortcut]\nURL=\nURL=https://pad.example.test/p/second\n"],
 			'another header with a note after it' => ["[InternetShortcut]\nIconIndex=0\n[Other] ; note\nURL=https://pad.example.test/p/demo\n"],
 			'an indented header after it' => ["[InternetShortcut]\nIconIndex=0\n\t[Other] \nURL=https://pad.example.test/p/demo\n"],
