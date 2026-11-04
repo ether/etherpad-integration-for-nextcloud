@@ -457,7 +457,8 @@ class EtherpadHealthCheckService {
 
 		// HTTP statuses come before transport reasons because they distinguish
 		// "Etherpad reachable but unhappy" from "cannot reach Etherpad at all".
-		// Not in Etherpad's own words, or a proxy asking for credentials.
+		// A 401 or 403 not in Etherpad's own words, or a 407: a proxy that
+		// wants its own credentials.
 		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)') || str_contains($message, 'http error (407)')) {
 			return self::REASON_DENIED_IN_FRONT;
 		}
@@ -528,10 +529,11 @@ class EtherpadHealthCheckService {
 
 	/**
 	 * Which input the failure points at. A rejected key is about the key; an
-	 * address that does not resolve, refuses or 404s is about the address, in
-	 * the field apiField() names. A server error, a non-JSON answer or a
-	 * refusal not in Etherpad's own words does not say which input is wrong,
-	 * so neither field is marked.
+	 * address that does not resolve, refuses the connection or answers 404 is
+	 * about the address, in the field apiField() names. A server error, a
+	 * non-JSON answer, or a 401, 403 or 407 not in Etherpad's own words,
+	 * which a proxy may have put in place of Etherpad's answer to the key,
+	 * does not say which input is wrong, so neither field is marked.
 	 */
 	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
 		$apiField = $this->apiField($settings);

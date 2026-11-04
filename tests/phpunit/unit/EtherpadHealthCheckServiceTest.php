@@ -376,7 +376,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		self::assertStringContainsString('Could not resolve host', $line->detail);
 	}
 
-	/** /health takes no key, so a 401 there is not about the key. */
+	/** /health takes no key, so a 401 there does not get the rejected key's hint. */
 	public function testSessionCookieLineNamesWhatSitsInFrontForARefusedProbe(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('detectReleaseVersion')->willThrowException(new EtherpadClientException('HTTP error (401)'));
