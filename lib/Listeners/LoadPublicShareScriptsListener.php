@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\PadFileType;
+use OCA\EtherpadNextcloud\Util\PadViewerAssets;
 use OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
@@ -19,7 +20,11 @@ use OCP\IRequest;
 use OCP\Util;
 
 /**
- * Loads the pad Viewer and compatibility bootstrap on public share pages.
+ * Loads the pad viewer and compatibility bootstrap on public share pages,
+ * for any visitor, a signed-in user outside the app's groups too: a
+ * public share decides its own access, and the viewer there calls the
+ * public routes. Nextcloud fires LoadViewer on the same page, which
+ * LoadViewerListener leaves to this listener for such a user.
  *
  * @template-implements IEventListener<Event>
  */
@@ -37,9 +42,7 @@ class LoadPublicShareScriptsListener implements IEventListener {
 			return;
 		}
 
-		Util::addStyle(Application::APP_ID, 'pad-document');
-		Util::addStyle(Application::APP_ID, 'files-main');
-		Util::addInitScript(Application::APP_ID, 'etherpad_nextcloud-viewer-init');
+		PadViewerAssets::load();
 
 		$node = $event->getShare()->getNode();
 		$selectedFile = $this->request->getParam('files', '');

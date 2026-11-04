@@ -8,16 +8,16 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Util\PadViewerAssets;
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
-use OCP\Util;
 
 /**
- * Loads the native pad Viewer where Files app scripts are available, for a
- * signed-in user the app is enabled for.
+ * Loads the pad viewer where Files app scripts are available, for a
+ * signed-in user the app is enabled for: the viewer calls the app's own
+ * routes, which Nextcloud refuses everyone else.
  *
  * @template-implements IEventListener<Event>
  */
@@ -35,8 +35,6 @@ class LoadFilesScriptsListener implements IEventListener {
 			return;
 		}
 
-		Util::addStyle(Application::APP_ID, 'pad-document');
-		Util::addStyle(Application::APP_ID, 'files-main');
-		Util::addInitScript(Application::APP_ID, 'etherpad_nextcloud-viewer-init');
+		PadViewerAssets::load();
 	}
 }

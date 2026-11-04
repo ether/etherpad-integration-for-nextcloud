@@ -10,8 +10,11 @@ if (!class_exists(Util::class)) {
 		public static array $scripts = [];
 		/** @var list<array{0:string,1:string}> */
 		public static array $initScripts = [];
+		/** @var list<array{0:string,1:string}> */
+		public static array $styles = [];
 
 		public static function addStyle(string $application, string $file): void {
+			self::$styles[] = [$application, $file];
 		}
 
 		public static function addScript(string $application, string $file, ?string $afterAppId = null): void {
@@ -26,6 +29,7 @@ if (!class_exists(Util::class)) {
 		public static function reset(): void {
 			self::$scripts = [];
 			self::$initScripts = [];
+			self::$styles = [];
 		}
 	}
 }

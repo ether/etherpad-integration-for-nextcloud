@@ -12,7 +12,7 @@ import {
 	enableAppForEveryone,
 	restrictAppToGroups,
 } from '../fixtures/admin-api'
-import { deleteViaDav, getAppConfig, padOfFile, propfindFileId, restoreAppConfig, setAppConfig } from '../fixtures/dav'
+import { createPadAtPath, createPublicReadShare, deleteViaDav, getAppConfig, padOfFile, propfindFileId, restoreAppConfig, setAppConfig } from '../fixtures/dav'
 import { E2E } from '../fixtures/env'
 import { uniqueName, uniquePadName } from '../fixtures/nextcloud'
 
@@ -23,9 +23,10 @@ type Account = { uid: string, password: string }
 
 /**
  * The app limited to a group. A user outside it gets no "New pad" entry,
- * and a create sent to Nextcloud's template API anyway provisions no pad.
- * The admin, inside the group, gets both: the requests are the ones the
- * picker sends. Public and external pads are on while it runs, so that a
+ * a create sent to Nextcloud's template API anyway provisions no pad, and
+ * the Files page carries no viewer of the app; a public link still does.
+ * The admin, inside the group, gets all of it: the requests are the ones
+ * the picker and the pages send. Public and external pads are on while it runs, so that a
  * tile is refused for the user and not for its setting. On an instance
  * where the app is already limited, the spec stays out: putting back a
  * limit it did not set is not its business.
@@ -151,10 +152,27 @@ test.describe('the app limited to groups', () => {
 			const res = await fetch(`${E2E.baseURL}/apps/files/`, { headers: { Authorization: authOf(account) } })
 			expect(res.status, `the Files page as ${account.uid}`).toBe(200)
 			expect(res.url, `the Files page as ${account.uid}, not the login`).not.toContain('/login')
-			return res.text()
+			const html = await res.text()
+			expect(html, `the Files page of ${account.uid}`).toContain(`data-user="${account.uid}"`)
+			return html
 		}
 		expect(await filesPage(admin()), 'the admin, inside the group').toContain(`${APP}-viewer-init`)
 		expect(await filesPage(outsider!), 'a user outside the group').not.toContain(`${APP}-viewer-init`)
+	})
+
+	/** A public link decides its own access, and its viewer calls the public routes. */
+	test('loads the viewer on a public link for a user outside the group', async () => {
+		const name = uniquePadName('limited-public-link')
+		await createPadAtPath(`/${name}`)
+		try {
+			const { token } = await createPublicReadShare(`/${name}`)
+			const res = await fetch(`${E2E.baseURL}/s/${encodeURIComponent(token)}`, { headers: { Authorization: authOf(outsider!) } })
+			expect(res.status, 'the public link as a user outside the group').toBe(200)
+			expect(res.url, 'the share page, not a login or a password prompt').toContain(`/s/${token}`)
+			expect(await res.text(), 'a user outside the group').toContain(`${APP}-viewer-init`)
+		} finally {
+			await deleteViaDav(`/${name}`)
+		}
 	})
 
 	for (const [label, templateType, templateId] of [

@@ -487,9 +487,10 @@ for each pad.
 
 ### What every user pays
 
-- Every Files, Viewer and public share page loads about 52 KB of
-  JavaScript and 5 KB of CSS, which register the Viewer handler and send
-  no request; also for an account the app is not enabled for. Every page
+- Every Files and Viewer page of a user the app is enabled for, and every
+  public share page, loads about 52 KB of JavaScript and 5 KB of CSS,
+  which register the Viewer handler and send no request. An account the
+  app is not enabled for pays this only on a public share page. Every page
   allows the Etherpad host as a frame source.
 - Every delete and restore makes the queries above.
 - An install, an app update and `occ maintenance:repair` read the whole
