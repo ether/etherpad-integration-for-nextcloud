@@ -163,11 +163,7 @@ class AdminSettingsValidator {
 			? '[' . $host . ']'
 			: $host;
 		$normalized = $scheme . '://' . $normalizedHost;
-		// The scheme's own port is left out, as normalizeOrigin() in
-		// EtherpadClient does: written or not, it is the same address, and
-		// an API URL that names the base URL with it is stored empty.
-		$isDefaultPort = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
-		if ($port > 0 && !$isDefaultPort) {
+		if ($port > 0) {
 			$normalized .= ':' . $port;
 		}
 		if ($path !== '') {

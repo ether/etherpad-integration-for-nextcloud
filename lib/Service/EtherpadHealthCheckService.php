@@ -237,7 +237,7 @@ class EtherpadHealthCheckService {
 		// Before the first save there is none, and no address is in use: the
 		// one tested is not it either.
 		$configuredHost = $this->etherpadClient->configuredApiHost();
-		if (rtrim($configuredHost, '/') !== rtrim($settings->effectiveApiHost(), '/')) {
+		if ($configuredHost !== $settings->effectiveApiHost()) {
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_OK,
 				$this->fill(
