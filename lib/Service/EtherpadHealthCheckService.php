@@ -12,7 +12,6 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
-use OCA\EtherpadNextcloud\Util\Causes;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IL10N;
@@ -444,14 +443,13 @@ class EtherpadHealthCheckService {
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
 	 *
-	 * A key Etherpad does not take is told by its type, which says when that
-	 * is. The rest is matched on substrings, because EtherpadClient puts many
-	 * failure shapes into one message. If that wording changes the
-	 * classification just falls through to REASON_UNKNOWN; the error itself
-	 * still surfaces.
+	 * A key Etherpad does not take is told by its type, the rest by
+	 * substrings, because EtherpadClient puts many failure shapes into one
+	 * message. If that wording changes the classification just falls through
+	 * to REASON_UNKNOWN; the error itself still surfaces.
 	 */
 	private function classifyFailure(\Throwable $e, string $rawMessage): string {
-		if (Causes::find($e, EtherpadKeyRejectedException::class) !== null) {
+		if ($e instanceof EtherpadKeyRejectedException) {
 			return self::REASON_API_KEY_REJECTED;
 		}
 
@@ -459,8 +457,7 @@ class EtherpadHealthCheckService {
 
 		// HTTP statuses come before transport reasons because they distinguish
 		// "Etherpad reachable but unhappy" from "cannot reach Etherpad at all".
-		// A refusal not in Etherpad's own words, or a proxy that wants its own
-		// credentials.
+		// Not in Etherpad's own words, or a proxy asking for credentials.
 		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)') || str_contains($message, 'http error (407)')) {
 			return self::REASON_DENIED_IN_FRONT;
 		}
@@ -532,10 +529,9 @@ class EtherpadHealthCheckService {
 	/**
 	 * Which input the failure points at. A rejected key is about the key; an
 	 * address that does not resolve, refuses or 404s is about the address, in
-	 * the field apiField() names. A server error, a non-JSON answer, or a
-	 * refusal not in Etherpad's own words, which may stand in for its answer
-	 * to the key, does not say which input is wrong, so neither field is
-	 * marked.
+	 * the field apiField() names. A server error, a non-JSON answer or a
+	 * refusal not in Etherpad's own words does not say which input is wrong,
+	 * so neither field is marked.
 	 */
 	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
 		$apiField = $this->apiField($settings);
