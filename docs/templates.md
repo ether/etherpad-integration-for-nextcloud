@@ -51,6 +51,8 @@ If the user picks "Blank" instead of a template, Nextcloud makes an empty file a
 
 Where an admin has limited the app to groups, only their members see **+ → New pad**. Nextcloud asks the app's template hooks for every user, and its template endpoint can be called without the entry, so the hooks check that the app is enabled for the user (`AppAccess`). For anyone else, a tile or an admin template is refused before Nextcloud creates the file. A create from the blank entry or from the user's own template provisions no pad. The file Nextcloud already created stays as it was given, empty or a copy of the template: removing it again could not be told apart from a file written meanwhile, which a delete that skips the trash would take for good.
 
+The same users get no pad viewer in Files or the Viewer either: its calls would go to the app's routes, which Nextcloud refuses them, so a `.pad` file shared with them gets Nextcloud's own handling. A public link to a pad still opens for anyone, signed in or not.
+
 ## Placeholder syntax
 
 Placeholders in the **body** are resolved when the new pad is created. The template's filename is **not** rewritten — see the next section. Syntax: `{{<resolver>[:<arg>][|<format>]}}`.
