@@ -57,13 +57,8 @@ class PublicShareUrlBuilder {
 			throw new InvalidShareFilePathException('Invalid file path.');
 		}
 
-		$rawFile = trim($fileParam);
-		if ($rawFile === '') {
-			return '?dir=' . rawurlencode('/');
-		}
-
 		try {
-			$normalized = $this->pathNormalizer->normalizePublicShareFilePath($rawFile, $token);
+			$normalized = $this->pathNormalizer->normalizePublicShareFilePath(trim($fileParam), $token);
 		} catch (\InvalidArgumentException $e) {
 			throw new InvalidShareFilePathException('Invalid file path.', 0, $e);
 		}
