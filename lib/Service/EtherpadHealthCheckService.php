@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Util\Causes;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IL10N;
@@ -443,15 +444,14 @@ class EtherpadHealthCheckService {
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
 	 *
-	 * A key Etherpad does not take is told by its type: Etherpad answers a
-	 * wrong key and another authenticationMethod alike, with its code 4,
-	 * under a 200 or a 401/403, and its wording is no contract. The rest is
-	 * matched on substrings, because EtherpadClient puts many failure shapes
-	 * into one message. If that wording changes the classification just
-	 * falls through to REASON_UNKNOWN; the error itself still surfaces.
+	 * A key Etherpad does not take is told by its type, which says when that
+	 * is. The rest is matched on substrings, because EtherpadClient puts many
+	 * failure shapes into one message. If that wording changes the
+	 * classification just falls through to REASON_UNKNOWN; the error itself
+	 * still surfaces.
 	 */
 	private function classifyFailure(\Throwable $e, string $rawMessage): string {
-		if (EtherpadKeyRejectedException::foundIn($e) !== null) {
+		if (Causes::find($e, EtherpadKeyRejectedException::class) !== null) {
 			return self::REASON_API_KEY_REJECTED;
 		}
 
@@ -459,8 +459,9 @@ class EtherpadHealthCheckService {
 
 		// HTTP statuses come before transport reasons because they distinguish
 		// "Etherpad reachable but unhappy" from "cannot reach Etherpad at all".
-		// A 401 or 403 without Etherpad's code 4 is not Etherpad's answer.
-		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)')) {
+		// A refusal not in Etherpad's own words, or a proxy that wants its own
+		// credentials.
+		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)') || str_contains($message, 'http error (407)')) {
 			return self::REASON_DENIED_IN_FRONT;
 		}
 		if (str_contains($message, 'http error (404)')) {
@@ -506,7 +507,7 @@ class EtherpadHealthCheckService {
 	private function hintForReason(string $reason): string {
 		return match ($reason) {
 			self::REASON_API_KEY_REJECTED => $this->l10n->t('Hint: Etherpad rejected the API key. Check that the key matches Etherpad\'s APIKEY.txt and that Etherpad\'s settings.json has "authenticationMethod": "apikey".'),
-			self::REASON_DENIED_IN_FRONT => $this->l10n->t('Hint: Something in front of Etherpad, such as a proxy or a firewall, refused the request; the answer is not Etherpad\'s. Check the API URL and what sits in front of Etherpad.'),
+			self::REASON_DENIED_IN_FRONT => $this->l10n->t('Hint: A proxy or firewall in front of Etherpad refused the request, or replaced Etherpad\'s answer with its own. Check what sits in front of Etherpad, then the API key.'),
 			self::REASON_API_NOT_FOUND => $this->l10n->t('Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.'),
 			self::REASON_SERVER_ERROR => $this->l10n->t('Hint: Etherpad returned a server error. Check the Etherpad server logs.'),
 			self::REASON_DNS => $this->l10n->t('Hint: The configured Etherpad host did not resolve. Check the hostname for typos and that DNS reaches it from this server.'),
@@ -531,8 +532,10 @@ class EtherpadHealthCheckService {
 	/**
 	 * Which input the failure points at. A rejected key is about the key; an
 	 * address that does not resolve, refuses or 404s is about the address, in
-	 * the field apiField() names. A server error or non-JSON answer does not
-	 * say which input is wrong, so neither field is marked.
+	 * the field apiField() names. A server error, a non-JSON answer, or a
+	 * refusal not in Etherpad's own words, which may stand in for its answer
+	 * to the key, does not say which input is wrong, so neither field is
+	 * marked.
 	 */
 	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
 		$apiField = $this->apiField($settings);
@@ -540,7 +543,6 @@ class EtherpadHealthCheckService {
 		return match ($reason) {
 			self::REASON_API_KEY_REJECTED,
 			self::REASON_API_KEY_OTHER => 'etherpad_api_key',
-			self::REASON_DENIED_IN_FRONT,
 			self::REASON_API_NOT_FOUND,
 			self::REASON_DNS,
 			self::REASON_CONNECTION_REFUSED,

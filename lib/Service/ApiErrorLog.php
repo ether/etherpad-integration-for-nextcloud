@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Util\Causes;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\ICacheFactory;
 use OCP\IMemcache;
@@ -115,7 +116,7 @@ final class ApiErrorLog {
 	 * key would show only once someone opens a pad. On the answers' minute.
 	 */
 	public function reportIfKeyRejected(\Throwable $e): void {
-		$rejected = EtherpadKeyRejectedException::foundIn($e);
+		$rejected = Causes::find($e, EtherpadKeyRejectedException::class);
 		if ($rejected !== null) {
 			$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($rejected)]);
 		}

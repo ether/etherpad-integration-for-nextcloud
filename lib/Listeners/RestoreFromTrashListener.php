@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\Causes;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
@@ -145,7 +146,8 @@ class RestoreFromTrashListener implements IEventListener {
 				]);
 			}
 		} catch (\Throwable $e) {
-			if ($fileId !== null && $via === self::VIA_HOOK && self::etherpadFailed($e)) {
+			// Etherpad's failure at the root of $e: no answer, or an error.
+			if ($fileId !== null && $via === self::VIA_HOOK && Causes::find($e, EtherpadClientException::class) !== null) {
 				$this->decidedByHook[$fileId] = true;
 			}
 			$this->apiErrorLog->reportIfKeyRejected($e);
@@ -185,16 +187,6 @@ class RestoreFromTrashListener implements IEventListener {
 		} catch (\Throwable) {
 			return null;
 		}
-	}
-
-	/** Whether Etherpad's failure is at the root of $e: no answer, or an error. */
-	private static function etherpadFailed(\Throwable $e): bool {
-		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
-			if ($cause instanceof EtherpadClientException) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**

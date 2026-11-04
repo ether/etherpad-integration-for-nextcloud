@@ -376,6 +376,16 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		self::assertStringContainsString('Could not resolve host', $line->detail);
 	}
 
+	/** /health takes no key, so a 401 there is not about the key. */
+	public function testSessionCookieLineNamesWhatSitsInFrontForARefusedProbe(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('detectReleaseVersion')->willThrowException(new EtherpadClientException('HTTP error (401)'));
+
+		$line = $this->sessionCookieLine($etherpad);
+		self::assertStringContainsString('proxy or firewall', $line->detail);
+		self::assertStringNotContainsString('rejected the API key', $line->detail);
+	}
+
 	/**
 	 * `SameSite=None` is the one setting here that hands the cookie to other
 	 * sites, and it works only where Nextcloud authenticates without a
@@ -620,16 +630,13 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 	/** @return iterable<string,array{0:EtherpadClientException,1:string,2:string,3:string}> */
 	public static function failureCaseProvider(): iterable {
-		// Etherpad answers a wrong key and another authenticationMethod alike,
-		// with its code 4, under a 200 ...
 		yield 'code 4 under a 200' => [
 			new EtherpadKeyRejectedException('Etherpad API error (checkToken): no or wrong API Key'),
 			'authenticationMethod',
 			'etherpad_api_key',
 			'api_key_rejected',
 		];
-		// ... or under a 401, as the client wraps it.
-		yield 'code 4 under a 401' => [
+		yield 'code 4 under a 401, as the client wraps it' => [
 			new EtherpadKeyRejectedException('Etherpad API request failed: checkToken', 0, new EtherpadKeyRejectedException('Etherpad API HTTP error (401)')),
 			'APIKEY.txt',
 			'etherpad_api_key',
@@ -659,17 +666,24 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'etherpad_api_host',
 			'tls',
 		];
-		// Without code 4 the answer is not Etherpad's: the address is at fault.
-		yield 'http 401 from in front' => [
+		// Not in Etherpad's own words: a proxy may have sent it, or put its
+		// own page in place of Etherpad's answer to the key.
+		yield 'http 401 without code 4' => [
 			new EtherpadClientException('Etherpad API HTTP error (401)'),
-			'proxy or a firewall',
-			'etherpad_api_host',
+			'proxy or firewall',
+			'',
 			'denied_in_front',
 		];
-		yield 'http 403 from in front, as the client wraps it' => [
+		yield 'http 403 without code 4, as the client wraps it' => [
 			new EtherpadClientException('Etherpad API request failed: checkToken', 0, new EtherpadClientException('Etherpad API HTTP error (403)')),
-			'proxy or a firewall',
-			'etherpad_api_host',
+			'proxy or firewall',
+			'',
+			'denied_in_front',
+		];
+		yield 'http 407, a proxy that wants its own credentials' => [
+			new EtherpadClientException('Etherpad API HTTP error (407)'),
+			'proxy or firewall',
+			'',
 			'denied_in_front',
 		];
 		yield 'http 404' => [

@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCA\EtherpadNextcloud\Util\ApiKey;
+use OCA\EtherpadNextcloud\Util\Causes;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\Http\Client\IClientService;
@@ -486,7 +487,7 @@ class EtherpadClient {
 			// client hands it back wrapped. It has to survive as its own
 			// type: the caller says "too large to show" rather than
 			// "request failed".
-			$tooLarge = $this->findTooLargeCause($e);
+			$tooLarge = Causes::find($e, EtherpadTooLargeException::class);
 			if ($tooLarge !== null) {
 				throw $tooLarge;
 			}
@@ -519,16 +520,6 @@ class EtherpadClient {
 
 		$data = $decoded['data'] ?? [];
 		return is_array($data) ? $data : [];
-	}
-
-	private function findTooLargeCause(\Throwable $e): ?EtherpadTooLargeException {
-		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
-			if ($cause instanceof EtherpadTooLargeException) {
-				return $cause;
-			}
-		}
-
-		return null;
 	}
 
 	/**
@@ -773,7 +764,7 @@ class EtherpadClient {
 			// Our own refusal, thrown from the sink while the body was
 			// arriving. It is not a transport failure and must keep its
 			// type all the way to the error mapper.
-			$tooLarge = $this->findTooLargeCause($e);
+			$tooLarge = Causes::find($e, EtherpadTooLargeException::class);
 			if ($tooLarge !== null) {
 				throw $tooLarge;
 			}
