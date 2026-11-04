@@ -8,23 +8,33 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Util\PadViewerAssets;
 use OCA\Viewer\Event\LoadViewer;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
-use OCP\Util;
 
 /**
- * Registers the pad Viewer when Nextcloud's Viewer is loaded.
+ * Loads the pad viewer wherever Nextcloud's Viewer is loaded - Files,
+ * Activity, Talk - for a signed-in user the app is enabled for, as
+ * LoadFilesScriptsListener does.
  *
  * @template-implements IEventListener<Event>
  */
 class LoadViewerListener implements IEventListener {
+	public function __construct(
+		private AppAccess $appAccess,
+	) {
+	}
+
 	public function handle(Event $event): void {
 		if (!$event instanceof LoadViewer) {
 			return;
 		}
+		if (!$this->appAccess->isEnabledForCurrentUser()) {
+			return;
+		}
 
-		Util::addInitScript(Application::APP_ID, 'etherpad_nextcloud-viewer-init');
+		PadViewerAssets::load();
 	}
 }

@@ -565,12 +565,12 @@ Registered in `lib/AppInfo/Application.php`.
 
 - `OCP\EventDispatcher\GenericEvent` (Files FullTextSearch's legacy events) -> `FullTextSearchIndexingListener`, `FullTextSearchResultListener`
 - `OCP\Security\CSP\AddContentSecurityPolicyEvent` -> `CSPListener`
-- `OCA\Files\Event\LoadAdditionalScriptsEvent` -> `LoadFilesScriptsListener`
-- `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent` -> `LoadPublicShareScriptsListener`
+- `OCA\Files\Event\LoadAdditionalScriptsEvent` -> `LoadFilesScriptsListener` (the pad viewer, for a user the app is enabled for)
+- `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent` -> `LoadPublicShareScriptsListener` (the pad viewer on a public share page, for any visitor)
 - `OCP\Files\Template\RegisterTemplateCreatorEvent` -> `RegisterTemplateCreatorListener` (for a user the app is enabled for; `docs/templates.md`)
 - `OCP\Files\Template\BeforeGetTemplatesEvent` -> `BeforeGetTemplatesListener` (priority -100)
 - `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener` (refuses a user the app is not enabled for; `docs/templates.md`)
-- `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
+- `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener` (the pad viewer, for a user the app is enabled for)
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
 - `OCP\User\Events\BeforeUserDeletedEvent` -> `RevokeSessionsOnAccountDeleteListener` (the account's sessions, as on a logout)
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`

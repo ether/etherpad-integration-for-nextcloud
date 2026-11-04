@@ -236,6 +236,10 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-user-share** — user-to-user share grants access, revoke removes
   it (NC boundary; Etherpad's own session-cookie window is out of scope).
 - **pad-ownership-boundary** — cross-user `open-by-id` is rejected.
+- **pad-app-limited-to-groups** — with the app limited to a group, a user
+  outside it gets no "New pad" entry, a template create provisions no pad,
+  and the Files page carries no viewer of the app; a public link still
+  does. Makes and removes a throwaway account and group.
 - **public-share-view** — public share opens without login, plus auth
   boundaries (tokenless access, invalid / non-pad tokens), all signed out.
   A viewer link sends a signed-out visitor to the login; the old address
