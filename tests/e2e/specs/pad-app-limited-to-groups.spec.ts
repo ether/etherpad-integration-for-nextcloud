@@ -164,15 +164,13 @@ test.describe('the app limited to groups', () => {
 	test('loads the viewer on a public link for a user outside the group', async () => {
 		const name = uniquePadName('limited-public-link')
 		await createPadAtPath(`/${name}`)
-		try {
-			const { token } = await createPublicReadShare(`/${name}`)
-			const res = await fetch(`${E2E.baseURL}/s/${encodeURIComponent(token)}`, { headers: { Authorization: authOf(outsider!) } })
-			expect(res.status, 'the public link as a user outside the group').toBe(200)
-			expect(res.url, 'the share page, not a login or a password prompt').toContain(`/s/${token}`)
-			expect(await res.text(), 'a user outside the group').toContain(`${APP}-viewer-init`)
-		} finally {
-			await deleteViaDav(`/${name}`)
-		}
+		made.push(name)
+
+		const { token } = await createPublicReadShare(`/${name}`)
+		const res = await fetch(`${E2E.baseURL}/s/${encodeURIComponent(token)}`, { headers: { Authorization: authOf(outsider!) } })
+		expect(res.status, 'the public link as a user outside the group').toBe(200)
+		expect(res.url, 'the share page, not a login or a password prompt').toContain(`/s/${token}`)
+		expect(await res.text(), 'a user outside the group').toContain(`${APP}-viewer-init`)
 	})
 
 	for (const [label, templateType, templateId] of [
