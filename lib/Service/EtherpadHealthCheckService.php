@@ -183,7 +183,10 @@ class EtherpadHealthCheckService {
 			);
 		}
 
-		return $this->withCrossSiteNote($this->sessionCookieDiagnosis($settings), $settings, $cookieDomain);
+		return $this->withCrossSiteNote(
+			$this->sessionCookieDiagnosis($settings),
+			$this->crossSiteNote($settings, $cookieDomain),
+		);
 	}
 
 	private function sessionCookieDiagnosis(ValidatedAdminSettings $settings): HealthCheckItem {
@@ -296,8 +299,7 @@ class EtherpadHealthCheckService {
 	 * why that cookie does not reach such a frame; it does not confirm that
 	 * a frame is logged in.
 	 */
-	private function withCrossSiteNote(HealthCheckItem $item, ValidatedAdminSettings $settings, CookieDomainDecision $cookieDomain): HealthCheckItem {
-		$note = $this->crossSiteNote($settings, $cookieDomain);
+	private function withCrossSiteNote(HealthCheckItem $item, string $note): HealthCheckItem {
 		if ($note === '') {
 			return $item;
 		}
