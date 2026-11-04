@@ -117,16 +117,8 @@ class PadFileService {
 
 	/** @return array{url: string, pad_id: string}|null */
 	public function parseLegacyOwnpadShortcut(string $content): ?array {
-		$normalized = str_replace("\r\n", "\n", $content);
-		if (!preg_match('/^\s*\[InternetShortcut\]\s*$/mi', $normalized)) {
-			return null;
-		}
-		if (!preg_match('/^\s*URL\s*=\s*(.+)\s*$/mi', $normalized, $matches)) {
-			return null;
-		}
-
-		$url = trim($matches[1]);
-		if ($url === '' || preg_match('#^https?://#i', $url) !== 1) {
+		$url = $this->shortcutUrl($content);
+		if ($url === null || preg_match('#^https?://#i', $url) !== 1) {
 			return null;
 		}
 
@@ -150,6 +142,33 @@ class PadFileService {
 			'url' => $url,
 			'pad_id' => $padId,
 		];
+	}
+
+	/**
+	 * The value of the first URL= line in the [InternetShortcut] section, or
+	 * null. Lines, keys and values are trimmed, and names match in any case.
+	 * A line that starts with [ and holds a ] starts a section; only
+	 * [InternetShortcut] as a whole line is this one, so a URL under another
+	 * section is not this shortcut's. A value ends with its line: the line
+	 * after an empty URL= is no part of it.
+	 */
+	private function shortcutUrl(string $content): ?string {
+		$inSection = false;
+		$text = str_starts_with($content, "\u{FEFF}") ? substr($content, 3) : $content;
+		// strtok rather than splitting: an array of every line can exhaust
+		// memory on a large file, and the empty lines it skips say nothing.
+		for ($line = strtok($text, "\r\n"); $line !== false; $line = strtok("\r\n")) {
+			$line = trim($line);
+			if (str_starts_with($line, '[') && str_contains($line, ']')) {
+				$inSection = strcasecmp($line, '[InternetShortcut]') === 0;
+				continue;
+			}
+			$pair = explode('=', $line, 2);
+			if ($inSection && count($pair) === 2 && strcasecmp(trim($pair[0]), 'URL') === 0) {
+				return trim($pair[1]);
+			}
+		}
+		return null;
 	}
 
 	public function inferAccessModeFromPadId(string $padId): string {

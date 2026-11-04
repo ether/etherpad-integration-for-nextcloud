@@ -904,6 +904,83 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
+			// A .pad written or edited on Windows.
+			'CRLF line ends' => [
+				"[InternetShortcut]\r\nURL=https://pad.example.test/p/demo\r\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// A URL line under another section names no pad of this file.
+			'a URL line under another section before it' => [
+				"[DEFAULT]\nURL=https://other.example.test/p/other\n[InternetShortcut]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'another section with a URL line after it' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\n[Other]\nURL=https://other.example.test/p/other\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'two URL lines in the section' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\nURL=https://pad.example.test/p/second\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'line ends converted twice' => [
+				"[InternetShortcut]\r\r\nURL=https://pad.example.test/p/demo\r\r\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'CR line ends' => [
+				"[InternetShortcut]\rIconIndex=0\rURL=https://pad.example.test/p/demo\r",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'a byte order mark before it' => [
+				"\u{FEFF}[InternetShortcut]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'an indented header with whitespace after it' => [
+				"  [InternetShortcut] \t\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'a URL line without = before it' => [
+				"[InternetShortcut]\nURL\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// A key is URL only as a whole.
+			'a key that ends in URL before it' => [
+				"[InternetShortcut]\nIconURL=https://other.example.test/p/other\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// The URL lies beyond a megabyte: a reader that stops early misses it.
+			'a long section' => [
+				"[InternetShortcut]\n" . str_repeat("Note=x\n", 200000) . "URL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// A [ without a ] starts no section.
+			'a line that only starts like a header' => [
+				"[InternetShortcut]\n[unfinished\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// Brackets inside a value must not change the current section.
+			'a note with brackets in it' => [
+				"[InternetShortcut]\nNote=see [1]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// A query string holds = signs of its own.
+			'a query string in the URL' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo?showChat=false\n",
+				'https://pad.example.test/p/demo?showChat=false',
+				'demo',
+			],
 			'whitespace around the URL' => [
 				"[InternetShortcut]\nURL = https://pad.example.test/p/demo \t\n",
 				'https://pad.example.test/p/demo',
@@ -957,6 +1034,13 @@ class PadFileServiceTest extends TestCase {
 			'the section name inside other text' => ["see [InternetShortcut]\nURL=https://pad.example.test/p/demo\n"],
 			'the section name with more after it' => ["[InternetShortcut] more\nURL=https://pad.example.test/p/demo\n"],
 			'the section without a URL' => ["[InternetShortcut]\nIconIndex=0\n"],
+			'a URL line only under a later section' => ["[InternetShortcut]\nIconIndex=0\n[Other]\nURL=https://pad.example.test/p/demo\n"],
+			// The line after an empty URL= is no part of it.
+			'an empty URL with an address on the next line' => ["[InternetShortcut]\nURL=\nhttps://pad.example.test/p/demo\n"],
+			// The first URL= counts, even an empty one.
+			'an empty URL before another' => ["[InternetShortcut]\nURL=\nURL=https://pad.example.test/p/second\n"],
+			'another header with a note after it' => ["[InternetShortcut]\nIconIndex=0\n[Other] ; note\nURL=https://pad.example.test/p/demo\n"],
+			'an indented header after it' => ["[InternetShortcut]\nIconIndex=0\n\t[Other] \nURL=https://pad.example.test/p/demo\n"],
 			'another scheme' => ["[InternetShortcut]\nURL=ftp://example.test/p/pad\n"],
 			'another scheme with https further in' => ["[InternetShortcut]\nURL=ftp://mirror.example.test/https://pad.example.test/p/demo\n"],
 			'a URL that does not parse' => ["[InternetShortcut]\nURL=https://pad.example.test:99999/p/demo\n"],
