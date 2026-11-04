@@ -73,7 +73,10 @@ class AdminSettingsValidator {
 
 		return new ValidatedAdminSettings(
 			$host,
-			$apiHost,
+			// The base URL again is no API URL of its own. Stored empty, the
+			// API follows a later change of the base URL, as the field's hint
+			// says.
+			$apiHost === $host ? '' : $apiHost,
 			$cookieDomain,
 			$apiKeyToStore,
 			$effectiveApiKey,

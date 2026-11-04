@@ -17,7 +17,6 @@ use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
-use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IConfig;
@@ -48,9 +47,10 @@ class AdminSettings implements ISettings {
 
 		$etherpadHost = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_host', '');
 		$etherpadApiHost = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '');
-		// A stored copy of the base URL shows empty, and the next save stores
-		// it empty too.
-		if (!ValidatedAdminSettings::isOwnApiHost($etherpadApiHost, $etherpadHost)) {
+		// Older versions stored an empty field as a copy of the base URL. It
+		// shows empty, so the next save stores it empty and the API follows
+		// the base URL from then on.
+		if ($etherpadApiHost === $etherpadHost) {
 			$etherpadApiHost = '';
 		}
 		$cookieDomainConfigured = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes';

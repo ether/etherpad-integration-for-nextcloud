@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Util\ApiKey;
 class ValidatedAdminSettings {
 	public function __construct(
 		public readonly string $etherpadHost,
+		/** Empty without an API URL of its own; see effectiveApiHost(). */
 		public readonly string $etherpadApiHost,
 		public readonly string $etherpadCookieDomain,
 		/**
@@ -46,14 +47,8 @@ class ValidatedAdminSettings {
 		return new ApiKey($this->effectiveApiKey);
 	}
 
-	/**
-	 * Whether an API URL is the admin's own rather than the base URL again.
-	 * The base URL again is stored empty, so the API follows a later change
-	 * of the base URL, as the field's hint says. Only a trailing slash is
-	 * ignored: an address that differs in anything else, http for https or
-	 * its spelling, stays visible as the admin's own.
-	 */
-	public static function isOwnApiHost(string $apiHost, string $baseHost): bool {
-		return rtrim($apiHost, '/') !== rtrim($baseHost, '/');
+	/** Where these settings would call Etherpad's API. */
+	public function effectiveApiHost(): string {
+		return $this->etherpadApiHost !== '' ? $this->etherpadApiHost : $this->etherpadHost;
 	}
 }

@@ -65,7 +65,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 		$settings = new ValidatedAdminSettings(
 			'https://pad.example.test',
-			'https://pad.example.test',
+			'',
 			'.example.test',
 			'ep-api-0123456789abcdef',
 			'ep-api-0123456789abcdef',
@@ -101,12 +101,13 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame('etherpad_api_host', $byId['api']->field);
 	}
 
-	/** With no API URL of its own, the base URL supplied the address. */
+	/** With no API URL of its own, the base URL is called and named. */
 	public function testTheApiLineNamesTheBaseUrlFieldWithoutAnApiUrl(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 
 		$result = $this->buildService($etherpad, $this->bindingCounts())->check($this->settingsWithoutSeparateApiHost());
 
+		$this->assertSame('https://pad.example.test/api/1.3.0/checkToken', $result->target);
 		$this->assertSame('etherpad_host', $result->checks[0]->field);
 	}
 
@@ -292,7 +293,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	private function settingsWithoutSeparateApiHost(): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			'https://pad.example.test',
-			'https://pad.example.test',
+			'',
 			'.example.test',
 			'ep-api-0123456789abcdef',
 			'ep-api-0123456789abcdef',

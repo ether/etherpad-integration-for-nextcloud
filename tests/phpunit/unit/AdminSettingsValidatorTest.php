@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
 use OCA\EtherpadNextcloud\Service\TrustedEmbedOriginsNormalizer;
 use OCP\IL10N;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -35,7 +36,8 @@ class AdminSettingsValidatorTest extends TestCase {
 		], $this->stored());
 
 		$this->assertSame('https://pad.example.test/base', $result->etherpadHost);
-		$this->assertSame('https://pad.example.test/base', $result->etherpadApiHost);
+		$this->assertSame('', $result->etherpadApiHost);
+		$this->assertSame('https://pad.example.test/base', $result->effectiveApiHost());
 		$this->assertSame('.example.test', $result->etherpadCookieDomain);
 		$this->assertSame('new-key', $result->apiKeyToStore()?->reveal());
 		$this->assertSame('new-key', $result->effectiveApiKey()->reveal());
@@ -174,7 +176,29 @@ class AdminSettingsValidatorTest extends TestCase {
 		], $this->stored());
 
 		$this->assertSame('https://[::1]:9001/base', $result->etherpadHost);
-		$this->assertSame('https://[::1]:9001/base', $result->etherpadApiHost);
+		$this->assertSame('https://[::1]:9001/base', $result->effectiveApiHost());
+	}
+
+	public static function apiUrlsBesideTheBaseUrl(): iterable {
+		yield 'the base URL again' => ['https://pad.example.test', ''];
+		// Compared as normalized, as the base URL is stored.
+		yield 'the base URL in other letters, with a slash' => ['HTTPS://PAD.example.test/', ''];
+		// The API may use http where the base URL may not.
+		yield 'http for https' => ['http://pad.example.test', 'http://pad.example.test'];
+		yield 'another host' => ['https://pad-api.example.test', 'https://pad-api.example.test'];
+	}
+
+	/** Stored empty, the API follows a later change of the base URL. */
+	#[DataProvider('apiUrlsBesideTheBaseUrl')]
+	public function testKeepsOnlyAnApiUrlOfItsOwn(string $apiUrl, string $kept): void {
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_host' => $apiUrl,
+			'etherpad_api_key' => 'key',
+			'etherpad_api_version' => '1.3.0',
+		], $this->stored());
+
+		$this->assertSame($kept, $result->etherpadApiHost);
 	}
 
 	public function testValidateNormalizesIpv6ApiHost(): void {

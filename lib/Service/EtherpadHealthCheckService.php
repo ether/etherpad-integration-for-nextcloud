@@ -53,7 +53,7 @@ class EtherpadHealthCheckService {
 		$startedAt = $this->nowSeconds();
 		try {
 			$this->etherpadClient->assertApiKeyAccepted(
-				$settings->etherpadApiHost,
+				$settings->effectiveApiHost(),
 				$settings->effectiveApiKey(),
 				$settings->etherpadApiVersion,
 			);
@@ -109,7 +109,7 @@ class EtherpadHealthCheckService {
 
 		$latencyMs = (int)round(($this->nowSeconds() - $startedAt) * 1000.0);
 		$target = EtherpadClient::buildApiUrl(
-			$settings->etherpadApiHost,
+			$settings->effectiveApiHost(),
 			$settings->etherpadApiVersion,
 			EtherpadClient::API_KEY_PROBE_METHOD,
 		);
@@ -119,9 +119,7 @@ class EtherpadHealthCheckService {
 		// summary and the payload cannot disagree about it. A single
 		// verdict hid the fact that only the API host is contacted, so a typo in
 		// the base URL — which every pad link in the browser uses — still read
-		// as a clean pass. An empty API URL falls back to the base URL, so the
-		// API line points at whichever field actually supplied the address.
-		$apiField = ValidatedAdminSettings::isOwnApiHost($settings->etherpadApiHost, $settings->etherpadHost) ? 'etherpad_api_host' : 'etherpad_host';
+		// as a clean pass.
 		$checks = [
 			new HealthCheckItem(
 				'api',
@@ -131,7 +129,7 @@ class EtherpadHealthCheckService {
 					$this->l10n->t('{target} — {latency} ms'),
 					['target' => $target, 'latency' => (string)$latencyMs],
 				),
-				$apiField,
+				$this->apiField($settings),
 			),
 			new HealthCheckItem(
 				'api_key',
@@ -146,7 +144,7 @@ class EtherpadHealthCheckService {
 
 		return new HealthCheckResult(
 			$settings->etherpadHost,
-			$settings->etherpadApiHost,
+			$settings->effectiveApiHost(),
 			$settings->etherpadApiVersion,
 			$latencyMs,
 			$target,
@@ -206,7 +204,7 @@ class EtherpadHealthCheckService {
 			// The full timeout, not the open path's three seconds: a slow
 			// but healthy pad server is not a misconfiguration.
 			$release = $this->etherpadClient->detectReleaseVersion(
-				$settings->etherpadApiHost,
+				$settings->effectiveApiHost(),
 				EtherpadClient::REQUEST_TIMEOUT_SECONDS,
 			);
 			$probeError = null;
@@ -239,7 +237,7 @@ class EtherpadHealthCheckService {
 		// Before the first save there is none, and no address is in use: the
 		// one tested is not it either.
 		$configuredHost = $this->etherpadClient->configuredApiHost();
-		if (rtrim($configuredHost, '/') !== rtrim($settings->etherpadApiHost, '/')) {
+		if (rtrim($configuredHost, '/') !== rtrim($settings->effectiveApiHost(), '/')) {
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_OK,
 				$this->fill(
@@ -520,14 +518,23 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
+	 * The field that supplied the API address: the API URL, or the base URL
+	 * where there is no API URL of its own (left empty, or the base URL
+	 * again).
+	 */
+	private function apiField(ValidatedAdminSettings $settings): string {
+		return $settings->etherpadApiHost !== '' ? 'etherpad_api_host' : 'etherpad_host';
+	}
+
+	/**
 	 * Which input the failure points at. A rejected key is about the key; an
-	 * address that does not resolve, refuses or 404s is about the address —
-	 * which is the base URL field when no separate API URL is set. A server
-	 * error or non-JSON answer means the address is fine and something behind
-	 * it is not, so neither field is marked.
+	 * address that does not resolve, refuses or 404s is about the address, in
+	 * the field apiField() names. A server error or non-JSON answer means the
+	 * address is fine and something behind it is not, so neither field is
+	 * marked.
 	 */
 	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
-		$apiField = ValidatedAdminSettings::isOwnApiHost($settings->etherpadApiHost, $settings->etherpadHost) ? 'etherpad_api_host' : 'etherpad_host';
+		$apiField = $this->apiField($settings);
 
 		return match ($reason) {
 			self::REASON_API_KEY_MODE,

@@ -43,11 +43,7 @@ class AdminSettingsRepository {
 
 	public function persist(ValidatedAdminSettings $settings): void {
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_host', $settings->etherpadHost);
-		$this->config->setAppValue(
-			Application::APP_ID,
-			'etherpad_api_host',
-			ValidatedAdminSettings::isOwnApiHost($settings->etherpadApiHost, $settings->etherpadHost) ? $settings->etherpadApiHost : '',
-		);
+		$this->config->setAppValue(Application::APP_ID, 'etherpad_api_host', $settings->etherpadApiHost);
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_cookie_domain', $settings->etherpadCookieDomain);
 		// Carry the validator's verdict rather than forcing 'yes': a client
 		// that omits the optional field has not configured anything, and
