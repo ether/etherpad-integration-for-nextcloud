@@ -36,9 +36,14 @@ class PublicShareUrlBuilder {
 		return $this->urlGenerator->linkToRoute('files_sharing.sharecontroller.showShare', ['token' => $token]);
 	}
 
+	/**
+	 * Checks the file before it builds the link, so a refused file costs no
+	 * route lookup.
+	 *
+	 * @throws InvalidShareFilePathException
+	 * @throws NotAPadFileException
+	 */
 	public function buildShareRedirectUrl(string $token, mixed $fileParam): string {
-		// Before the link: for a file it cannot name, the caller builds the
-		// root's link instead, and this one would be thrown away.
 		$selection = $this->fileSelection($token, $fileParam);
 		return $this->buildShareBaseUrl($token) . $selection;
 	}
@@ -66,18 +71,13 @@ class PublicShareUrlBuilder {
 			return '?dir=' . rawurlencode('/');
 		}
 
-		$path = trim($normalized, '/');
-		if ($path === '') {
-			return '?dir=' . rawurlencode('/');
-		}
-
-		$dir = dirname($path);
+		$dir = dirname($normalized);
 		if ($dir === '.') {
 			$dir = '/';
 		} else {
 			$dir = '/' . $dir;
 		}
-		$fileName = basename($path);
+		$fileName = basename($normalized);
 		if (!PadFileType::isPad($fileName)) {
 			throw new NotAPadFileException('The selected file is not a .pad document.');
 		}

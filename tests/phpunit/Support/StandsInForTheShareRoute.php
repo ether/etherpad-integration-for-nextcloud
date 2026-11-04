@@ -11,9 +11,9 @@ namespace OCA\EtherpadNextcloud\Tests\Support;
 use OCP\IURLGenerator;
 
 /**
- * Nextcloud's router for the share page, as it answers: the prefix it puts
- * before /s/<token>, the token encoded by the router. Any other route
- * fails the test, so a wrong route name cannot pass.
+ * Stands in for Nextcloud's router on the share route: answers
+ * `<prefix>/s/<rawurlencoded token>` and fails the test on any other route
+ * name.
  */
 trait StandsInForTheShareRoute {
 	private function shareRoute(string $prefix = ''): IURLGenerator {

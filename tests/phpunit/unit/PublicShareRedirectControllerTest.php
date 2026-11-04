@@ -12,6 +12,7 @@ use OCP\App\IAppManager;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\PublicShareController;
 use OCP\IRequest;
+use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 
 class PublicShareRedirectControllerTest extends TestCase {
@@ -58,11 +59,15 @@ class PublicShareRedirectControllerTest extends TestCase {
 		];
 	}
 
+	/** Without files_sharing the router would load every app's routes to find none. */
 	public function testWithoutFilesSharingItAnswersNotFound(): void {
-		$this->assertInstanceOf(NotFoundResponse::class, $this->buildController('/Sub/A.pad', sharing: false)->showPad('share-token'));
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->expects($this->never())->method('linkToRoute');
+
+		$this->assertInstanceOf(NotFoundResponse::class, $this->buildController('/Sub/A.pad', sharing: false, urlGenerator: $urlGenerator)->showPad('share-token'));
 	}
 
-	private function buildController(string $file, bool $sharing = true): PublicShareRedirectController {
+	private function buildController(string $file, bool $sharing = true, ?IURLGenerator $urlGenerator = null): PublicShareRedirectController {
 		$request = $this->createMock(IRequest::class);
 		$request->method('getParam')->willReturnCallback(
 			static fn (string $key, mixed $default = null): mixed => $key === 'file' ? $file : $default
@@ -71,6 +76,6 @@ class PublicShareRedirectControllerTest extends TestCase {
 		$appManager->method('isEnabledForAnyone')->willReturnCallback(
 			fn (string $appId): bool => $appId === 'files_sharing' ? $sharing : $this->fail('asked about ' . $appId),
 		);
-		return new PublicShareRedirectController('etherpad_nextcloud', $request, new PublicShareUrlBuilder($this->shareRoute(), new PathNormalizer()), $appManager);
+		return new PublicShareRedirectController('etherpad_nextcloud', $request, new PublicShareUrlBuilder($urlGenerator ?? $this->shareRoute(), new PathNormalizer()), $appManager);
 	}
 }

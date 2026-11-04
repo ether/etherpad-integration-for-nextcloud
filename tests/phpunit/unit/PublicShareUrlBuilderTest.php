@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Tests\Support\StandsInForTheShareRoute;
 use OCP\IURLGenerator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PublicShareUrlBuilderTest extends TestCase {
@@ -19,7 +20,7 @@ class PublicShareUrlBuilderTest extends TestCase {
 		$this->assertSame('/nc/index.php/s/share-token', $this->buildBuilder('/nc/index.php')->buildShareBaseUrl('share-token'));
 	}
 
-	/** The router encodes the token: passed encoded, it would be twice. */
+	/** The router encodes the token: a token passed encoded would come out encoded twice. */
 	public function testBuildShareBaseUrlHandsTheTokenOnAsItIs(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->expects($this->once())->method('linkToRoute')
@@ -36,7 +37,6 @@ class PublicShareUrlBuilderTest extends TestCase {
 		$this->assertSame('/index.php/s/share-token?path=%2FSub&files=A.pad', $builder->buildShareRedirectUrl('share-token', '/Sub/A.pad'));
 	}
 
-	/** The caller builds the root's link then; this one would go unused. */
 	public function testAFileTheLinkCannotNameBuildsNoLink(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->expects($this->never())->method('linkToRoute');
@@ -46,8 +46,20 @@ class PublicShareUrlBuilderTest extends TestCase {
 		(new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()))->buildShareRedirectUrl('share-token', '/Text.txt');
 	}
 
-	public function testBuildShareRedirectUrlDefaultsToRootDirectory(): void {
-		$this->assertSame('/s/share-token?dir=%2F', $this->buildBuilder()->buildShareRedirectUrl('share-token', ''));
+	public static function theSharesRoot(): iterable {
+		yield 'no file' => [''];
+		yield 'a slash' => ['/'];
+		yield 'a dot' => ['.'];
+	}
+
+	#[DataProvider('theSharesRoot')]
+	public function testBuildShareRedirectUrlDefaultsToRootDirectory(string $file): void {
+		$this->assertSame('/s/share-token?dir=%2F', $this->buildBuilder()->buildShareRedirectUrl('share-token', $file));
+	}
+
+	/** The common case in a shared folder: the pad at its top. */
+	public function testBuildShareRedirectUrlSelectsAPadAtTheRoot(): void {
+		$this->assertSame('/s/share-token?path=%2F&files=A.pad', $this->buildBuilder()->buildShareRedirectUrl('share-token', '/A.pad'));
 	}
 
 	public function testBuildShareRedirectUrlBuildsNestedPadSelection(): void {
