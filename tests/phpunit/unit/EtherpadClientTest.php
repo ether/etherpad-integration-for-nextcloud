@@ -477,7 +477,7 @@ class EtherpadClientTest extends TestCase {
 	 * Etherpad's own code 4 - under HTTP 401 as Etherpad sends it, or 403,
 	 * also where Nextcloud's client throws on the status and hands the
 	 * answer back, or under a success status - is a rejected key, with the
-	 * messages the connection test's hints read. A 401 or 403 without it - a
+	 * messages the connection test shows. A 401 or 403 without it - a
 	 * proxy's page, another JSON - is not, nor another status or code. No
 	 * message holds the key, even where the answer quotes it.
 	 */
@@ -732,7 +732,8 @@ class EtherpadClientTest extends TestCase {
 			$this->response(200, '{"code":4,"message":"no or wrong API Key","data":null}'),
 		);
 
-		$this->expectException(EtherpadClientException::class);
+		// Its type, which the connection test tells the key by.
+		$this->expectException(EtherpadKeyRejectedException::class);
 		$this->expectExceptionMessage('no or wrong API Key');
 		$client->assertApiKeyAccepted('https://pad.example.test', new ApiKey('wrong-key'), '1.3.0');
 	}

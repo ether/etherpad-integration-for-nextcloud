@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Service\BaseUrlReachabilityCheck;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
@@ -375,6 +376,16 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		self::assertStringContainsString('Could not resolve host', $line->detail);
 	}
 
+	/** /health takes no key, so a 401 there does not get the rejected key's hint. */
+	public function testSessionCookieLineNamesWhatSitsInFrontForARefusedProbe(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('detectReleaseVersion')->willThrowException(new EtherpadClientException('HTTP error (401)'));
+
+		$line = $this->sessionCookieLine($etherpad);
+		self::assertStringContainsString('proxy or firewall', $line->detail);
+		self::assertStringNotContainsString('rejected the API key', $line->detail);
+	}
+
 	/**
 	 * `SameSite=None` is the one setting here that hands the cookie to other
 	 * sites, and it works only where Nextcloud authenticates without a
@@ -617,73 +628,99 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		}
 	}
 
-	/** @return iterable<string,array{0:string,1:string,2:string}> */
+	/** @return iterable<string,array{0:EtherpadClientException,1:string,2:string,3:string}> */
 	public static function failureCaseProvider(): iterable {
-		yield 'api key mode' => [
-			'no or wrong API Key',
+		yield 'code 4 under a 200' => [
+			new EtherpadKeyRejectedException('Etherpad API error (checkToken): no or wrong API Key'),
 			'authenticationMethod',
 			'etherpad_api_key',
-			'api_key_mode',
+			'api_key_rejected',
+		];
+		yield 'code 4 under a 401, as the client wraps it' => [
+			new EtherpadKeyRejectedException('Etherpad API request failed: checkToken', 0, new EtherpadKeyRejectedException('Etherpad API HTTP error (401)')),
+			'APIKEY.txt',
+			'etherpad_api_key',
+			'api_key_rejected',
 		];
 		yield 'dns failure' => [
-			'Etherpad transport error: php_network_getaddresses: getaddrinfo for pad.example failed',
+			new EtherpadClientException('Etherpad transport error: php_network_getaddresses: getaddrinfo for pad.example failed'),
 			'did not resolve',
 			'etherpad_api_host',
 			'dns',
 		];
 		yield 'connection refused' => [
-			'Etherpad transport error: Connection refused',
+			new EtherpadClientException('Etherpad transport error: Connection refused'),
 			'Etherpad does not appear to be running',
 			'etherpad_api_host',
 			'connection_refused',
 		];
 		yield 'timeout' => [
-			'Etherpad transport error: stream_socket_client(): timed out',
+			new EtherpadClientException('Etherpad transport error: stream_socket_client(): timed out'),
 			'Connection timed out',
 			'etherpad_api_host',
 			'timeout',
 		];
+		// A transport failure none of the above names.
+		yield 'other transport failure' => [
+			new EtherpadClientException('Etherpad transport error: cURL error 56: Recv failure: Connection reset by peer'),
+			'Could not reach Etherpad',
+			'etherpad_api_host',
+			'transport',
+		];
 		yield 'tls handshake' => [
-			'Etherpad transport error: SSL operation failed with code 1. OpenSSL Error',
+			new EtherpadClientException('Etherpad transport error: SSL operation failed with code 1. OpenSSL Error'),
 			'TLS handshake failed',
 			'etherpad_api_host',
 			'tls',
 		];
-		yield 'http 401' => [
-			'Etherpad API HTTP error (401)',
-			'rejected the API key',
-			'etherpad_api_key',
-			'api_key_rejected',
+		// Not in Etherpad's own words: a proxy may have sent it, or put its
+		// own page in place of Etherpad's answer to the key.
+		yield 'http 401 without code 4' => [
+			new EtherpadClientException('Etherpad API HTTP error (401)'),
+			'proxy or firewall',
+			'',
+			'denied_in_front',
+		];
+		yield 'http 403 without code 4, as the client wraps it' => [
+			new EtherpadClientException('Etherpad API request failed: checkToken', 0, new EtherpadClientException('Etherpad API HTTP error (403)')),
+			'proxy or firewall',
+			'',
+			'denied_in_front',
+		];
+		yield 'http 407, a proxy that wants its own credentials' => [
+			new EtherpadClientException('Etherpad API HTTP error (407)'),
+			'proxy or firewall',
+			'',
+			'denied_in_front',
 		];
 		yield 'http 404' => [
-			'Etherpad API HTTP error (404)',
+			new EtherpadClientException('Etherpad API HTTP error (404)'),
 			'API endpoint not found',
 			'etherpad_api_host',
 			'api_not_found',
 		];
-		// Etherpad answered, so the address is right and something behind it
-		// is not: no field to mark.
+		// Neither says which input is wrong: no field to mark.
 		yield 'http 502' => [
-			'Etherpad API HTTP error (502)',
+			new EtherpadClientException('Etherpad API HTTP error (502)'),
 			'server error',
 			'',
 			'server_error',
 		];
 		yield 'invalid json' => [
-			'Invalid JSON response from Etherpad API.',
+			new EtherpadClientException('Invalid JSON response from Etherpad API.'),
 			'non-JSON',
 			'',
 			'invalid_json',
 		];
 		// No advice to give, but still about the key: the field must survive.
 		yield 'other api key trouble' => [
-			'Etherpad API request failed: API key file could not be read',
+			new EtherpadClientException('Etherpad API request failed: API key file could not be read'),
 			'',
 			'etherpad_api_key',
 			'api_key_other',
 		];
 		yield 'unrecognised' => [
-			'Etherpad API request failed: something new upstream',
+			new EtherpadClientException('Etherpad API request failed: something new upstream'),
 			'',
 			'',
 			'unknown',
@@ -779,15 +816,15 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 * hand out a correct hint with the wrong field or reason.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('failureCaseProvider')]
-	public function testCheckClassifiesAFailureOnce(string $clientMessage, string $expectedHintFragment, string $expectedField, string $expectedReason): void {
+	public function testCheckClassifiesAFailureOnce(EtherpadClientException $failure, string $expectedHintFragment, string $expectedField, string $expectedReason): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('assertApiKeyAccepted')->willThrowException(new EtherpadClientException($clientMessage));
+		$etherpad->method('assertApiKeyAccepted')->willThrowException($failure);
 
 		try {
 			$this->buildService($etherpad, $this->bindingCounts())->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
-			$this->assertStringContainsString($clientMessage, $e->getMessage());
+			$this->assertStringContainsString($failure->getMessage(), $e->getMessage());
 			if ($expectedHintFragment === '') {
 				$this->assertStringNotContainsString('Hint:', $e->getMessage());
 			} else {
