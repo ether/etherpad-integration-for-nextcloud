@@ -957,7 +957,7 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// A section of over a megabyte: no length stops the reading.
+			// The URL lies beyond a megabyte: a reader that stops early misses it.
 			'a long section' => [
 				"[InternetShortcut]\n" . str_repeat("Note=x\n", 200000) . "URL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
@@ -969,13 +969,13 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			// A query string holds = signs of its own.
-			// A ] further in starts no section either.
+			// Brackets inside a value must not change the current section.
 			'a note with brackets in it' => [
 				"[InternetShortcut]\nNote=see [1]\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
+			// A query string holds = signs of its own.
 			'a query string in the URL' => [
 				"[InternetShortcut]\nURL=https://pad.example.test/p/demo?showChat=false\n",
 				'https://pad.example.test/p/demo?showChat=false',

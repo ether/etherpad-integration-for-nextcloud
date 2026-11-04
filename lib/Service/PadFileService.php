@@ -155,9 +155,8 @@ class PadFileService {
 	private function shortcutUrl(string $content): ?string {
 		$inSection = false;
 		$text = str_starts_with($content, "\u{FEFF}") ? substr($content, 3) : $content;
-		// strtok rather than splitting: every .pad without frontmatter comes
-		// here, of any size, and an array of its lines could exhaust memory.
-		// The empty lines it skips say nothing anyway.
+		// strtok rather than splitting: an array of every line can exhaust
+		// memory on a large file, and the empty lines it skips say nothing.
 		for ($line = strtok($text, "\r\n"); $line !== false; $line = strtok("\r\n")) {
 			$line = trim($line);
 			if (str_starts_with($line, '[') && str_contains($line, ']')) {
