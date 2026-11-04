@@ -160,10 +160,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				IURLGenerator $urlGenerator,
 				\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy $releasePolicy,
 				\OCA\EtherpadNextcloud\Service\PadSessionService $padSessionService,
-				TrustedEmbedOriginsNormalizer $trustedEmbedOrigins,
+				TrustedEmbedOriginsNormalizer $trustedEmbedOriginsNormalizer,
 				private string $nextcloudSameSite,
 			) {
-				parent::__construct($etherpadClient, $bindingService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $trustedEmbedOrigins, new FixedClock());
+				parent::__construct($etherpadClient, $bindingService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $trustedEmbedOriginsNormalizer, new FixedClock());
 			}
 
 			protected function nextcloudSessionSameSite(): string {
@@ -393,11 +393,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		self::assertStringNotContainsString('sends its own session cookie', $silent->detail);
 	}
 
-	/**
-	 * The configuration that breaks silently, and the one this check had no
-	 * word for: an embed origin the session cookie does not reach, while the
-	 * cookie stays same-site.
-	 */
+	/** An origin outside `.example.test` while the cookie stays same-site. */
 	public function testAnEmbedOriginOutsideTheCookieDomainIsNamed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
@@ -420,7 +416,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		yield 'a set domain wider than the derived one' => ['https://nc.team.example.test', 'https://pad.team.example.test', '.example.test', 'https://www.example.test', null];
 		// The protected-pads line says the cookie never reaches Etherpad.
 		yield 'host-only across two hosts' => ['https://cloud.example.test', 'https://pad.example.test', '', 'https://partner.example.com', null];
-		yield 'one host for both' => ['https://cloud.example.test', 'https://cloud.example.test', '', 'https://partner.example.com', '(host-only)'];
+		// The field says .example.test, which would cover the origin; one
+		// host for both makes the cookie host-only all the same.
+		yield 'one host for both' => ['https://cloud.example.test', 'https://cloud.example.test', '.example.test', 'https://portal.example.test', '(host-only)'];
 	}
 
 	/**

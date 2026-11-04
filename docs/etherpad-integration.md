@@ -134,9 +134,10 @@ warns while the setting is on, and names what Nextcloud's own cookie does.
 
 An embed origin under the same registrable domain – `portal.example.org`
 framing `cloud.example.org` – is same-site throughout and needs none of
-this. The connection test names any trusted embed origin the session cookie
-domain does not reach, because that is the configuration that otherwise
-fails in silence: the embedded pad gets no session and nothing says why.
+this. While protected pads are on and their cookie domain works, the
+connection test names any trusted embed origin that domain does not reach,
+because that is the configuration that otherwise fails in silence: the
+embedded pad gets no session and nothing says why.
 
 A writable protected public share does mint a session, and its page carries
 no `frame-ancestors` of its own – but any installed app may add one through

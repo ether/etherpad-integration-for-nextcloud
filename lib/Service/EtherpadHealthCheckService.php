@@ -44,7 +44,7 @@ class EtherpadHealthCheckService {
 		private IURLGenerator $urlGenerator,
 		private EtherpadReleasePolicy $releasePolicy,
 		private PadSessionService $padSessionService,
-		private TrustedEmbedOriginsNormalizer $trustedEmbedOrigins,
+		private TrustedEmbedOriginsNormalizer $trustedEmbedOriginsNormalizer,
 		private ITimeFactory $timeFactory,
 	) {
 	}
@@ -349,8 +349,8 @@ class EtherpadHealthCheckService {
 	 *
 	 * The origins and the domain are the form's, the domain from the same
 	 * decision as the protected-pads line. Where that decision is not ok,
-	 * the line already says the cookie may not reach Etherpad at all;
-	 * SameSite=None would not mend that, so nothing is added.
+	 * the protected-pads line already warns about the cookie domain, and
+	 * SameSite=None would not mend it, so nothing is added.
 	 *
 	 * CookieDomainPolicy::isCoveredBy() says why 'outside' only means
 	 * 'worth checking'. Over-warning is acceptable: this asks an admin to
@@ -358,7 +358,7 @@ class EtherpadHealthCheckService {
 	 * a public suffix list.
 	 */
 	private function embedOriginNote(ValidatedAdminSettings $settings, CookieDomainDecision $cookieDomain): string {
-		$origins = $this->trustedEmbedOrigins->parse($settings->trustedEmbedOrigins);
+		$origins = $this->trustedEmbedOriginsNormalizer->parse($settings->trustedEmbedOrigins);
 		if ($origins === [] || !$cookieDomain->isOk()) {
 			return '';
 		}
