@@ -904,6 +904,34 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
+			// Nextcloud's Android client writes .url files with CRLF.
+			'CRLF line ends' => [
+				"[InternetShortcut]\r\nURL=https://pad.example.test/p/demo\r\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// A URL line under another section names no pad of this file.
+			'a URL line under another section before it' => [
+				"[DEFAULT]\nURL=https://other.example.test/p/other\n[InternetShortcut]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'another section with a URL line after it' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\n[Other]\nURL=https://other.example.test/p/other\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'two URL lines in the section' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/demo\nURL=https://pad.example.test/p/second\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			// Only a whole header line ends the section.
+			'a line that only starts like a header' => [
+				"[InternetShortcut]\n[unfinished\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
 			'whitespace around the URL' => [
 				"[InternetShortcut]\nURL = https://pad.example.test/p/demo \t\n",
 				'https://pad.example.test/p/demo',
@@ -957,6 +985,9 @@ class PadFileServiceTest extends TestCase {
 			'the section name inside other text' => ["see [InternetShortcut]\nURL=https://pad.example.test/p/demo\n"],
 			'the section name with more after it' => ["[InternetShortcut] more\nURL=https://pad.example.test/p/demo\n"],
 			'the section without a URL' => ["[InternetShortcut]\nIconIndex=0\n"],
+			'a URL line only under a later section' => ["[InternetShortcut]\nIconIndex=0\n[Other]\nURL=https://pad.example.test/p/demo\n"],
+			// The line after an empty URL= is no part of it.
+			'an empty URL with an address on the next line' => ["[InternetShortcut]\nURL=\nhttps://pad.example.test/p/demo\n"],
 			'another scheme' => ["[InternetShortcut]\nURL=ftp://example.test/p/pad\n"],
 			'another scheme with https further in' => ["[InternetShortcut]\nURL=ftp://mirror.example.test/https://pad.example.test/p/demo\n"],
 			'a URL that does not parse' => ["[InternetShortcut]\nURL=https://pad.example.test:99999/p/demo\n"],

@@ -118,10 +118,13 @@ class PadFileService {
 	/** @return array{url: string, pad_id: string}|null */
 	public function parseLegacyOwnpadShortcut(string $content): ?array {
 		$normalized = str_replace("\r\n", "\n", $content);
-		if (!preg_match('/^\s*\[InternetShortcut\]\s*$/mi', $normalized)) {
+		// Only the URL line of the [InternetShortcut] section, up to the next
+		// section header: a URL= under another section, or an empty one with
+		// an address on the line after, would name another pad.
+		if (!preg_match('/^[ \t]*\[InternetShortcut\][ \t]*$(.*?)(?=^[ \t]*\[[^\]\n]*\][ \t]*$|\z)/msi', $normalized, $section)) {
 			return null;
 		}
-		if (!preg_match('/^\s*URL\s*=\s*(.+)\s*$/mi', $normalized, $matches)) {
+		if (!preg_match('/^[ \t]*URL[ \t]*=[ \t]*(.*?)[ \t]*$/mi', $section[1], $matches)) {
 			return null;
 		}
 
