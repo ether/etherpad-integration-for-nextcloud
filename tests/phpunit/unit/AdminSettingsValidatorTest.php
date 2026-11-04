@@ -157,6 +157,18 @@ class AdminSettingsValidatorTest extends TestCase {
 		], $this->stored());
 	}
 
+	/** The port http takes anyway is dropped like https's. */
+	public function testValidateDropsTheDefaultHttpPort(): void {
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_host' => 'http://pad-api.internal:80/',
+			'etherpad_api_key' => 'key',
+			'etherpad_api_version' => '1.3.0',
+		], $this->stored());
+
+		$this->assertSame('http://pad-api.internal', $result->etherpadApiHost);
+	}
+
 	public function testValidateAllowsHttpApiHost(): void {
 		$result = $this->buildValidator()->validateForSave([
 			'etherpad_host' => 'https://pad.example.test',
@@ -183,6 +195,7 @@ class AdminSettingsValidatorTest extends TestCase {
 		yield 'the base URL again' => ['https://pad.example.test', ''];
 		// Compared as normalized, as the base URL is stored.
 		yield 'the base URL in other letters, with a slash' => ['HTTPS://PAD.example.test/', ''];
+		yield 'the base URL with the port https takes anyway' => ['https://pad.example.test:443', ''];
 		// The API may use http where the base URL may not.
 		yield 'http for https' => ['http://pad.example.test', 'http://pad.example.test'];
 		yield 'another host' => ['https://pad-api.example.test', 'https://pad-api.example.test'];

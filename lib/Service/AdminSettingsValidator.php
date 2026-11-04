@@ -73,9 +73,8 @@ class AdminSettingsValidator {
 
 		return new ValidatedAdminSettings(
 			$host,
-			// The base URL again is no API URL of its own. Stored empty, the
-			// API follows a later change of the base URL, as the field's hint
-			// says.
+			// An API URL that normalizes to the base URL is stored empty, so
+			// the API follows a later change of the base URL.
 			$apiHost === $host ? '' : $apiHost,
 			$cookieDomain,
 			$apiKeyToStore,
@@ -164,7 +163,11 @@ class AdminSettingsValidator {
 			? '[' . $host . ']'
 			: $host;
 		$normalized = $scheme . '://' . $normalizedHost;
-		if ($port > 0) {
+		// The scheme's own port is left out, as normalizeOrigin() in
+		// EtherpadClient does: written or not, it is the same address, and
+		// an API URL that names the base URL with it is stored empty.
+		$isDefaultPort = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
+		if ($port > 0 && !$isDefaultPort) {
 			$normalized .= ':' . $port;
 		}
 		if ($path !== '') {

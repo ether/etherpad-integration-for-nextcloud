@@ -529,9 +529,8 @@ class EtherpadHealthCheckService {
 	/**
 	 * Which input the failure points at. A rejected key is about the key; an
 	 * address that does not resolve, refuses or 404s is about the address, in
-	 * the field apiField() names. A server error or non-JSON answer means the
-	 * address is fine and something behind it is not, so neither field is
-	 * marked.
+	 * the field apiField() names. A server error or non-JSON answer does not
+	 * say which input is wrong, so neither field is marked.
 	 */
 	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
 		$apiField = $this->apiField($settings);
