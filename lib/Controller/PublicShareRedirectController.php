@@ -54,9 +54,9 @@ class PublicShareRedirectController extends Controller {
 
 	/**
 	 * The share page, at the file the link names. A file it cannot name -
-	 * no .pad, or a path out of the share - leads to the share's root: telling the visitor
-	 * the file is wrong would be wrong when the link itself is dead, and
-	 * the share page says which it is.
+	 * no .pad, or a path out of the share - leads to the share's root
+	 * instead: the share page checks the token, so a dead link ends on
+	 * "Share not found" rather than on an error about the file.
 	 */
 	private function targetFor(string $token): string {
 		try {

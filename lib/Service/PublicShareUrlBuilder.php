@@ -29,8 +29,8 @@ class PublicShareUrlBuilder {
 	}
 
 	/**
-	 * Through Nextcloud's own route, so the link carries index.php where
-	 * the front controller is off.
+	 * Through Nextcloud's own route, which adds the installation path and,
+	 * where the server needs it, index.php.
 	 */
 	public function buildShareBaseUrl(string $token): string {
 		return $this->urlGenerator->linkToRoute('files_sharing.sharecontroller.showShare', ['token' => $token]);
