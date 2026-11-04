@@ -422,8 +422,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	}
 
 	/**
-	 * The note reads the domain the protected-pads line is decided on, not
-	 * one derived beside it.
+	 * The note reads the decided cookie domain, which can differ from the
+	 * domain field and from one derived from the two hosts.
 	 */
 	#[DataProvider('cookieDomainsForTheEmbedNote')]
 	public function testTheEmbedNoteReadsTheDecidedCookieDomain(string $nextcloudUrl, string $etherpadHost, string $cookieDomain, string $origin, ?string $named): void {

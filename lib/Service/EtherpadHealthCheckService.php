@@ -344,8 +344,9 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * The configuration that breaks silently: an embed origin outside the
-	 * cookie's domain while the cookie stays same-site.
+	 * An embed origin outside the cookie's domain while the cookie stays
+	 * same-site. Such an origin may still be on the same site; if it is
+	 * not, the embedded pad gets no session and nothing else says why.
 	 *
 	 * The origins and the domain are the form's, the domain from the same
 	 * decision as the protected-pads line. Where that decision is not ok,
