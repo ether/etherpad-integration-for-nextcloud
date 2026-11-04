@@ -9,19 +9,29 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Util;
 
 /**
- * Loads the native pad Viewer where Files app scripts are available.
+ * Loads the native pad Viewer where Files app scripts are available, for a
+ * signed-in user the app is enabled for.
  *
  * @template-implements IEventListener<Event>
  */
 class LoadFilesScriptsListener implements IEventListener {
+	public function __construct(
+		private AppAccess $appAccess,
+	) {
+	}
+
 	public function handle(Event $event): void {
 		if (!$event instanceof LoadAdditionalScriptsEvent) {
+			return;
+		}
+		if (!$this->appAccess->isEnabledForCurrentUser()) {
 			return;
 		}
 

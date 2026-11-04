@@ -145,6 +145,18 @@ test.describe('the app limited to groups', () => {
 		expect(await offersNewPad(outsider!), 'a user outside the group').toBe(false)
 	})
 
+	/** Outside the group the app's viewer would call routes Nextcloud refuses. */
+	test('loads the viewer on the Files page only inside the group', async () => {
+		const filesPage = async (account: Account): Promise<string> => {
+			const res = await fetch(`${E2E.baseURL}/apps/files/`, { headers: { Authorization: authOf(account) } })
+			expect(res.status, `the Files page as ${account.uid}`).toBe(200)
+			expect(res.url, `the Files page as ${account.uid}, not the login`).not.toContain('/login')
+			return res.text()
+		}
+		expect(await filesPage(admin()), 'the admin, inside the group').toContain(`${APP}-viewer-init`)
+		expect(await filesPage(outsider!), 'a user outside the group').not.toContain(`${APP}-viewer-init`)
+	})
+
 	for (const [label, templateType, templateId] of [
 		['the blank entry', 'user', ''],
 		['the tile of public pads', PROVIDER, `${APP}:pad-public`],
