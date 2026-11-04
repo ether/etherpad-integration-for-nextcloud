@@ -289,7 +289,6 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService->expects($this->never())->method('createProtectedOpenContext');
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
 		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $fetcher, $padSessionService, $this->visitors());
@@ -517,7 +516,6 @@ class PublicViewerControllerTest extends TestCase {
 		?CookieHeaders $cookies = null,
 	): PublicViewerController {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
 		$padFileService ??= $this->createMock(PadFileService::class);
 		$etherpadClient ??= $this->createMock(EtherpadClient::class);

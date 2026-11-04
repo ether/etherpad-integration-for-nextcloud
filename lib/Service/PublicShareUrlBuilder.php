@@ -28,47 +28,55 @@ class PublicShareUrlBuilder {
 	) {
 	}
 
+	/**
+	 * Through Nextcloud's own route, which adds the installation path and,
+	 * where the server needs it, index.php.
+	 */
 	public function buildShareBaseUrl(string $token): string {
-		$webroot = rtrim($this->urlGenerator->getWebroot(), '/');
-		return $webroot . '/s/' . rawurlencode($token);
+		return $this->urlGenerator->linkToRoute('files_sharing.sharecontroller.showShare', ['token' => $token]);
 	}
 
+	/**
+	 * Checks the file before it builds the link, so a refused file costs no
+	 * route lookup.
+	 *
+	 * @throws InvalidShareFilePathException
+	 * @throws NotAPadFileException
+	 */
 	public function buildShareRedirectUrl(string $token, mixed $fileParam): string {
-		$base = $this->buildShareBaseUrl($token);
+		$selection = $this->fileSelection($token, $fileParam);
+		return $this->buildShareBaseUrl($token) . $selection;
+	}
+
+	/**
+	 * @throws InvalidShareFilePathException
+	 * @throws NotAPadFileException
+	 */
+	private function fileSelection(string $token, mixed $fileParam): string {
 		if (!is_string($fileParam)) {
 			throw new InvalidShareFilePathException('Invalid file path.');
 		}
 
-		$rawFile = trim($fileParam);
-		if ($rawFile === '') {
-			return $base . '?dir=' . rawurlencode('/');
-		}
-
 		try {
-			$normalized = $this->pathNormalizer->normalizePublicShareFilePath($rawFile, $token);
+			$normalized = $this->pathNormalizer->normalizePublicShareFilePath(trim($fileParam), $token);
 		} catch (\InvalidArgumentException $e) {
 			throw new InvalidShareFilePathException('Invalid file path.', 0, $e);
 		}
 		if ($normalized === '') {
-			return $base . '?dir=' . rawurlencode('/');
+			return '?dir=' . rawurlencode('/');
 		}
 
-		$path = trim($normalized, '/');
-		if ($path === '') {
-			return $base . '?dir=' . rawurlencode('/');
-		}
-
-		$dir = dirname($path);
+		$dir = dirname($normalized);
 		if ($dir === '.') {
 			$dir = '/';
 		} else {
 			$dir = '/' . $dir;
 		}
-		$fileName = basename($path);
+		$fileName = basename($normalized);
 		if (!PadFileType::isPad($fileName)) {
 			throw new NotAPadFileException('The selected file is not a .pad document.');
 		}
 
-		return $base . '?path=' . rawurlencode($dir) . '&files=' . rawurlencode($fileName);
+		return '?path=' . rawurlencode($dir) . '&files=' . rawurlencode($fileName);
 	}
 }

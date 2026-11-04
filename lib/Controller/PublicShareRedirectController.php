@@ -12,7 +12,9 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\Http\RedirectResponse;
 use OCP\IRequest;
 
@@ -34,21 +36,27 @@ class PublicShareRedirectController extends Controller {
 		string $appName,
 		IRequest $request,
 		private PublicShareUrlBuilder $shareUrlBuilder,
+		private IAppManager $appManager,
 	) {
 		parent::__construct($appName, $request);
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function showPad(string $token): RedirectResponse {
+	public function showPad(string $token): RedirectResponse|NotFoundResponse {
+		// Without files_sharing there is no share page to hand on to, and
+		// the router has no address for it.
+		if (!$this->appManager->isEnabledForAnyone('files_sharing')) {
+			return new NotFoundResponse();
+		}
 		return new RedirectResponse($this->targetFor($token));
 	}
 
 	/**
 	 * The share page, at the file the link names. A file it cannot name -
-	 * no .pad, or no path - leads to the share's root: telling the visitor
-	 * the file is wrong would be wrong when the link itself is dead, and
-	 * the share page says which it is.
+	 * no .pad, or a path out of the share - leads to the share's root
+	 * instead: the share page checks the token, so a dead link ends on
+	 * "Share not found" rather than on an error about the file.
 	 */
 	private function targetFor(string $token): string {
 		try {
