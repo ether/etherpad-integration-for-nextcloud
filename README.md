@@ -177,16 +177,11 @@ settings page shows it without running the test.
 
 ## Upgrade
 
-Check the [requirements](#requirements) before replacing the app files. The
-app must support the installed Nextcloud version at every step:
-
-- If your Nextcloud version is too old for the new app version, upgrade
-  Nextcloud first while keeping the installed app. Then upgrade the app.
-- If you are upgrading Nextcloud beyond the installed app's supported range,
-  first install an app version that supports both your current and target
-  Nextcloud versions. Then upgrade Nextcloud.
-
-To upgrade the app:
+Check the [requirements](#requirements) first: the app has to support the
+Nextcloud version at every step. If your Nextcloud is too old for the new app
+version, upgrade Nextcloud first. If you upgrade Nextcloud beyond what the
+installed app supports, upgrade the app first, to a version that supports
+both.
 
 1. Recommended: back up the Nextcloud database.
 2. Replace the app files in `apps/etherpad_nextcloud` with those of the
@@ -196,10 +191,9 @@ To upgrade the app:
 
 If Nextcloud has already disabled the app as incompatible, install a
 compatible version and enable it with `php occ app:enable etherpad_nextcloud`
-or on the Apps page. Enabling runs the app update. Disabling removes any group
-restriction. If the app was limited to groups, enable it with `occ` and repeat
-`--groups` for each previously allowed group: the Apps page's "Enable" opens
-the app to every user until it is limited again.
+or on the Apps page; enabling runs its update. Disabling removes a group
+restriction: set it again with `--groups`, or with "Limit to groups" on the
+Apps page.
 
 For deployment, copy the app to `apps/etherpad_nextcloud` and exclude development-only content such as `.git/`, `node_modules/`, `tests/`, `docs/`, `.phpunit.cache/`, and local temp files. Keep the built `js/` assets in the deployed app.
 
