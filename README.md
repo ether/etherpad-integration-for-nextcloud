@@ -177,17 +177,28 @@ settings page shows it without running the test.
 
 ## Upgrade
 
-This version needs Nextcloud `32.0.9` or later, and on Nextcloud 33 `33.0.3`
-or later. On an older one, upgrade Nextcloud first, with the version of the
-app you have, and the app after it.
+Check the [requirements](#requirements) before replacing the app files. The
+app must support the installed Nextcloud version at every step:
 
-1. Replace app files in `apps/etherpad_nextcloud`
-2. Run:
+- If your Nextcloud version is too old for the new app version, upgrade
+  Nextcloud first while keeping the installed app. Then upgrade the app.
+- If you are upgrading Nextcloud beyond the installed app's supported range,
+  first install an app version that supports both your current and target
+  Nextcloud versions. Then upgrade Nextcloud.
 
-```bash
-php occ app:disable etherpad_nextcloud
-php occ app:enable etherpad_nextcloud
-```
+To upgrade the app:
+
+1. Recommended: back up the Nextcloud database.
+2. Replace the app files in `apps/etherpad_nextcloud` with those of the
+   release archive.
+3. Run `php occ upgrade`, or start the update Nextcloud offers in the
+   browser.
+
+If Nextcloud has already disabled the app as incompatible, install a
+compatible version and enable it with `php occ app:enable etherpad_nextcloud`
+or on the Apps page. Enabling runs the app update. Disabling removes any group
+restriction, so repeat `--groups` for each previously allowed group when
+re-enabling.
 
 For deployment, copy the app to `apps/etherpad_nextcloud` and exclude development-only content such as `.git/`, `node_modules/`, `tests/`, `docs/`, `.phpunit.cache/`, and local temp files. Keep the built `js/` assets in the deployed app.
 
