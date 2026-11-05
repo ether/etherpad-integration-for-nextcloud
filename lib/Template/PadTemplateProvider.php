@@ -66,7 +66,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		}
 		// A pad of this instance's Etherpad needs it set up; one on another
 		// server does not.
-		if (!$this->etherpadClient->isConfigured()) {
+		if (!$this->etherpadClient->hasBaseUrl()) {
 			return $this->externalTile();
 		}
 

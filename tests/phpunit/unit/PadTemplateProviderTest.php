@@ -297,7 +297,7 @@ class PadTemplateProviderTest extends TestCase {
 
 	private function etherpad(bool $configured = true): EtherpadClient {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('isConfigured')->willReturn($configured);
+		$etherpadClient->method('hasBaseUrl')->willReturn($configured);
 		return $etherpadClient;
 	}
 

@@ -62,7 +62,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 	}
 
 	private function anythingCanBeCreated(): bool {
-		return ($this->padTypePolicy->hasAnyEnabledType() && $this->etherpadClient->isConfigured())
+		return ($this->padTypePolicy->hasAnyEnabledType() && $this->etherpadClient->hasBaseUrl())
 			|| (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes';
 	}
 }

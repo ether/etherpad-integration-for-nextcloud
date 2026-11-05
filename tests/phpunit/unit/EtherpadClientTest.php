@@ -55,6 +55,8 @@ class EtherpadClientTest extends TestCase {
 
 		$this->assertSame('http://etherpad:9001', $this->client($apiAndPublic)->configuredApiHost());
 		$this->assertSame('https://pad.example.test', $this->client($this->configWithHost('https://pad.example.test/'))->configuredApiHost());
+		// Blanks, set with occ, are no address of their own.
+		$this->assertSame('https://pad.example.test', $this->client($this->configWithHost(' https://pad.example.test/ ', '  '))->configuredApiHost());
 		$nothing = $this->client($this->configWithHost(''));
 		$this->assertSame('', $nothing->configuredApiHost());
 		$this->expectException(EtherpadClientException::class);
@@ -934,13 +936,14 @@ class EtherpadClientTest extends TestCase {
 	 */
 	#[\PHPUnit\Framework\Attributes\TestWith(['https://pad.example.test', '', true])]
 	#[\PHPUnit\Framework\Attributes\TestWith(['', 'http://etherpad.internal:9001', false])]
-	public function testIsConfiguredByTheBaseUrlAlone(string $host, string $apiHost, bool $expected): void {
+	#[\PHPUnit\Framework\Attributes\TestWith(['  ', '', false])]
+	public function testHasABaseUrlByTheSettingAlone(string $host, string $apiHost, bool $expected): void {
 		$repository = $this->createMock(AdminSettingsRepository::class);
 		$repository->expects($this->never())->method($this->anything());
 		$service = $this->createMock(IClientService::class);
 		$service->expects($this->never())->method('newClient');
 
-		$this->assertSame($expected, (new EtherpadClient($this->configWithHost($host, $apiHost), $repository, $service))->isConfigured());
+		$this->assertSame($expected, (new EtherpadClient($this->configWithHost($host, $apiHost), $repository, $service))->hasBaseUrl());
 	}
 
 	/** Nextcloud's client throws on an error status; the status is read from the response that throwable carries. */

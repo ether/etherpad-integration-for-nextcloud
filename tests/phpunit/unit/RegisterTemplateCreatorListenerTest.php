@@ -100,7 +100,7 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('isConfigured')->willReturn($configured);
+		$etherpadClient->method('hasBaseUrl')->willReturn($configured);
 
 		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, $this->appAccess($enabledForUser), $etherpadClient);
 	}

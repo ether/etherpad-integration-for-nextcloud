@@ -627,13 +627,14 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Whether the Etherpad Base URL is saved; an API URL alone does not
-	 * count (getPublicHost()). The key is not read: whether pads are offered
-	 * is asked on every Files page, and each read decrypts the key. The
-	 * admin form accepts the Base URL only with a key, and a key missing
-	 * anyway, with occ, is refused before a call is sent (getApiKey()).
+	 * Whether the Etherpad Base URL is saved, which tells whether Etherpad
+	 * is set up; an API URL alone does not count (getPublicHost()). The key
+	 * is not read: whether pads are offered is asked on every Files page,
+	 * and each read decrypts the key. The admin form accepts the Base URL
+	 * only with a key, and a key missing anyway, with occ, is refused
+	 * before a call is sent (getApiKey()).
 	 */
-	public function isConfigured(): bool {
+	public function hasBaseUrl(): bool {
 		return $this->configuredPublicHost() !== '';
 	}
 
@@ -649,7 +650,7 @@ class EtherpadClient {
 	}
 
 	private function configuredPublicHost(): string {
-		return rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
+		return rtrim(trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')), '/');
 	}
 
 	/**
@@ -712,7 +713,7 @@ class EtherpadClient {
 	 * page before its first save.
 	 */
 	public function configuredApiHost(): string {
-		$apiHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', ''), '/');
+		$apiHost = rtrim(trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', '')), '/');
 		return $apiHost !== '' ? $apiHost : $this->configuredPublicHost();
 	}
 
