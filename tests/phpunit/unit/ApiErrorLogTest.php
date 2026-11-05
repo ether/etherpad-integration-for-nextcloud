@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
@@ -31,6 +32,7 @@ use Psr\Log\LoggerInterface;
 class ApiErrorLogTest extends TestCase {
 	private const UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const REFUSED = 'Etherpad refused a request.';
+	private const NOT_CONFIGURED = 'Etherpad is not configured: set its host and API key in the Pads admin settings.';
 	private const KEY_REJECTED = 'Etherpad rejected this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
 
 	/** @var list<array{string, string, array<string,mixed>}> */
@@ -77,10 +79,10 @@ class ApiErrorLogTest extends TestCase {
 
 	/**
 	 * A rejected key is one error a minute for the instance, whichever file,
-	 * and on a minute apart from an outage's, so neither hides the other's
-	 * line.
+	 * and no Etherpad set up one warning, each on a minute apart from an
+	 * outage's, so none hides another's line.
 	 */
-	public function testOneErrorAMinuteForARejectedKey(): void {
+	public function testOneLineAMinuteForARejectedKeyAndForNoEtherpadSetUp(): void {
 		$claimed = [];
 		$cache = $this->createMock(IMemcache::class);
 		$cache->method('add')->willReturnCallback(static function (string $key, mixed $value, int $ttl) use (&$claimed): bool {
@@ -98,9 +100,11 @@ class ApiErrorLogTest extends TestCase {
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 42]);
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 43]);
 		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 45]);
+		$log->report(new EtherpadNotConfiguredException('Etherpad host is not configured.'), ['fileId' => 46]);
+		$log->report(new EtherpadNotConfiguredException('Etherpad API key is not configured.'), ['fileId' => 47]);
 
 		$this->assertSame(
-			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::UNREACHABLE, 45]],
+			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::UNREACHABLE, 45], ['warning', self::NOT_CONFIGURED, 46], ['debug', self::NOT_CONFIGURED, 47]],
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
 		);
 		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[1][2]['error']);
@@ -239,6 +243,7 @@ class ApiErrorLogTest extends TestCase {
 	public function testWhatCountsAsEtherpadNotReachable(): void {
 		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadClientException('Etherpad API request failed: createPad')));
 		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadKeyRejectedException('Etherpad API request failed: createPad')));
+		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadNotConfiguredException('Etherpad API key is not configured.')));
 		foreach ([
 			new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),

@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy;
 use OCP\IConfig;
@@ -148,7 +149,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	public function testAnUnconfiguredHostIsAnAnswerAndNotAnException(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getApiHost')
-			->willThrowException(new EtherpadClientException('Etherpad host is not configured.'));
+			->willThrowException(new EtherpadNotConfiguredException('Etherpad host is not configured.'));
 
 		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
 	}

@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\EventDispatcher\Event;
@@ -28,6 +29,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 		private PadTypePolicy $padTypePolicy,
 		private IConfig $config,
 		private AppAccess $appAccess,
+		private EtherpadClient $etherpadClient,
 	) {
 	}
 
@@ -38,7 +40,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 
 		// The entry is also the way to the template picker, so it stays while
 		// anything can be created: external pads too, which follow their own
-		// setting rather than a pad type.
+		// setting rather than a pad type and need no Etherpad set up here.
 		if (!$this->anythingCanBeCreated() || !$this->appAccess->isEnabledForCurrentUser()) {
 			return;
 		}
@@ -60,7 +62,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 	}
 
 	private function anythingCanBeCreated(): bool {
-		return $this->padTypePolicy->hasAnyEnabledType()
+		return ($this->padTypePolicy->hasAnyEnabledType() && $this->etherpadClient->hasBaseUrl())
 			|| (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes';
 	}
 }

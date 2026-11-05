@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
@@ -625,16 +626,31 @@ class EtherpadClient {
 		return $body;
 	}
 
+	/**
+	 * Whether a nonblank Base URL is saved. An API URL alone does not count:
+	 * pad addresses are built from the Base URL (getPublicHost()). The key
+	 * is not read, as this is asked on every Files page and each read
+	 * decrypts it. The admin form saves the Base URL only with a key; a key
+	 * missing anyway, with occ, is refused before a call is sent
+	 * (getApiKey()).
+	 */
+	public function hasBaseUrl(): bool {
+		return $this->configuredPublicHost() !== '';
+	}
+
 	private function getPublicHost(): string {
 		$host = $this->configuredPublicHost();
 		if ($host === '') {
+			// Not EtherpadNotConfiguredException: with an API address of its
+			// own, calls run without this one, so a create may have made its
+			// pad and row before it asks for the pad's address.
 			throw new EtherpadClientException('Etherpad host is not configured.');
 		}
 		return $host;
 	}
 
 	private function configuredPublicHost(): string {
-		return rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
+		return rtrim(trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')), '/');
 	}
 
 	/**
@@ -649,7 +665,7 @@ class EtherpadClient {
 	 * internal endpoint while still wanting same-origin re-bind to work.
 	 */
 	public function getConfiguredOrigin(): string {
-		$host = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
+		$host = $this->configuredPublicHost();
 		if ($host === '') {
 			return '';
 		}
@@ -686,7 +702,7 @@ class EtherpadClient {
 	public function getApiHost(): string {
 		$apiHost = $this->configuredApiHost();
 		if ($apiHost === '') {
-			throw new EtherpadClientException('Etherpad host is not configured.');
+			throw new EtherpadNotConfiguredException('Etherpad host is not configured.');
 		}
 		return $apiHost;
 	}
@@ -697,7 +713,7 @@ class EtherpadClient {
 	 * page before its first save.
 	 */
 	public function configuredApiHost(): string {
-		$apiHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', ''), '/');
+		$apiHost = rtrim(trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', '')), '/');
 		return $apiHost !== '' ? $apiHost : $this->configuredPublicHost();
 	}
 
@@ -706,8 +722,8 @@ class EtherpadClient {
 		// sensitive (encrypted-at-rest) key via IAppConfig. Going through it
 		// keeps the "must decrypt via IAppConfig" knowledge in one place.
 		$key = $this->settingsRepository->getApiKey();
-		if ($key === '') {
-			throw new EtherpadClientException('Etherpad API key is not configured.');
+		if (trim($key) === '') {
+			throw new EtherpadNotConfiguredException('Etherpad API key is not configured.');
 		}
 		return $key;
 	}

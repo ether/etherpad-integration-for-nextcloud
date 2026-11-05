@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
@@ -66,6 +67,22 @@ class PadTemplateProviderTest extends TestCase {
 		$ids = array_map(
 			static fn($t): string => (string)$t->jsonSerialize()['templateId'],
 			$this->providerWith($storage, false, false, true)->getCustomTemplates(self::MIME),
+		);
+
+		$this->assertSame([PadTemplateProvider::EXTERNAL_TEMPLATE_ID], $ids);
+	}
+
+	/**
+	 * Without a Base URL no local pad is offered, from a tile or a shared
+	 * template; a pad on another server needs none.
+	 */
+	public function testOffersOnlyTheExternalTileWithoutAnEtherpadSetUp(): void {
+		$storage = $this->storage();
+		$storage->method('globalTemplates')->willReturn([$this->markerFile('Meeting notes.pad')]);
+
+		$ids = array_map(
+			static fn($t): string => (string)$t->jsonSerialize()['templateId'],
+			$this->providerWith($storage, true, true, true, configured: false)->getCustomTemplates(self::MIME),
 		);
 
 		$this->assertSame([PadTemplateProvider::EXTERNAL_TEMPLATE_ID], $ids);
@@ -149,6 +166,7 @@ class PadTemplateProviderTest extends TestCase {
 			$this->urlGenerator(),
 			$logger,
 			$this->appAccess(true),
+			$this->etherpad(),
 		);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
@@ -181,7 +199,7 @@ class PadTemplateProviderTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
 
-		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger, $this->appAccess(true));
+		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger, $this->appAccess(true), $this->etherpad());
 
 		$this->assertCount(1, $provider->getCustomTemplates(self::MIME));
 	}
@@ -247,6 +265,7 @@ class PadTemplateProviderTest extends TestCase {
 			$this->urlGenerator(),
 			$this->createMock(LoggerInterface::class),
 			$this->appAccess($enabledForUser),
+			$this->etherpad(),
 		);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
@@ -263,7 +282,7 @@ class PadTemplateProviderTest extends TestCase {
 		return $this->providerWith($this->storage(), $protected, $public, $external);
 	}
 
-	private function providerWith(PadTemplateStorage $storage, bool $protected, bool $public, bool $external): PadTemplateProvider {
+	private function providerWith(PadTemplateStorage $storage, bool $protected, bool $public, bool $external, bool $configured = true): PadTemplateProvider {
 		return new PadTemplateProvider(
 			$storage,
 			$this->policy($protected, $public),
@@ -272,7 +291,14 @@ class PadTemplateProviderTest extends TestCase {
 			$this->urlGenerator(),
 			$this->createMock(LoggerInterface::class),
 			$this->appAccess(true),
+			$this->etherpad($configured),
 		);
+	}
+
+	private function etherpad(bool $configured = true): EtherpadClient {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('hasBaseUrl')->willReturn($configured);
+		return $etherpadClient;
 	}
 
 	private function storage(): PadTemplateStorage {

@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -349,16 +350,24 @@ class ManagedPadLifecycleTest extends TestCase {
 		$this->lifecycle($client)->provisionSeeded(BindingService::ACCESS_PUBLIC, static fn (): string => 'nc-abcdef0123456789', static fn (): string => 'p-unused', 'text', '<p>text</p>');
 	}
 
+	/** @return iterable<string,array{EtherpadClientException}> */
+	public static function callsThatMadeNothing(): iterable {
+		yield 'a rejected key' => [new EtherpadKeyRejectedException('Etherpad API request failed: createPad')];
+		yield 'no Etherpad set up' => [new EtherpadNotConfiguredException('Etherpad API key is not configured.')];
+	}
+
 	/**
-	 * A key Etherpad rejected made no pad, and a delete would be rejected
-	 * alike, only to warn about a pad that never was.
+	 * A key Etherpad rejected, or no address or key to send the call with,
+	 * made no pad, and a delete would fail alike, only to warn about a pad
+	 * that never was.
 	 */
-	public function testLeavesNothingToTakeDownAfterARejectedKey(): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider('callsThatMadeNothing')]
+	public function testLeavesNothingToTakeDownAfterACallThatMadeNothing(EtherpadClientException $failure): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('createPad')->willThrowException(new EtherpadKeyRejectedException('Etherpad API request failed: createPad'));
+		$client->method('createPad')->willThrowException($failure);
 		$client->expects($this->never())->method('deletePad');
 
-		$this->expectException(EtherpadKeyRejectedException::class);
+		$this->expectException($failure::class);
 		$this->provisionPublic($client, 'nc-abcdef0123456789');
 	}
 

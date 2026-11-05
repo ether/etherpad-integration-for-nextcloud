@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Template;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
@@ -55,12 +56,18 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		private IURLGenerator $urlGenerator,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
+		private EtherpadClient $etherpadClient,
 	) {
 	}
 
 	public function getCustomTemplates(string $mimetype): array {
 		if ($mimetype !== PadFileType::MIME || !$this->appAccess->isEnabledForCurrentUser()) {
 			return [];
+		}
+		// A pad of this instance's Etherpad needs it set up; one on another
+		// server does not.
+		if (!$this->etherpadClient->hasBaseUrl()) {
+			return $this->externalTile();
 		}
 
 		return array_merge($this->typeTile(), $this->externalTile(), $this->globalTiles());
