@@ -899,7 +899,7 @@ class EtherpadClientTest extends TestCase {
 		$this->assertStringContainsString('apikey=stored-key', self::bodyOf($captured));
 	}
 
-	/** As hasApiKey() reads it, which decides whether pads are offered at all. */
+	/** Blanks are no key: refused before Etherpad would reject them, so a create removes its file. */
 	#[\PHPUnit\Framework\Attributes\TestWith([''])]
 	#[\PHPUnit\Framework\Attributes\TestWith(['  '])]
 	public function testRefusesACallWithoutAConfiguredKey(string $key): void {
@@ -928,18 +928,15 @@ class EtherpadClientTest extends TestCase {
 		}
 	}
 
-	/** @return iterable<string,array{string,bool,bool}> */
-	public static function settings(): iterable {
-		yield 'address and key' => ['https://pad.example.test', true, true];
-		yield 'no address' => ['', true, false];
-		yield 'no key' => ['https://pad.example.test', false, false];
-	}
-
-	/** Read from the settings alone: an Etherpad that does not answer is still set up. */
-	#[\PHPUnit\Framework\Attributes\DataProvider('settings')]
-	public function testIsConfiguredWithAnAddressAndAKey(string $host, bool $hasKey, bool $expected): void {
+	/**
+	 * By the address alone: the key is not read, which would decrypt it, and
+	 * Etherpad is not asked, so one that does not answer is still set up.
+	 */
+	#[\PHPUnit\Framework\Attributes\TestWith(['https://pad.example.test', true])]
+	#[\PHPUnit\Framework\Attributes\TestWith(['', false])]
+	public function testIsConfiguredByTheAddressAlone(string $host, bool $expected): void {
 		$repository = $this->createMock(AdminSettingsRepository::class);
-		$repository->method('hasApiKey')->willReturn($hasKey);
+		$repository->expects($this->never())->method($this->anything());
 		$service = $this->createMock(IClientService::class);
 		$service->expects($this->never())->method('newClient');
 

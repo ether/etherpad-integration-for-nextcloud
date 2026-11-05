@@ -627,12 +627,14 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Whether an address and an API key are saved: what a call to this
-	 * instance's Etherpad needs, read from the settings alone. The API host
-	 * falls back to the address, so it is not asked for.
+	 * Whether an Etherpad address is saved. Whether pads are offered asks
+	 * this on every Files page, and reading the key would decrypt it, so
+	 * the key is left to the admin form, which saves the address only with
+	 * one. A key missing anyway, with occ, is refused before a call is sent
+	 * (getApiKey()).
 	 */
 	public function isConfigured(): bool {
-		return $this->configuredPublicHost() !== '' && $this->settingsRepository->hasApiKey();
+		return $this->configuredPublicHost() !== '';
 	}
 
 	private function getPublicHost(): string {
