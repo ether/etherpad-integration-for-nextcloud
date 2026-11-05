@@ -10,11 +10,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Exception;
 
 /**
- * This instance has no Etherpad address or no API key saved, so no call
- * to it can be made. It counts as Etherpad not answering, as a rejected
- * key does: every call fails alike until an admin saves the settings,
- * and the answer says what it says for an outage. Told apart for its own
- * log line, and so a create removes the file it could not finish.
+ * This instance has no address for Etherpad's API or no API key saved:
+ * thrown before a call is sent, so nothing was made in Etherpad. It
+ * counts as Etherpad not answering, as a rejected key does: every call
+ * fails alike until an admin saves the settings, and the answer says
+ * what it says for an outage. Told apart for its own log line, and so a
+ * create removes the file it could not finish.
  */
 class EtherpadNotConfiguredException extends EtherpadClientException {
 }

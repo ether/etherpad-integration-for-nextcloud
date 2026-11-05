@@ -64,6 +64,11 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		if ($mimetype !== PadFileType::MIME || !$this->appAccess->isEnabledForCurrentUser()) {
 			return [];
 		}
+		// A pad of this instance's Etherpad needs it set up; one on another
+		// server does not.
+		if (!$this->etherpadClient->isConfigured()) {
+			return $this->externalTile();
+		}
 
 		return array_merge($this->typeTile(), $this->externalTile(), $this->globalTiles());
 	}
@@ -72,7 +77,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	private function typeTile(): array {
 		$bothEnabled = $this->padTypePolicy->isEnabled(PadAccessMode::Protected)
 			&& $this->padTypePolicy->isEnabled(PadAccessMode::Public);
-		if (!$bothEnabled || !$this->etherpadClient->isConfigured()) {
+		if (!$bothEnabled) {
 			return [];
 		}
 
@@ -147,10 +152,10 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	 */
 	private function globalTiles(): array {
 		// Offering them would be a promise the instance cannot keep: creating
-		// from one provisions a local pad, which needs a pad type and an
-		// Etherpad set up. An instance that allows only external pads still
-		// shows the "New pad" entry — the external tile needs it.
-		if (!$this->padTypePolicy->hasAnyEnabledType() || !$this->etherpadClient->isConfigured()) {
+		// from one provisions a local pad, which needs a pad type. An instance
+		// that allows only external pads still shows the "New pad" entry — the
+		// external tile needs it.
+		if (!$this->padTypePolicy->hasAnyEnabledType()) {
 			return [];
 		}
 

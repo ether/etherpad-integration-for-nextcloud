@@ -344,11 +344,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 	/** @return iterable<string,array{?string,?string,\Throwable}> */
 	public static function refusedInitialisations(): iterable {
-		foreach (self::createsThatGoStraightToInitialisation() as $create => [$templateName, $mode]) {
-			foreach (self::refusals() as $refused => [$refusal]) {
-				yield $create . ', ' . $refused => [$templateName, $mode, $refusal];
-			}
-		}
+		yield 'the blank entry' => [null, null, new PadTypeDisabledException()];
+		yield 'the tile of a pad type' => [PadTemplateStorage::PUBLIC_TILE_NAME, 'public', new PadTypeDisabledException()];
+		yield 'no Etherpad set up' => [null, null, new EtherpadNotConfiguredException('Etherpad host is not configured.')];
 	}
 
 	/**

@@ -638,7 +638,10 @@ class EtherpadClient {
 	private function getPublicHost(): string {
 		$host = $this->configuredPublicHost();
 		if ($host === '') {
-			throw new EtherpadNotConfiguredException('Etherpad host is not configured.');
+			// Not EtherpadNotConfiguredException: with an API address of its
+			// own, calls run without this one, so a create may have made its
+			// pad and row before it asks for the pad's address.
+			throw new EtherpadClientException('Etherpad host is not configured.');
 		}
 		return $host;
 	}
@@ -716,7 +719,7 @@ class EtherpadClient {
 		// sensitive (encrypted-at-rest) key via IAppConfig. Going through it
 		// keeps the "must decrypt via IAppConfig" knowledge in one place.
 		$key = $this->settingsRepository->getApiKey();
-		if ($key === '') {
+		if (trim($key) === '') {
 			throw new EtherpadNotConfiguredException('Etherpad API key is not configured.');
 		}
 		return $key;

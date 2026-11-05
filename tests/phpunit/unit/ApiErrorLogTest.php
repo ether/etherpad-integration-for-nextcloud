@@ -79,10 +79,10 @@ class ApiErrorLogTest extends TestCase {
 
 	/**
 	 * A rejected key is one error a minute for the instance, whichever file,
-	 * and on a minute apart from an outage's, so neither hides the other's
-	 * line.
+	 * and no Etherpad set up one warning, each on a minute apart from an
+	 * outage's, so none hides another's line.
 	 */
-	public function testOneErrorAMinuteForARejectedKey(): void {
+	public function testOneLineAMinuteForARejectedKeyAndForNoEtherpadSetUp(): void {
 		$claimed = [];
 		$cache = $this->createMock(IMemcache::class);
 		$cache->method('add')->willReturnCallback(static function (string $key, mixed $value, int $ttl) use (&$claimed): bool {
@@ -100,41 +100,14 @@ class ApiErrorLogTest extends TestCase {
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 42]);
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 43]);
 		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 45]);
+		$log->report(new EtherpadNotConfiguredException('Etherpad host is not configured.'), ['fileId' => 46]);
+		$log->report(new EtherpadNotConfiguredException('Etherpad API key is not configured.'), ['fileId' => 47]);
 
 		$this->assertSame(
-			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::UNREACHABLE, 45]],
+			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::UNREACHABLE, 45], ['warning', self::NOT_CONFIGURED, 46], ['debug', self::NOT_CONFIGURED, 47]],
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
 		);
 		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[1][2]['error']);
-	}
-
-	/**
-	 * No Etherpad set up is one warning a minute for the instance, under a
-	 * line that sends the admin to the settings rather than the network, and
-	 * on a minute apart from an outage's.
-	 */
-	public function testOneWarningAMinuteForNoEtherpadSetUp(): void {
-		$claimed = [];
-		$cache = $this->createMock(IMemcache::class);
-		$cache->method('add')->willReturnCallback(static function (string $key, mixed $value, int $ttl) use (&$claimed): bool {
-			if (isset($claimed[$key])) {
-				return false;
-			}
-			return $claimed[$key] = true;
-		});
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(true);
-		$factory->method('createDistributed')->willReturn($cache);
-
-		$log = new ApiErrorLog($factory, $this->logger());
-		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
-		$log->report(new EtherpadNotConfiguredException('Etherpad host is not configured.'), ['fileId' => 42]);
-		$log->report(new EtherpadNotConfiguredException('Etherpad API key is not configured.'), ['fileId' => 43]);
-
-		$this->assertSame(
-			[['warning', self::UNREACHABLE, 44], ['warning', self::NOT_CONFIGURED, 42], ['debug', self::NOT_CONFIGURED, 43]],
-			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
-		);
 	}
 
 	/**

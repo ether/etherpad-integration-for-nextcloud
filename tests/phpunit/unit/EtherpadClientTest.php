@@ -899,8 +899,11 @@ class EtherpadClientTest extends TestCase {
 		$this->assertStringContainsString('apikey=stored-key', self::bodyOf($captured));
 	}
 
-	public function testRefusesACallWithoutAConfiguredKey(): void {
-		$client = new EtherpadClient($this->configForApi(), $this->repositoryWithKey(''), $this->createMock(IClientService::class));
+	/** As hasApiKey() reads it, which decides whether pads are offered at all. */
+	#[\PHPUnit\Framework\Attributes\TestWith([''])]
+	#[\PHPUnit\Framework\Attributes\TestWith(['  '])]
+	public function testRefusesACallWithoutAConfiguredKey(string $key): void {
+		$client = new EtherpadClient($this->configForApi(), $this->repositoryWithKey($key), $this->createMock(IClientService::class));
 
 		$this->expectException(EtherpadNotConfiguredException::class);
 		$this->expectExceptionMessage('Etherpad API key is not configured.');
@@ -915,10 +918,14 @@ class EtherpadClientTest extends TestCase {
 		$client->createGroup();
 	}
 
+	/** Not as not set up: getPublicHost() says why. */
 	public function testRefusesAPadAddressWithoutAConfiguredHost(): void {
-		$this->expectException(EtherpadNotConfiguredException::class);
-		$this->expectExceptionMessage('Etherpad host is not configured.');
-		$this->client($this->configWithHost(''))->buildPadUrl('pad-1');
+		try {
+			$this->client($this->configWithHost(''))->buildPadUrl('pad-1');
+			$this->fail('Not refused.');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame([EtherpadClientException::class, 'Etherpad host is not configured.'], [$e::class, $e->getMessage()]);
+		}
 	}
 
 	/** @return iterable<string,array{string,bool,bool}> */
