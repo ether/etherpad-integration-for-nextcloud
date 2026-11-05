@@ -63,8 +63,9 @@ class EtherpadClientTest extends TestCase {
 		$nothing->getApiHost();
 	}
 
-	public function testGetConfiguredOriginNormalizesScheme(): void {
-		$client = $this->client($this->configWithHost('HTTPS://Pad.Example.Test/'));
+	/** Blanks set with occ go, as for the pad addresses the origin has to match. */
+	public function testGetConfiguredOriginNormalizesTheBaseUrl(): void {
+		$client = $this->client($this->configWithHost(' HTTPS://Pad.Example.Test/ '));
 		$this->assertSame('https://pad.example.test', $client->getConfiguredOrigin());
 	}
 

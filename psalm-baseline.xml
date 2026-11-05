@@ -166,7 +166,6 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
     <MixedArgument>
       <code><![CDATA[$decoded['releaseId']]]></code>
@@ -189,7 +188,6 @@
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', '')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_version', self::DEFAULT_API_VERSION)]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
     </RedundantCastGivenDocblockType>
     <RiskyTruthyFalsyComparison>

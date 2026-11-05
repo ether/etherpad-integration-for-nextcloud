@@ -665,7 +665,7 @@ class EtherpadClient {
 	 * internal endpoint while still wanting same-origin re-bind to work.
 	 */
 	public function getConfiguredOrigin(): string {
-		$host = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
+		$host = $this->configuredPublicHost();
 		if ($host === '') {
 			return '';
 		}
