@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\ClaimedFileWriter;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
@@ -331,11 +332,31 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
+	 * The instance makes no pad at all: no pad type is on, or no Etherpad is
+	 * set up.
+	 *
+	 * @return iterable<string,array{\Throwable}>
+	 */
+	public static function refusals(): iterable {
+		yield 'no pad type' => [new PadTypeDisabledException()];
+		yield 'no Etherpad set up' => [new EtherpadNotConfiguredException('Etherpad host is not configured.')];
+	}
+
+	/** @return iterable<string,array{?string,?string,\Throwable}> */
+	public static function refusedInitialisations(): iterable {
+		foreach (self::createsThatGoStraightToInitialisation() as $create => [$templateName, $mode]) {
+			foreach (self::refusals() as $refused => [$refusal]) {
+				yield $create . ', ' . $refused => [$templateName, $mode, $refusal];
+			}
+		}
+	}
+
+	/**
 	 * The removal is handed to the writer, with a claim on the file's id that
 	 * expects it empty, and the refusal is named in the log.
 	 */
-	#[\PHPUnit\Framework\Attributes\DataProvider('createsThatGoStraightToInitialisation')]
-	public function testRemovesTheFileWhenNoPadTypeIsEnabled(?string $templateName, ?string $mode): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider('refusedInitialisations')]
+	public function testRemovesTheFileWhenNoPadCanBeMade(?string $templateName, ?string $mode, \Throwable $refusal): void {
 		$target = $this->file('Notes.pad');
 		$target->expects($this->never())->method('delete');
 		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->callback(
@@ -343,14 +364,14 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
+		$bootstrap->method('initializeMissingFrontmatter')->willThrowException($refusal);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
-			'Blank pad create refused: no pad type is enabled.',
-			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 42, PadTypeDisabledException::class]),
+			'Blank pad create refused: no pad type is enabled or no Etherpad is set up.',
+			$this->callback(static fn (array $context): bool => [$context['app'], $context['fileId'], $context['error']] === ['etherpad_nextcloud', 42, $refusal::class]),
 		);
 
-		$this->expectException(PadTypeDisabledException::class);
+		$this->expectException($refusal::class);
 		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $this->tilesOffering($mode), logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent($templateName === null ? null : $this->file($templateName), $target, []));
 	}
@@ -507,24 +528,25 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		return $storage;
 	}
 
-	/** The setting changed while the picker was open: the claimed file goes to the writer to remove, and the refusal goes on. */
-	public function testRemovesTheFileWhenNoPadTypeIsEnabledAnyMore(): void {
+	/** The settings changed while the picker was open: the claimed file goes to the writer to remove, and the refusal goes on. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('refusals')]
+	public function testRemovesTheFileWhenNoPadCanBeMadeAnyMore(\Throwable $refusal): void {
 		$template = $this->file('Meeting notes.pad');
 		$target = $this->untouchedTarget('Notes.pad');
 
 		$creation = $this->createMock(PadCreationService::class);
 		$claim = $this->expectClaimFor($creation, $target);
 		$this->writer->expects($this->once())->method('deleteIfUnchanged')->with($this->identicalTo($claim));
-		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
+		$creation->method('materializeTemplateInto')->willThrowException($refusal);
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
-			'Pad template create refused: no pad type is enabled.',
+			'Pad template create refused: no pad type is enabled or no Etherpad is set up.',
 			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 4242),
 		);
 
-		$this->expectException(PadTypeDisabledException::class);
+		$this->expectException($refusal::class);
 		$this->buildListener($creation, $bootstrap, logger: $logger)
 			->handle(new FileCreatedFromTemplateEvent($template, $target, []));
 	}

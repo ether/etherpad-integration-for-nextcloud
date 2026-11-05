@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
@@ -625,10 +626,19 @@ class EtherpadClient {
 		return $body;
 	}
 
+	/**
+	 * Whether an address and an API key are saved: what a call to this
+	 * instance's Etherpad needs, read from the settings alone. The API host
+	 * falls back to the address, so it is not asked for.
+	 */
+	public function isConfigured(): bool {
+		return $this->configuredPublicHost() !== '' && $this->settingsRepository->hasApiKey();
+	}
+
 	private function getPublicHost(): string {
 		$host = $this->configuredPublicHost();
 		if ($host === '') {
-			throw new EtherpadClientException('Etherpad host is not configured.');
+			throw new EtherpadNotConfiguredException('Etherpad host is not configured.');
 		}
 		return $host;
 	}
@@ -686,7 +696,7 @@ class EtherpadClient {
 	public function getApiHost(): string {
 		$apiHost = $this->configuredApiHost();
 		if ($apiHost === '') {
-			throw new EtherpadClientException('Etherpad host is not configured.');
+			throw new EtherpadNotConfiguredException('Etherpad host is not configured.');
 		}
 		return $apiHost;
 	}
@@ -707,7 +717,7 @@ class EtherpadClient {
 		// keeps the "must decrypt via IAppConfig" knowledge in one place.
 		$key = $this->settingsRepository->getApiKey();
 		if ($key === '') {
-			throw new EtherpadClientException('Etherpad API key is not configured.');
+			throw new EtherpadNotConfiguredException('Etherpad API key is not configured.');
 		}
 		return $key;
 	}

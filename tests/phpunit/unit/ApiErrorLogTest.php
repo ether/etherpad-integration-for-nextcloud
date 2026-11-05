@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
@@ -31,6 +32,7 @@ use Psr\Log\LoggerInterface;
 class ApiErrorLogTest extends TestCase {
 	private const UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const REFUSED = 'Etherpad refused a request.';
+	private const NOT_CONFIGURED = 'Etherpad is not configured: set its host and API key in the Pads admin settings.';
 	private const KEY_REJECTED = 'Etherpad rejected this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
 
 	/** @var list<array{string, string, array<string,mixed>}> */
@@ -104,6 +106,35 @@ class ApiErrorLogTest extends TestCase {
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
 		);
 		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[1][2]['error']);
+	}
+
+	/**
+	 * No Etherpad set up is one warning a minute for the instance, under a
+	 * line that sends the admin to the settings rather than the network, and
+	 * on a minute apart from an outage's.
+	 */
+	public function testOneWarningAMinuteForNoEtherpadSetUp(): void {
+		$claimed = [];
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willReturnCallback(static function (string $key, mixed $value, int $ttl) use (&$claimed): bool {
+			if (isset($claimed[$key])) {
+				return false;
+			}
+			return $claimed[$key] = true;
+		});
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+
+		$log = new ApiErrorLog($factory, $this->logger());
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
+		$log->report(new EtherpadNotConfiguredException('Etherpad host is not configured.'), ['fileId' => 42]);
+		$log->report(new EtherpadNotConfiguredException('Etherpad API key is not configured.'), ['fileId' => 43]);
+
+		$this->assertSame(
+			[['warning', self::UNREACHABLE, 44], ['warning', self::NOT_CONFIGURED, 42], ['debug', self::NOT_CONFIGURED, 43]],
+			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
+		);
 	}
 
 	/**
@@ -239,6 +270,7 @@ class ApiErrorLogTest extends TestCase {
 	public function testWhatCountsAsEtherpadNotReachable(): void {
 		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadClientException('Etherpad API request failed: createPad')));
 		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadKeyRejectedException('Etherpad API request failed: createPad')));
+		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadNotConfiguredException('Etherpad API key is not configured.')));
 		foreach ([
 			new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),

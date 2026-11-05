@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Template;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
@@ -55,6 +56,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		private IURLGenerator $urlGenerator,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
+		private EtherpadClient $etherpadClient,
 	) {
 	}
 
@@ -70,7 +72,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	private function typeTile(): array {
 		$bothEnabled = $this->padTypePolicy->isEnabled(PadAccessMode::Protected)
 			&& $this->padTypePolicy->isEnabled(PadAccessMode::Public);
-		if (!$bothEnabled) {
+		if (!$bothEnabled || !$this->etherpadClient->isConfigured()) {
 			return [];
 		}
 
@@ -145,10 +147,10 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	 */
 	private function globalTiles(): array {
 		// Offering them would be a promise the instance cannot keep: creating
-		// from one provisions a local pad, which needs a pad type. An instance
-		// that allows only external pads still shows the "New pad" entry — the
-		// external tile needs it.
-		if (!$this->padTypePolicy->hasAnyEnabledType()) {
+		// from one provisions a local pad, which needs a pad type and an
+		// Etherpad set up. An instance that allows only external pads still
+		// shows the "New pad" entry — the external tile needs it.
+		if (!$this->padTypePolicy->hasAnyEnabledType() || !$this->etherpadClient->isConfigured()) {
 			return [];
 		}
 

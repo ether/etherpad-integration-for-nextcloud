@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\RegisterTemplateCreatorListener;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCP\EventDispatcher\Event;
@@ -22,10 +23,11 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 	use BuildsAppAccess;
 
 	/**
-	 * The entry stays while anything can be created: a pad of any type, or an
-	 * external one, which follows its own setting.
+	 * The entry stays while anything can be created: a pad of any type on an
+	 * Etherpad that is set up, or an external one, which follows its own
+	 * setting.
 	 *
-	 * @return iterable<string,array{0:bool,1:bool,2:bool,3:bool}>
+	 * @return iterable<string,array{0:bool,1:bool,2:bool,3:bool,4?:bool}>
 	 */
 	public static function padTypeProvider(): iterable {
 		yield 'both enabled' => [true, true, false, true];
@@ -33,15 +35,17 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		yield 'public only' => [false, true, false, true];
 		yield 'external pads only' => [false, false, true, true];
 		yield 'nothing enabled' => [false, false, false, false];
+		yield 'no Etherpad set up' => [true, true, false, false, false];
+		yield 'external pads, no Etherpad set up' => [true, true, true, true, false];
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('padTypeProvider')]
-	public function testRegistersWhileAnythingCanBeCreated(bool $protected, bool $public, bool $external, bool $expected): void {
+	public function testRegistersWhileAnythingCanBeCreated(bool $protected, bool $public, bool $external, bool $expected, bool $configured = true): void {
 		$templateManager = $this->createMock(ITemplateManager::class);
 		$templateManager->expects($expected ? $this->once() : $this->never())
 			->method('registerTemplateFileCreator');
 
-		$this->buildListener($protected, $public, $external)->handle($this->buildEvent($templateManager));
+		$this->buildListener($protected, $public, $external, configured: $configured)->handle($this->buildEvent($templateManager));
 	}
 
 	/**
@@ -75,7 +79,7 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 	}
 
 	/** @param ?bool $enabledForUser null for a request without a user */
-	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true, bool $externalAllowed = false, ?bool $enabledForUser = true): RegisterTemplateCreatorListener {
+	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true, bool $externalAllowed = false, ?bool $enabledForUser = true, bool $configured = true): RegisterTemplateCreatorListener {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
@@ -95,6 +99,9 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 			}
 		);
 
-		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, $this->appAccess($enabledForUser));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('isConfigured')->willReturn($configured);
+
+		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, $this->appAccess($enabledForUser), $etherpadClient);
 	}
 }

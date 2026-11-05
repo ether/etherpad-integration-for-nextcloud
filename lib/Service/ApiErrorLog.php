@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\ICacheFactory;
@@ -45,8 +46,9 @@ use Psr\Log\LoggerInterface;
  *   without apc.enable_cli Nextcloud gives the CLI no cache, so each such
  *   line is an error
  *   (https://github.com/nextcloud/server/blob/stable32/lib/private/Memcache/Factory.php).
- * - This instance's Etherpad not reachable: a warning once a minute for
- *   the instance, at debug for the rest of that minute. An outage reaches
+ * - This instance's Etherpad not reachable, or not set up - each with a
+ *   line and a minute of its own: a warning once a minute for the
+ *   instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
  *   otherwise write its own. Refusing, or having lost a pad: once a minute
  *   for each file, since each is a case of its own, and once a minute for
@@ -65,6 +67,7 @@ use Psr\Log\LoggerInterface;
 final class ApiErrorLog {
 	private const QUIET_SECONDS = 60;
 	private const ETHERPAD_KEY_REJECTED = 'Etherpad rejected this Nextcloud\'s API key: check the key in the Pads admin settings against Etherpad\'s APIKEY.txt, and that Etherpad\'s authenticationMethod is apikey.';
+	private const ETHERPAD_NOT_CONFIGURED = 'Etherpad is not configured: set its host and API key in the Pads admin settings.';
 	private const ETHERPAD_UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const ETHERPAD_REFUSED = 'Etherpad refused a request.';
 	private const PAD_LOST = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
@@ -84,6 +87,8 @@ final class ApiErrorLog {
 		$context = ['app' => Application::APP_ID, ...$context, ...SafeError::context($e)];
 		if ($e instanceof EtherpadKeyRejectedException) {
 			$this->rejectedKey($context);
+		} elseif ($e instanceof EtherpadNotConfiguredException) {
+			$this->onceAMinute(self::ETHERPAD_NOT_CONFIGURED, 'not-configured', $context);
 		} elseif (EtherpadClientException::isEtherpadUnreachable($e)) {
 			$this->onceAMinute(self::ETHERPAD_UNREACHABLE, 'unreachable', $context);
 		} elseif ($e instanceof EtherpadRefusedException) {

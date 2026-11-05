@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
@@ -71,9 +72,10 @@ class ManagedPadLifecycle {
 	 *
 	 * Never taken down is a pad that was already there. Random ids make that
 	 * vanishingly unlikely, but the cost of being wrong is deleting someone's
-	 * live pad, so it is worth the check. Nor is a rejected key followed by a
-	 * delete: Etherpad checks the key before it runs a call, so it made
-	 * nothing.
+	 * live pad, so it is worth the check. Nor is a rejected key, or settings
+	 * without an address or key, followed by a delete: Etherpad checks the
+	 * key before it runs a call, and without the settings no call is sent,
+	 * so nothing was made.
 	 *
 	 * @param array<string,mixed> $context as for discardProvisioned()
 	 */
@@ -87,7 +89,8 @@ class ManagedPadLifecycle {
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
-			if (!$e instanceof EtherpadKeyRejectedException && !EtherpadErrorClassifier::isPadAlreadyPresent($e)) {
+			$nothingMade = $e instanceof EtherpadKeyRejectedException || $e instanceof EtherpadNotConfiguredException;
+			if (!$nothingMade && !EtherpadErrorClassifier::isPadAlreadyPresent($e)) {
 				$this->discardProvisioned($padId, $context);
 			}
 			throw $e;

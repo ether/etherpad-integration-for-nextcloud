@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\Http\Client\IClient;
@@ -901,15 +902,41 @@ class EtherpadClientTest extends TestCase {
 	public function testRefusesACallWithoutAConfiguredKey(): void {
 		$client = new EtherpadClient($this->configForApi(), $this->repositoryWithKey(''), $this->createMock(IClientService::class));
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(EtherpadNotConfiguredException::class);
 		$this->expectExceptionMessage('Etherpad API key is not configured.');
 		$client->createGroup();
 	}
 
+	public function testRefusesACallWithoutAConfiguredHost(): void {
+		$client = new EtherpadClient($this->configWithHost(''), $this->repositoryWithKey('stored-key'), $this->createMock(IClientService::class));
+
+		$this->expectException(EtherpadNotConfiguredException::class);
+		$this->expectExceptionMessage('Etherpad host is not configured.');
+		$client->createGroup();
+	}
+
 	public function testRefusesAPadAddressWithoutAConfiguredHost(): void {
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(EtherpadNotConfiguredException::class);
 		$this->expectExceptionMessage('Etherpad host is not configured.');
 		$this->client($this->configWithHost(''))->buildPadUrl('pad-1');
+	}
+
+	/** @return iterable<string,array{string,bool,bool}> */
+	public static function settings(): iterable {
+		yield 'address and key' => ['https://pad.example.test', true, true];
+		yield 'no address' => ['', true, false];
+		yield 'no key' => ['https://pad.example.test', false, false];
+	}
+
+	/** Read from the settings alone: an Etherpad that does not answer is still set up. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('settings')]
+	public function testIsConfiguredWithAnAddressAndAKey(string $host, bool $hasKey, bool $expected): void {
+		$repository = $this->createMock(AdminSettingsRepository::class);
+		$repository->method('hasApiKey')->willReturn($hasKey);
+		$service = $this->createMock(IClientService::class);
+		$service->expects($this->never())->method('newClient');
+
+		$this->assertSame($expected, (new EtherpadClient($this->configWithHost($host), $repository, $service))->isConfigured());
 	}
 
 	/** Nextcloud's client throws on an error status; the status is read from the response that throwable carries. */

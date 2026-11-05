@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadNotConfiguredException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
@@ -128,12 +129,12 @@ class FileCreatedFromTemplateListener implements IEventListener {
 
 		try {
 			$this->padCreationService->materializeTemplateInto($template, $user, $claim);
-		} catch (PadTypeDisabledException $e) {
+		} catch (PadTypeDisabledException|EtherpadNotConfiguredException $e) {
 			// Not a hiccup to retry around: the instance creates no pads at all
-			// right now, which happens when the setting changes while the
+			// right now, which happens when the settings change while the
 			// picker is open. The blank fallback below would fail for the same
 			// reason and leave an empty .pad nobody can open.
-			$this->logger->warning('Pad template create refused: no pad type is enabled.', [
+			$this->logger->warning('Pad template create refused: no pad type is enabled or no Etherpad is set up.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $claim->fileId,
 				...SafeError::context($e),
@@ -160,8 +161,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			if ($unchanged === null || !$this->resetTargetToEmpty($unchanged, $claim->fileId)) {
 				return;
 			}
-			// Re-initialise as a blank pad; a disabled pad type travels on
-			// from here as well. Only once the reset returned: otherwise the
+			// Re-initialise as a blank pad; a create refused as above travels
+			// on from here as well. Only once the reset returned: otherwise the
 			// init could make a pad and a row before the guard refused its
 			// write on the template's copy.
 			$this->initializeBlankPad($user->getUID(), $claim->fileId);
@@ -189,13 +190,13 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	private function initializeBlankPad(string $uid, int $fileId, ?string $preferredAccessMode = null): void {
 		try {
 			$this->padBootstrapService->initializeMissingFrontmatter($uid, $fileId, '', $preferredAccessMode);
-		} catch (PadTypeDisabledException $e) {
+		} catch (PadTypeDisabledException|EtherpadNotConfiguredException $e) {
 			// Same as above, for the blank entry, a type tile and the
 			// fallback — and an instance offering only external pads reaches
 			// this on every blank entry, so leaving the file behind would hand
 			// out empty .pad files.
 			// Removed while it still reads as empty: one written since stays.
-			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
+			$this->logger->warning('Blank pad create refused: no pad type is enabled or no Etherpad is set up.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				...SafeError::context($e),
