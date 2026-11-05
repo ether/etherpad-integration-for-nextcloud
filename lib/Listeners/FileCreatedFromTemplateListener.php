@@ -131,11 +131,9 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->padCreationService->materializeTemplateInto($template, $user, $claim);
 		} catch (PadTypeDisabledException|EtherpadNotConfiguredException $e) {
 			// Not a hiccup to retry around: no pad can be made on this
-			// instance's Etherpad right now, yet the picker led here - with a
-			// tile from before the settings changed, after a key removed with
-			// occ, or with the user's own template, which it shows whatever
-			// the app offers. The blank fallback below would fail for the
-			// same reason and leave an empty .pad nobody can open.
+			// instance's Etherpad right now, and the picker can lead here all
+			// the same (docs/templates.md). The blank fallback below would
+			// only empty the copy and fail the same way.
 			$this->logger->warning('Pad template create refused: no pad type is enabled or no Etherpad is set up.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $claim->fileId,

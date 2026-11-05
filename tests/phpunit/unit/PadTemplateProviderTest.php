@@ -73,8 +73,8 @@ class PadTemplateProviderTest extends TestCase {
 	}
 
 	/**
-	 * Without an Etherpad set up no local pad can be made, from a tile or a
-	 * shared template; a pad on another server needs none.
+	 * Without a Base URL no local pad is offered, from a tile or a shared
+	 * template; a pad on another server needs none.
 	 */
 	public function testOffersOnlyTheExternalTileWithoutAnEtherpadSetUp(): void {
 		$storage = $this->storage();

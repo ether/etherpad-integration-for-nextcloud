@@ -901,7 +901,7 @@ class EtherpadClientTest extends TestCase {
 		$this->assertStringContainsString('apikey=stored-key', self::bodyOf($captured));
 	}
 
-	/** Blanks are no key: refused before Etherpad would reject them, so a create removes its file. */
+	/** Blanks are no key: refused as a missing one, before Etherpad would reject them. */
 	#[\PHPUnit\Framework\Attributes\TestWith([''])]
 	#[\PHPUnit\Framework\Attributes\TestWith(['  '])]
 	public function testRefusesACallWithoutAConfiguredKey(string $key): void {
