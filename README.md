@@ -197,8 +197,9 @@ To upgrade the app:
 If Nextcloud has already disabled the app as incompatible, install a
 compatible version and enable it with `php occ app:enable etherpad_nextcloud`
 or on the Apps page. Enabling runs the app update. Disabling removes any group
-restriction, so repeat `--groups` for each previously allowed group when
-re-enabling.
+restriction. If the app was limited to groups, enable it with `occ` and repeat
+`--groups` for each previously allowed group: the Apps page's "Enable" opens
+the app to every user until it is limited again.
 
 For deployment, copy the app to `apps/etherpad_nextcloud` and exclude development-only content such as `.git/`, `node_modules/`, `tests/`, `docs/`, `.phpunit.cache/`, and local temp files. Keep the built `js/` assets in the deployed app.
 
