@@ -627,11 +627,11 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Whether an Etherpad address is saved. Whether pads are offered asks
-	 * this on every Files page, and reading the key would decrypt it, so
-	 * the key is left to the admin form, which saves the address only with
-	 * one. A key missing anyway, with occ, is refused before a call is sent
-	 * (getApiKey()).
+	 * Whether the Etherpad Base URL is saved; an API URL alone does not
+	 * count (getPublicHost()). The key is not read: whether pads are offered
+	 * is asked on every Files page, and each read decrypts the key. The
+	 * admin form accepts the Base URL only with a key, and a key missing
+	 * anyway, with occ, is refused before a call is sent (getApiKey()).
 	 */
 	public function isConfigured(): bool {
 		return $this->configuredPublicHost() !== '';

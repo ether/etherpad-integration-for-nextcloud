@@ -15,7 +15,8 @@ namespace OCA\EtherpadNextcloud\Exception;
  * counts as Etherpad not answering, as a rejected key does: every call
  * fails alike until an admin saves the settings, and the answer says
  * what it says for an outage. Told apart for its own log line, and so a
- * create removes the file it could not finish.
+ * create from Files' picker removes the file Nextcloud made for it,
+ * while that is unchanged.
  */
 class EtherpadNotConfiguredException extends EtherpadClientException {
 }

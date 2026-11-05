@@ -929,18 +929,18 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
-	 * By the address alone: the key is not read, which would decrypt it, and
+	 * By the Base URL alone: the key is not read, which would decrypt it, and
 	 * Etherpad is not asked, so one that does not answer is still set up.
 	 */
-	#[\PHPUnit\Framework\Attributes\TestWith(['https://pad.example.test', true])]
-	#[\PHPUnit\Framework\Attributes\TestWith(['', false])]
-	public function testIsConfiguredByTheAddressAlone(string $host, bool $expected): void {
+	#[\PHPUnit\Framework\Attributes\TestWith(['https://pad.example.test', '', true])]
+	#[\PHPUnit\Framework\Attributes\TestWith(['', 'http://etherpad.internal:9001', false])]
+	public function testIsConfiguredByTheBaseUrlAlone(string $host, string $apiHost, bool $expected): void {
 		$repository = $this->createMock(AdminSettingsRepository::class);
 		$repository->expects($this->never())->method($this->anything());
 		$service = $this->createMock(IClientService::class);
 		$service->expects($this->never())->method('newClient');
 
-		$this->assertSame($expected, (new EtherpadClient($this->configWithHost($host), $repository, $service))->isConfigured());
+		$this->assertSame($expected, (new EtherpadClient($this->configWithHost($host, $apiHost), $repository, $service))->isConfigured());
 	}
 
 	/** Nextcloud's client throws on an error status; the status is read from the response that throwable carries. */
@@ -1057,14 +1057,18 @@ class EtherpadClientTest extends TestCase {
 		return $config;
 	}
 
-	private function configWithHost(string $host): IConfig {
+	private function configWithHost(string $host, string $apiHost = ''): IConfig {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static function (string $appName, string $key, string $default = '') use ($host): string {
-				if ($appName === 'etherpad_nextcloud' && $key === 'etherpad_host') {
-					return $host;
+			static function (string $appName, string $key, string $default = '') use ($host, $apiHost): string {
+				if ($appName !== 'etherpad_nextcloud') {
+					return $default;
 				}
-				return $default;
+				return match ($key) {
+					'etherpad_host' => $host,
+					'etherpad_api_host' => $apiHost,
+					default => $default,
+				};
 			}
 		);
 		return $config;
