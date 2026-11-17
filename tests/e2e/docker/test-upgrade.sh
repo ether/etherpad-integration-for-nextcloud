@@ -148,6 +148,7 @@ fi
 case "$from_version" in
 	1.1.0-beta.1) from_sha256=594bbd43956bfe944439387a61eb2217686e71d7da0cfea7d82532f1517cb7d4 ;;
 	1.1.0-beta.2) from_sha256=e48536cbf72409232dd7ca9485fa50b099c2c98a091921992e1c88207395177a ;;
+	1.1.0-beta.3) from_sha256=88a1505bcba727283d5b76138e1aeb535310a2d31cf179c1a8867df595780d66 ;;
 	*)
 		echo "No checksum is pinned for $from_version. Add the one of its published archive to $0." >&2
 		exit 1
