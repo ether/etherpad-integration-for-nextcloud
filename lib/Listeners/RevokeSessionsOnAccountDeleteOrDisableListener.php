@@ -19,9 +19,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Deleting or disabling an account takes its Etherpad sessions, as a
- * logout does (UserLoggedOutListener). Without it the account kept them,
- * and with them the protected pads of other people's files shared with
- * it, until they expired.
+ * logout does (UserLoggedOutListener). Otherwise the account would keep
+ * them, and with them the protected pads of other people's files shared
+ * with it, until they expire.
  *
  * A delete before it happens: Nextcloud removes the account's settings,
  * the Etherpad author among them, before it says the account is gone, and
