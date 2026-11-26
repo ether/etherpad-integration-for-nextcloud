@@ -110,8 +110,7 @@ class Application extends App implements IBootstrap {
 			\OCP\User\Events\UserLoggedOutEvent::class,
 			\OCA\EtherpadNextcloud\Listeners\UserLoggedOutListener::class,
 		);
-		// So does deleting an account, before its Etherpad author goes with
-		// its settings, and disabling one.
+		// So do deleting and disabling an account.
 		$context->registerEventListener(
 			\OCP\User\Events\BeforeUserDeletedEvent::class,
 			\OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnAccountDeleteOrDisableListener::class,

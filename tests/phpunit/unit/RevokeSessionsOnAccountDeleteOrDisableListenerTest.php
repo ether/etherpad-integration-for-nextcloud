@@ -18,12 +18,7 @@ use OCP\User\Events\UserDeletedEvent;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * An account deleted or disabled without a logout kept its Etherpad
- * sessions, and the pads shared with it, until they expired. A delete takes
- * them as it starts, while Nextcloud still has the account's Etherpad
- * author.
- */
+/** Delete and disable both take the account's sessions; nothing else does. */
 class RevokeSessionsOnAccountDeleteOrDisableListenerTest extends TestCase {
 	public function testTakesTheSessionsAsTheDeleteStarts(): void {
 		$revoker = $this->createMock(PadSessionRevoker::class);
@@ -65,12 +60,20 @@ class RevokeSessionsOnAccountDeleteOrDisableListenerTest extends TestCase {
 	public function testTheChangeSurvivesAFailedRevoke(): void {
 		$revoker = $this->createMock(PadSessionRevoker::class);
 		$revoker->method('revokeAll')->willThrowException(new \RuntimeException('etherpad down'));
+		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects(self::exactly(2))->method('warning');
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$logged): void {
+			$logged[] = [$message, $context['app'] ?? null, $context['error'] ?? null];
+		});
 		$listener = new RevokeSessionsOnAccountDeleteOrDisableListener($revoker, $logger);
 
 		$listener->handle(new BeforeUserDeletedEvent($this->user('alice')));
 		$listener->handle(new UserChangedEvent($this->user('alice'), 'enabled', false, true));
+
+		$this->assertSame([
+			['Could not revoke the Etherpad sessions of an account being deleted; they will expire on their own.', 'etherpad_nextcloud', \RuntimeException::class],
+			['Could not revoke the Etherpad sessions of a disabled account; they will expire on their own.', 'etherpad_nextcloud', \RuntimeException::class],
+		], $logged);
 	}
 
 	private function user(string $uid): IUser {

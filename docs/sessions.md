@@ -29,7 +29,7 @@ happens to the pad itself when its file goes is in
 | A file moved to the trash, or deleted past it | Every session of the pad's group, whoever it was issued to. | In the request; the rest by a background job, usually within minutes. |
 | A folder with more than 100 protected pads deleted | As above, for every pad in it. | The first 100 pads found in the request; the others by a background job, usually within minutes under a system cron. |
 | A file seen deleted for good, whatever `delete_pad_with_file` says | As above. | By a background job, usually within minutes; thousands of pads going at once take longer. |
-| A share revoked, a permission downgraded, an account blocked only in LDAP or at a SAML provider, a public link deleted | None. | At `validUntil`. |
+| A share revoked, a permission downgraded, the shares of a disabled account where Nextcloud hides them, an account blocked only in LDAP or at a SAML provider, a public link deleted | None. | At `validUntil`. |
 
 A revoked session stops working at once: Etherpad refuses the holder's next
 change. A restore gives back nothing already revoked: the next open makes a
@@ -169,8 +169,11 @@ reports the change (`UserChangedEvent` for `enabled`), from the user
 management or `occ user:disable`. The account's settings stay, so its author
 is still found; enabling it again gives nothing back. As for a logout, what
 does not fit the budget below is left to expire, and a revoke Etherpad does
-not answer is not retried. An account that a backend blocks on its own side,
-in LDAP or at a SAML provider, raises no event in Nextcloud and keeps its
+not answer is not retried. Those its files are shared with keep theirs: from
+Nextcloud 33 on, Nextcloud hides the shares of a disabled account unless
+`hide_disabled_user_shares` is off, but their sessions run until they expire,
+as after a share revoked. An account that a backend blocks on its own side, in
+LDAP or at a SAML provider, raises no event in Nextcloud and keeps its
 sessions until they expire.
 
 ### A delete

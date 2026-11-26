@@ -19,10 +19,11 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Deleting or disabling an account takes its Etherpad sessions, as a
- * logout does (UserLoggedOutListener); otherwise they would keep the
- * protected pads shared with it open until they expire. A delete is heard
- * before it happens, while Nextcloud still has the account's Etherpad
- * author; a disable after it. What a revoke leaves is in docs/sessions.md.
+ * logout does (UserLoggedOutListener); otherwise they would keep its
+ * protected pads open, its own and those shared with it, until they
+ * expire. A delete is heard before it happens, while Nextcloud still has
+ * the account's Etherpad author; a disable after it. What a revoke leaves
+ * is in docs/sessions.md.
  *
  * @template-implements IEventListener<Event>
  */

@@ -154,9 +154,11 @@ test.describe('protected pad session revocation', () => {
 	})
 
 	/**
-	 * A disable reaches the browser no more than a logout does. Through the
-	 * API rather than a login: the open mints the session, and the claim is
-	 * about what Etherpad still holds for the account.
+	 * Etherpad is asked, not the browser: like a logout, a disable leaves the
+	 * cookie in place. Through the API rather than a login: the open mints
+	 * the session, and the claim is about what Etherpad still holds for the
+	 * account. The disable answers once its listener has run, so the
+	 * sessions are gone by then, not later by a job.
 	 */
 	test('disabling an account takes its Etherpad sessions', async () => {
 		test.skip(E2E.etherpadApi === null, needsEtherpadApi)
@@ -176,9 +178,9 @@ test.describe('protected pad session revocation', () => {
 
 			await disableAccount(account.uid)
 
-			await expect.poll(
-				() => liveSessionCount(groupId, authorId),
-				{ timeout: 30_000, message: 'disabling the account should have revoked its sessions' },
+			expect(
+				await liveSessionCount(groupId, authorId),
+				'disabling the account should have revoked its sessions in the request',
 			).toBe(0)
 		} finally {
 			await deleteAccount(account.uid)
