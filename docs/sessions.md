@@ -158,23 +158,25 @@ leaves live sessions behind and a cookie still naming them; a listener has no
 response, so the cookie is never cleared either.
 
 Deleting an account revokes its sessions the same way, as the delete starts
-(`RevokeSessionsOnAccountDeleteOrDisableListener`): Nextcloud removes the account's
-settings, the cached author among them, before it reports the account gone. A
-delete the user backend then refuses has lost them as a logout would, and the
-next open makes new ones. The groups of the protected pads on its home also go
-to a job (below), which revokes the sessions of those they were shared with.
+(`RevokeSessionsOnAccountDeleteOrDisableListener`): Nextcloud removes the
+account's settings, the cached author among them, before it reports the
+account gone. A delete the user backend then refuses has lost them as a logout
+would, and the next open makes new ones. The groups of the protected pads on
+its home also go to a job (below), which revokes the sessions of those they
+were shared with.
 
 Disabling an account revokes its own sessions the same way, once Nextcloud
 reports the change (`UserChangedEvent` for `enabled`), from the user
 management or `occ user:disable`. The account's settings stay, so its author
 is still found; enabling it again gives nothing back. As for a logout, what
 does not fit the budget below is left to expire, and a revoke Etherpad does
-not answer is not retried. Those its files are shared with keep theirs: from
-Nextcloud 33 on, Nextcloud hides the shares of a disabled account unless
-`hide_disabled_user_shares` is off, but their sessions run until they expire,
-as after a share revoked. An account that a backend blocks on its own side, in
-LDAP or at a SAML provider, raises no event in Nextcloud and keeps its
-sessions until they expire.
+not answer is not retried; without the account's cookie in the request, the
+oldest sessions go first. Those its files are shared with keep theirs: where
+Nextcloud hides the shares of a disabled account (`hide_disabled_user_shares`
+of `files_sharing`), their sessions run until they expire, as after a share
+revoked. An account that a backend blocks on its own side, in LDAP or at a
+SAML provider, raises no event in Nextcloud and keeps its sessions until they
+expire.
 
 ### A delete
 

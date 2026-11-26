@@ -63,7 +63,7 @@ class RevokeSessionsOnAccountDeleteOrDisableListenerTest extends TestCase {
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$logged): void {
-			$logged[] = [$message, $context['app'] ?? null, $context['error'] ?? null];
+			$logged[] = [$message, $context['app'] ?? null, $context['uid'] ?? null, $context['error'] ?? null];
 		});
 		$listener = new RevokeSessionsOnAccountDeleteOrDisableListener($revoker, $logger);
 
@@ -71,8 +71,8 @@ class RevokeSessionsOnAccountDeleteOrDisableListenerTest extends TestCase {
 		$listener->handle(new UserChangedEvent($this->user('alice'), 'enabled', false, true));
 
 		$this->assertSame([
-			['Could not revoke the Etherpad sessions of an account being deleted; they will expire on their own.', 'etherpad_nextcloud', \RuntimeException::class],
-			['Could not revoke the Etherpad sessions of a disabled account; they will expire on their own.', 'etherpad_nextcloud', \RuntimeException::class],
+			['Could not revoke the Etherpad sessions of an account being deleted; they will expire on their own.', 'etherpad_nextcloud', 'alice', \RuntimeException::class],
+			['Could not revoke the Etherpad sessions of a disabled account; they will expire on their own.', 'etherpad_nextcloud', 'alice', \RuntimeException::class],
 		], $logged);
 	}
 

@@ -49,6 +49,7 @@ class RevokeSessionsOnAccountDeleteOrDisableListener implements IEventListener {
 			// An account is deleted or disabled whatever the pad server says.
 			$this->logger->warning($failure, [
 				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
 				...SafeError::context($e),
 			]);
 		}
