@@ -25,10 +25,11 @@ happens to the pad itself when its file goes is in
 |---|---|---|
 | A logout | Every session of that user, in other browsers too. | In the request; what is left expires. |
 | An account deleted | Its own, like a logout, and those of everyone its pads were shared with. | Its own in the request, as the delete starts; the others by a background job. |
+| An account disabled in Nextcloud | Its own, like a logout. | In the request; what is left expires. |
 | A file moved to the trash, or deleted past it | Every session of the pad's group, whoever it was issued to. | In the request; the rest by a background job, usually within minutes. |
 | A folder with more than 100 protected pads deleted | As above, for every pad in it. | The first 100 pads found in the request; the others by a background job, usually within minutes under a system cron. |
 | A file seen deleted for good, whatever `delete_pad_with_file` says | As above. | By a background job, usually within minutes; thousands of pads going at once take longer. |
-| A share revoked, a permission downgraded, an account disabled, a public link deleted | None. | At `validUntil`. |
+| A share revoked, a permission downgraded, the shares of a disabled account where Nextcloud hides them, an account blocked only in LDAP or at a SAML provider, a public link deleted | None. | At `validUntil`. |
 
 A revoked session stops working at once: Etherpad refuses the holder's next
 change. A restore gives back nothing already revoked: the next open makes a
@@ -133,7 +134,7 @@ and a logout after a brief outage would revoke nothing. So the id stays.
 
 ## Revoking
 
-### A logout, and an account deleted
+### A logout, and an account deleted or disabled
 
 A logout revokes every session of that user, including ones opened in another
 browser. That is deliberate: a cookie copied off the machine cannot be
@@ -157,11 +158,25 @@ leaves live sessions behind and a cookie still naming them; a listener has no
 response, so the cookie is never cleared either.
 
 Deleting an account revokes its sessions the same way, as the delete starts
-(`RevokeSessionsOnAccountDeleteListener`): Nextcloud removes the account's
-settings, the cached author among them, before it reports the account gone. A
-delete the user backend then refuses has lost them as a logout would, and the
-next open makes new ones. The groups of the protected pads on its home also go
-to a job (below), which revokes the sessions of those they were shared with.
+(`RevokeSessionsOnAccountDeleteOrDisableListener`): Nextcloud removes the
+account's settings, the cached author among them, before it reports the
+account gone. A delete the user backend then refuses has lost them as a logout
+would, and the next open makes new ones. The groups of the protected pads on
+its home also go to a job (below), which revokes the sessions of those they
+were shared with.
+
+Disabling an account revokes its own sessions the same way, once Nextcloud
+reports the change (`UserChangedEvent` for `enabled`), from the user
+management or `occ user:disable`. The account's settings stay, so its author
+is still found; enabling it again gives nothing back. As for a logout, what
+does not fit the budget below is left to expire, and a revoke Etherpad does
+not answer is not retried; without the account's cookie in the request, the
+oldest sessions go first. Those its files are shared with keep theirs: where
+Nextcloud hides the shares of a disabled account (`hide_disabled_user_shares`
+of `files_sharing`), their sessions run until they expire, as after a share
+revoked. An account that a backend blocks on its own side, in LDAP or at a
+SAML provider, raises no event in Nextcloud and keeps its sessions until they
+expire.
 
 ### A delete
 
@@ -246,7 +261,7 @@ protected groups, and that job queues each group's own.
 
 | Who | Deletes | Time |
 |---|---|---|
-| A logout, an account deleted | 25, enough for every id a cookie can hold | 2 s, each call given what is left of it |
+| A logout, an account deleted or disabled | 25, enough for every id a cookie can hold | 2 s, each call given what is left of it |
 | A delete's request | 100, over all the groups it takes | 2 s |
 | A pass of `RevokeGroupSessionsJob` | 250 | 20 s |
 | A run of the collector | 250, from one listing of at most 4 MiB and 15 s | 20 s |
@@ -281,14 +296,15 @@ from the open, at least two for a public link.
 the previous one, so a pad reopened often carries several live sessions for
 one group. A logout has to read all of them ("Collecting expired sessions").
 
-**A logout cannot outrun an open already in flight.** A request that has
-passed its permission check can issue a session after a revoke has listed what
-to remove. The window is short and the outcome is one more session. A delete's
-revocation catches it, through the job's passes above.
+**A logout or a disable cannot outrun an open already in flight.** Opens that
+have passed their permission check can issue sessions after the revoke has
+listed what to remove. The window is short. A delete's revocation catches
+them, through the job's passes above.
 
 **Two Nextclouds pointed at one Etherpad share an author.** The mapper is
-`nc:<uid>`, which Etherpad stores globally, so one instance's logout can end
-the other's sessions. The mapper is asked for on every open, so changing its
+`nc:<uid>`, which Etherpad stores globally, so a logout, a deleted or a
+disabled account on one instance can end the other's sessions of the same
+uid. The mapper is asked for on every open, so changing its
 shape re-issues an author for every existing user and orphans their live
 sessions. Naming it per instance therefore needs a migration, and is not done
 here.

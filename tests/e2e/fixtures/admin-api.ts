@@ -101,6 +101,11 @@ export const deleteAccount = async (uid: string): Promise<void> => {
 	await ocs('DELETE', `/ocs/v2.php/cloud/users/${encodeURIComponent(uid)}`, undefined, [404, 998])
 }
 
+/** Disable an account, as an admin does in the account management. */
+export const disableAccount = async (uid: string): Promise<void> => {
+	await ocs('PUT', `/ocs/v2.php/cloud/users/${encodeURIComponent(uid)}/disable`)
+}
+
 export const createGroup = async (gid: string): Promise<void> => {
 	await ocs('POST', '/ocs/v2.php/cloud/groups', { groupid: gid })
 }

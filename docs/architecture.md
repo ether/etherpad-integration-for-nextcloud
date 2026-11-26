@@ -595,8 +595,8 @@ For new code: pass a document or a credential as one of those objects where ther
   - Mark the rows of files deleted for good (see "Files gone for good").
 - `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`
   - Take the sessions of the protected pads a delete takes along (see Trash/Restore).
-- `OCP\User\Events\UserLoggedOutEvent`, `OCP\User\Events\BeforeUserDeletedEvent`
-  - Take the account's own sessions: on a logout, and as the account's delete starts, while Nextcloud still has its Etherpad author (see `docs/sessions.md`, "Revoking").
+- `OCP\User\Events\UserLoggedOutEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserChangedEvent`
+  - Take the account's own sessions: on a logout, as the account's delete starts, while Nextcloud still has its Etherpad author, and once the account is disabled (see `docs/sessions.md`, "Revoking").
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`
   - Restore lifecycle.
 - `\OCA\Files_Trashbin\Trashbin::post_restore` (legacy hook)

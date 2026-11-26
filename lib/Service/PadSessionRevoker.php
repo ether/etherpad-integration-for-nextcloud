@@ -64,8 +64,8 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * Every session this user holds, for every group: on a logout, or as an
-	 * account is deleted.
+	 * Every session this user holds, for every group: on a logout, as an
+	 * account is deleted, or once it is disabled.
 	 *
 	 * Every one, not only the ones this browser is carrying. A cookie that
 	 * has left the machine cannot be narrowed down by the cookie you can

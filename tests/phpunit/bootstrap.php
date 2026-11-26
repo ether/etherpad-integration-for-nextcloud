@@ -87,6 +87,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/User/Events/UserLoggedOutEvent.php',
 	__DIR__ . '/stubs/OCP/User/Events/BeforeUserDeletedEvent.php',
 	__DIR__ . '/stubs/OCP/User/Events/UserDeletedEvent.php',
+	__DIR__ . '/stubs/OCP/User/Events/UserChangedEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Events/Node/BeforeNodeDeletedEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Events/Node/NodeDeletedEvent.php',
 	__DIR__ . '/stubs/OCP/IUserSession.php',
