@@ -10,12 +10,16 @@ import {
 	gotoFiles,
 	openPadFromFileList,
 	readEtherpadUrlFromViewer,
+	uniqueName,
 	uniquePadName,
 } from '../fixtures/nextcloud'
 import {
 	createPadAtPath,
 	deleteViaDav,
+	padApiPost,
+	propfindFileId,
 } from '../fixtures/dav'
+import { createAccount, deleteAccount, disableAccount } from '../fixtures/admin-api'
 import { authorIdForUid, groupIdOfPadUrl, liveSessionCount } from '../fixtures/etherpad'
 import { E2E, needsEtherpadApi } from '../fixtures/env'
 import { loginAs, logout } from '../fixtures/auth'
@@ -146,6 +150,38 @@ test.describe('protected pad session revocation', () => {
 		} finally {
 			await context.close()
 			await deleteViaDav(padName).catch(() => {})
+		}
+	})
+
+	/**
+	 * A disable reaches the browser no more than a logout does. Through the
+	 * API rather than a login: the open mints the session, and the claim is
+	 * about what Etherpad still holds for the account.
+	 */
+	test('disabling an account takes its Etherpad sessions', async () => {
+		test.skip(E2E.etherpadApi === null, needsEtherpadApi)
+
+		const account = await createAccount(uniqueName('revoke-disabled'))
+		try {
+			const name = uniquePadName('revoke-disabled')
+			const pad = await createPadAtPath(`/${name}`, 'protected', account)
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(name, account)) }, account)
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			const groupId = groupIdOfPadUrl(pad.padUrl)
+			const authorId = await authorIdForUid(account.uid)
+			expect(
+				await liveSessionCount(groupId, authorId),
+				'opening a protected pad should have issued a session',
+			).toBeGreaterThan(0)
+
+			await disableAccount(account.uid)
+
+			await expect.poll(
+				() => liveSessionCount(groupId, authorId),
+				{ timeout: 30_000, message: 'disabling the account should have revoked its sessions' },
+			).toBe(0)
+		} finally {
+			await deleteAccount(account.uid)
 		}
 	})
 })
