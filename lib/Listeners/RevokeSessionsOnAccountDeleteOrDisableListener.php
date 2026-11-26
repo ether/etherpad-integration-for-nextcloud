@@ -19,19 +19,11 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Deleting or disabling an account takes its Etherpad sessions, as a
- * logout does (UserLoggedOutListener). Otherwise the account would keep
- * them, and with them the protected pads of other people's files shared
- * with it, until they expire.
- *
- * A delete before it happens: Nextcloud removes the account's settings,
- * the Etherpad author among them, before it says the account is gone, and
- * without the author its sessions cannot be found. A delete the user
- * backend then refuses has lost them as a logout would: the next open
- * makes new ones. A disable is heard after it, when Nextcloud reports the
- * change; the settings stay, and enabling the account again gives nothing
- * back. Only a disable through Nextcloud raises the event: an account a
- * backend blocks on its own side, in LDAP or at a SAML provider, keeps its
- * sessions until they expire.
+ * logout does (UserLoggedOutListener); otherwise they would keep the
+ * protected pads shared with it open until they expire. A delete is heard
+ * before it happens, while Nextcloud still has the account's Etherpad
+ * author; a disable after it. A block an LDAP or SAML backend makes on its
+ * own side raises no event (docs/sessions.md).
  *
  * @template-implements IEventListener<Event>
  */

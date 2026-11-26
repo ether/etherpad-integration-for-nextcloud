@@ -167,9 +167,11 @@ to a job (below), which revokes the sessions of those they were shared with.
 Disabling an account revokes its own sessions the same way, once Nextcloud
 reports the change (`UserChangedEvent` for `enabled`), from the user
 management or `occ user:disable`. The account's settings stay, so its author
-is still found; enabling it again gives nothing back. An account that a
-backend blocks on its own side, in LDAP or at a SAML provider, raises no event
-in Nextcloud and keeps its sessions until they expire.
+is still found; enabling it again gives nothing back. As for a logout, what
+does not fit the budget below is left to expire, and a revoke Etherpad does
+not answer is not retried. An account that a backend blocks on its own side,
+in LDAP or at a SAML provider, raises no event in Nextcloud and keeps its
+sessions until they expire.
 
 ### A delete
 
@@ -289,7 +291,7 @@ from the open, at least two for a public link.
 the previous one, so a pad reopened often carries several live sessions for
 one group. A logout has to read all of them ("Collecting expired sessions").
 
-**A logout cannot outrun an open already in flight.** A request that has
+**A logout or a disable cannot outrun an open already in flight.** A request that has
 passed its permission check can issue a session after a revoke has listed what
 to remove. The window is short and the outcome is one more session. A delete's
 revocation catches it, through the job's passes above.
