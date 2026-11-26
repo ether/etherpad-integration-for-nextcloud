@@ -22,8 +22,7 @@ use Psr\Log\LoggerInterface;
  * logout does (UserLoggedOutListener); otherwise they would keep the
  * protected pads shared with it open until they expire. A delete is heard
  * before it happens, while Nextcloud still has the account's Etherpad
- * author; a disable after it. A block an LDAP or SAML backend makes on its
- * own side raises no event (docs/sessions.md).
+ * author; a disable after it. What a revoke leaves is in docs/sessions.md.
  *
  * @template-implements IEventListener<Event>
  */

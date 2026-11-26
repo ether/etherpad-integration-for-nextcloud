@@ -291,14 +291,15 @@ from the open, at least two for a public link.
 the previous one, so a pad reopened often carries several live sessions for
 one group. A logout has to read all of them ("Collecting expired sessions").
 
-**A logout or a disable cannot outrun an open already in flight.** A request that has
-passed its permission check can issue a session after a revoke has listed what
-to remove. The window is short and the outcome is one more session. A delete's
-revocation catches it, through the job's passes above.
+**A logout or a disable cannot outrun an open already in flight.** Opens that
+have passed their permission check can issue sessions after the revoke has
+listed what to remove. The window is short. A delete's revocation catches
+them, through the job's passes above.
 
 **Two Nextclouds pointed at one Etherpad share an author.** The mapper is
-`nc:<uid>`, which Etherpad stores globally, so one instance's logout can end
-the other's sessions. The mapper is asked for on every open, so changing its
+`nc:<uid>`, which Etherpad stores globally, so a logout, a deleted or a
+disabled account on one instance can end the other's sessions of the same
+uid. The mapper is asked for on every open, so changing its
 shape re-issues an author for every existing user and orphans their live
 sessions. Naming it per instance therefore needs a migration, and is not done
 here.
