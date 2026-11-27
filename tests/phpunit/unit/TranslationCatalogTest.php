@@ -15,6 +15,8 @@ use PHPUnit\Framework\TestCase;
 class TranslationCatalogTest extends TestCase {
 	private const ROOT = __DIR__ . '/../../..';
 	private const POT = self::ROOT . '/translationfiles/templates/etherpad_nextcloud.pot';
+	/** Locales seeded before translatewiki.net; losing one is a regression, not a sync. */
+	private const SEEDED = ['de', 'es', 'fr', 'it'];
 
 	public function testTheTemplateHoldsStrings(): void {
 		$this->assertNotSame([], $this->templateStrings(), 'no msgid was read from the template');
@@ -27,6 +29,10 @@ class TranslationCatalogTest extends TestCase {
 				"l10n/$locale.json has no translationfiles/$locale/etherpad_nextcloud.po to be built from",
 			);
 		}
+	}
+
+	public function testTheSeededLocalesAreStillShipped(): void {
+		$this->assertSame([], array_values(array_diff(self::SEEDED, $this->locales())), 'a seeded locale has no l10n/*.json');
 	}
 
 	public function testNoCatalogCarriesAStringTheTemplateDropped(): void {

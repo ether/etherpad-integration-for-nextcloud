@@ -32,13 +32,22 @@ TOOL_URL="https://raw.githubusercontent.com/nextcloud/docker-ci/$TOOL_COMMIT/tra
 TOOL_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APP_ID"
 TOOL="$TOOL_DIR/translationtool-$TOOL_COMMIT.phar"
 
+# sha256sum on Linux, shasum on macOS.
+verify_sha256() {
+	if command -v sha256sum >/dev/null; then
+		echo "$TOOL_SHA256  $1" | sha256sum --check --status
+	else
+		echo "$TOOL_SHA256  $1" | shasum -a 256 --check --status
+	fi
+}
+
 fetch_tool() {
-	if [[ -f "$TOOL" ]] && echo "$TOOL_SHA256  $TOOL" | sha256sum --check --status; then
+	if [[ -f "$TOOL" ]] && verify_sha256 "$TOOL"; then
 		return
 	fi
 	mkdir -p "$TOOL_DIR"
 	curl -fsSL "$TOOL_URL" -o "$TOOL.tmp"
-	if ! echo "$TOOL_SHA256  $TOOL.tmp" | sha256sum --check --status; then
+	if ! verify_sha256 "$TOOL.tmp"; then
 		rm -f "$TOOL.tmp"
 		echo "translationtool.phar checksum mismatch" >&2
 		exit 1
@@ -50,8 +59,9 @@ make_pot() {
 	fetch_tool
 	"$PHP" "$TOOL" create-pot-files >/dev/null
 	# xgettext writes absolute source paths. Make them relative so the
-	# template is the same on every machine.
-	sed -i "s#$ROOT_DIR/##g" "$POT"
+	# template is the same on every machine. (sed -i differs between GNU
+	# and BSD, so write through a temporary file.)
+	sed "s#$ROOT_DIR/##g" "$POT" >"$POT.tmp" && mv "$POT.tmp" "$POT"
 }
 
 convert() {
