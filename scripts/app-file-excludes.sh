@@ -44,6 +44,9 @@ RSYNC_EXCLUDES=(
 	--exclude='psalm-baseline.xml'
 	--exclude='infection.json5'
 	--exclude='dist'
+	# Gettext sources for translatewiki.net; Nextcloud reads l10n/ only.
+	--exclude='translationfiles'
+	--exclude='.l10nignore'
 	# Playwright e2e artefacts (gitignored, but rsync copies the working
 	# tree regardless) — must never end up in the app tarball.
 	--exclude='test-results'

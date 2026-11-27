@@ -9,7 +9,7 @@ import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
 import { fetchJsonWithTimeout, isThrottled, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
-import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
+import { ocGenerateUrl, ocRequestToken, t } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
 import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, opensAgainAfterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
@@ -19,8 +19,8 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 // When nothing came back: our own sentence, not the browser's English.
 // A throttle answers with no sentence of its own.
 const messageOf = (error, fallback) => isThrottled(error)
-	? translate('Too many requests. Try again later.')
-	: requestErrorMessage(error, translate('Nextcloud did not answer. Check your connection and try again.'), fallback)
+	? t(APP_ID, 'Too many requests. Try again later.')
+	: requestErrorMessage(error, t(APP_ID, 'Nextcloud did not answer. Check your connection and try again.'), fallback)
 
 const component = {
 	name: 'EtherpadNextcloudViewer',
@@ -242,7 +242,7 @@ const component = {
 
 			if (!this.filePath) {
 				if (!isCurrent()) return
-				this.loadError = translate('No .pad file selected.')
+				this.loadError = t(APP_ID, 'No .pad file selected.')
 				this.isLoading = false
 				return
 			}
@@ -409,7 +409,7 @@ const component = {
 
 			if (this.contentUrl === '') {
 				this.contentState = 'error'
-				this.contentError = translate('The server did not say where to load this pad from.')
+				this.contentError = t(APP_ID, 'The server did not say where to load this pad from.')
 				return
 			}
 
@@ -429,7 +429,7 @@ const component = {
 			} catch (error) {
 				if (!isCurrent() || (error && error.name === 'AbortError')) return
 				this.contentState = 'error'
-				this.contentError = messageOf(error, translate('Could not load the pad content.'))
+				this.contentError = messageOf(error, t(APP_ID, 'Could not load the pad content.'))
 			}
 		},
 		renderContentView(createElement, options) {
@@ -441,13 +441,13 @@ const component = {
 					createElement('div', { class: 'epnc-pad-doc__toolbar' }, [
 						(this.contentState === 'error' && this.contentLoaded)
 							? createElement('span', { class: 'epnc-pad-doc__toolbar-error' },
-								this.contentError || translate('Could not load the pad content.'))
+								this.contentError || t(APP_ID, 'Could not load the pad content.'))
 							: null,
 						createElement('button', {
 							class: 'button epnc-pad-doc__refresh',
 							attrs: { type: 'button', disabled: isBusy },
 							on: { click: () => { void this.loadContent() } },
-						}, isBusy ? translate('Refreshing...') : translate('Refresh')),
+						}, isBusy ? t(APP_ID, 'Refreshing...') : t(APP_ID, 'Refresh')),
 						...extraActions,
 					]),
 					this.renderContentBody(createElement),
@@ -461,22 +461,22 @@ const component = {
 			if (this.contentState === 'error') {
 				return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, [
 					createElement('div', {},
-						this.contentError || translate('Could not load the pad content.')),
+						this.contentError || t(APP_ID, 'Could not load the pad content.')),
 					createElement('button', {
 						class: 'button primary',
 						attrs: { type: 'button' },
 						on: { click: () => { void this.loadContent() } },
-					}, translate('Try again')),
+					}, t(APP_ID, 'Try again')),
 				])
 			}
 			if (this.contentState !== 'ready') {
-				return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, translate('Loading pad content...'))
+				return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, t(APP_ID, 'Loading pad content...'))
 			}
 			return this.renderContentText(createElement)
 		},
 		renderContentText(createElement) {
 			if (this.content.isEmpty) {
-				return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, translate('This pad is still empty.'))
+				return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, t(APP_ID, 'This pad is still empty.'))
 			}
 			return createElement('div', {
 				class: 'epnc-pad-doc__text epnc-pad-doc__text--html',
@@ -500,14 +500,14 @@ const component = {
 	render(createElement) {
 		if (this.loadError) {
 			const cardChildren = [
-				createElement('div', { class: 'epnc-native-error-title' }, translate('Could not open pad')),
+				createElement('div', { class: 'epnc-native-error-title' }, t(APP_ID, 'Could not open pad')),
 				// Read out when it appears, not only when someone looks.
 				createElement('div', { class: 'epnc-native-error-message', attrs: { role: 'alert' } }, this.loadError),
 			]
 			if (this.maybeStaleFileId) {
 				cardChildren.push(
 					createElement('div', { class: 'epnc-native-error-message' },
-						translate('This file may have been moved or replaced since the list was loaded. Reload the page and open it again.')),
+						t(APP_ID, 'This file may have been moved or replaced since the list was loaded. Reload the page and open it again.')),
 				)
 			}
 			if (this.canRetryOpen) {
@@ -516,7 +516,7 @@ const component = {
 						class: 'button primary epnc-native-error-action',
 						attrs: { type: 'button' },
 						on: { click: () => { void this.resolveOpenUrl(true) } },
-					}, translate('Try again')),
+					}, t(APP_ID, 'Try again')),
 				)
 			}
 			if (this.canRecover && this.padLost) {
@@ -526,38 +526,38 @@ const component = {
 						class: 'button primary epnc-native-error-action',
 						attrs: { type: 'button', disabled: this.isRecovering },
 						on: { click: () => { void this.recoverFromSnapshot() } },
-					}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
+					}, this.isRecovering ? t(APP_ID, 'Creating new pad...') : t(APP_ID, 'Create new pad from this file')),
 				)
 			} else if (this.canRecover) {
 				if (this.isCheckingOriginal) {
 					// Wait before choosing the primary recovery action.
 					cardChildren.push(
 						createElement('div', { class: 'epnc-native-error-message' },
-							translate('Checking for the original pad...')),
+							t(APP_ID, 'Checking for the original pad...')),
 					)
 				} else if (this.originalPad) {
 					cardChildren.push(
 						createElement('div', { class: 'epnc-native-error-message' },
-							translate('This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.')),
+							t(APP_ID, 'This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.')),
 						createElement('a', {
 							class: 'button primary epnc-native-error-action',
 							attrs: { href: this.originalPad.viewerUrl },
-						}, translate('Open the original .pad file')),
+						}, t(APP_ID, 'Open the original .pad file')),
 						createElement('button', {
 							class: 'button epnc-native-error-action',
 							attrs: { type: 'button', disabled: this.isRecovering },
 							on: { click: () => { void this.recoverFromSnapshot() } },
-						}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
+						}, this.isRecovering ? t(APP_ID, 'Creating new pad...') : t(APP_ID, 'Create new pad from this file')),
 					)
 				} else {
 					cardChildren.push(
 						createElement('div', { class: 'epnc-native-error-message' },
-							translate("We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.")),
+							t(APP_ID, "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.")),
 						createElement('button', {
 							class: 'button primary epnc-native-error-action',
 							attrs: { type: 'button', disabled: this.isRecovering },
 							on: { click: () => { void this.recoverFromSnapshot() } },
-						}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
+						}, this.isRecovering ? t(APP_ID, 'Creating new pad...') : t(APP_ID, 'Create new pad from this file')),
 					)
 				}
 			}
@@ -577,12 +577,12 @@ const component = {
 								target: '_blank',
 								rel: 'noopener noreferrer',
 							},
-						}, translate('Open original pad')),
+						}, t(APP_ID, 'Open original pad')),
 					],
 				})
 		}
 		if (this.isLoading || !this.iframeSrc) {
-			return createElement('div', { class: 'epnc-native-status' }, translate('Loading pad...'))
+			return createElement('div', { class: 'epnc-native-status' }, t(APP_ID, 'Loading pad...'))
 		}
 
 		return createElement('div', { class: 'epnc-native-shell' }, [

@@ -44,6 +44,9 @@ jobs:
               - 'src/**'
               - 'templates/**'
               - 'appinfo/**'
+              # TranslationCatalogTest reads the catalogs and the template.
+              - 'l10n/**'
+              - 'translationfiles/**'
 
   phpunit:
     runs-on: ubuntu-latest

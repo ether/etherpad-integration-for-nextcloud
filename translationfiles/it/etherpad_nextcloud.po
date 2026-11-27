@@ -1,0 +1,1179 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: etherpad_nextcloud\n"
+"Report-Msgid-Bugs-To: translations\\@example.com\n"
+"POT-Creation-Date: 2026-11-27 09:24+0000\n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: lib/Controller/AbstractPadController.php:84
+#: lib/Controller/AdminController.php:280 lib/Controller/EmbedController.php:50
+#: lib/Controller/ViewerController.php:99
+msgid "Invalid file ID."
+msgstr "ID file non valido."
+
+#: lib/Controller/AbstractPadController.php:88
+msgid "Invalid parentFolderId."
+msgstr "parentFolderId non valido."
+
+#: lib/Controller/AbstractPadController.php:93
+msgid "Invalid accessMode. Use public or protected."
+msgstr "accessMode non valido. Usa public o protected."
+
+#: lib/Controller/AdminController.php:82 lib/Settings/AdminSettings.php:177
+msgid "Settings saved."
+msgstr "Impostazioni salvate."
+
+#: lib/Controller/AdminController.php:90 lib/Settings/AdminSettings.php:182
+msgid "Failed to save settings."
+msgstr "Impossibile salvare le impostazioni."
+
+#: lib/Controller/AdminController.php:128 lib/Settings/AdminSettings.php:183
+msgid "Etherpad connection test failed."
+msgstr "Impossibile verificare la connessione a Etherpad."
+
+#: lib/Controller/AdminController.php:150
+msgid "Pending pad check finished."
+msgstr "Controllo dei pad in sospeso completato."
+
+#: lib/Controller/AdminController.php:151
+msgid "Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on."
+msgstr "L'eliminazione dei pad è disattivata, quindi nessun pad è stato eliminato. I file eliminati definitivamente attendono che venga attivata."
+
+#: lib/Controller/AdminController.php:157 lib/Settings/AdminSettings.php:185
+msgid "Pending pad check failed."
+msgstr "Controllo dei pad in sospeso non riuscito."
+
+#: lib/Controller/AdminController.php:181
+msgid "The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with \"Check pending pads\"."
+msgstr "Il pad di questo file scomparso è contrassegnato per l'eliminazione. Viene eliminato entro pochi minuti, o subito con «Controlla i pad in sospeso»."
+
+#: lib/Controller/AdminController.php:182
+msgid "The app does not delete this public pad, imported from a .pad file in Ownpad's format. Forget it instead."
+msgstr "L'app non elimina questo pad pubblico, importato da un file .pad in formato Ownpad. Dimenticalo invece."
+
+#: lib/Controller/AdminController.php:190 lib/Settings/AdminSettings.php:138
+msgid "Could not delete the pads of the vanished files."
+msgstr "Non è stato possibile eliminare i pad dei file scomparsi."
+
+#: lib/Controller/AdminController.php:214
+msgid "The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again."
+msgstr "L'elenco dei file scomparsi è cambiato da quando è stato mostrato, quindi nessun pad è stato contrassegnato per l'eliminazione. Controllalo di nuovo."
+
+#: lib/Controller/AdminController.php:218
+msgid "Not every vanished file could be marked in one go. Run it again for the rest."
+msgstr "Non è stato possibile contrassegnare tutti i file scomparsi in una volta. Eseguilo di nuovo per il resto."
+
+#: lib/Controller/AdminController.php:221
+msgid "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads."
+msgstr "I pad dei file scomparsi mostrati sono contrassegnati per l'eliminazione. Nel frattempo sono scomparsi altri file: controlla l'elenco prima di eliminare i loro pad."
+
+#: lib/Controller/AdminController.php:222
+msgid "No vanished file was left to mark for deletion."
+msgstr "Non restava alcun file scomparso da contrassegnare per l'eliminazione."
+
+#: lib/Controller/AdminController.php:223
+msgid "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\"."
+msgstr "I pad dei file scomparsi sono contrassegnati per l'eliminazione. Vengono eliminati entro pochi minuti, o subito con «Controlla i pad in sospeso»."
+
+#: lib/Controller/AdminController.php:229
+msgid "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again."
+msgstr "Non è stato possibile eliminare i pad di tutti i file scomparsi. Alcuni potrebbero essere già contrassegnati per l'eliminazione: controlla di nuovo l'elenco."
+
+#: lib/Controller/AdminController.php:246
+msgid "The pad stays in Etherpad, and the app no longer looks after it."
+msgstr "Il pad resta in Etherpad, e l'app non se ne occupa più."
+
+#: lib/Controller/AdminController.php:247
+msgid "Only a public pad can be forgotten. Delete a protected one instead."
+msgstr "Solo un pad pubblico può essere dimenticato. Elimina invece un pad protetto."
+
+#: lib/Controller/AdminController.php:255 lib/Settings/AdminSettings.php:145
+msgid "Could not forget the pad of the vanished file."
+msgstr "Non è stato possibile dimenticare il pad del file scomparso."
+
+#: lib/Controller/AdminController.php:285
+msgid "Invalid count."
+msgstr "Numero non valido."
+
+#: lib/Controller/AdminController.php:303
+msgid "Deleting pads is switched off, so no pad was marked for deletion."
+msgstr "L'eliminazione dei pad è disattivata, quindi nessun pad è stato contrassegnato per l'eliminazione."
+
+#: lib/Controller/AdminController.php:308
+msgid "This file is no longer vanished; nothing was changed."
+msgstr "Questo file non è più scomparso; non è stato modificato nulla."
+
+#: lib/Controller/AdminController.php:322 lib/Settings/AdminSettings.php:184
+msgid "Consistency check failed."
+msgstr "Controllo di coerenza non riuscito."
+
+#: lib/Controller/AdminController.php:350
+msgid "Could not read the templates."
+msgstr "Impossibile leggere i modelli."
+
+#: lib/Controller/AdminController.php:367
+msgid "Template saved."
+msgstr "Modello salvato."
+
+#: lib/Controller/AdminController.php:370
+msgid "Could not save the template."
+msgstr "Impossibile salvare il modello."
+
+#: lib/Controller/AdminController.php:384
+msgid "Template deleted."
+msgstr "Modello eliminato."
+
+#: lib/Controller/AdminController.php:387
+msgid "Could not delete the template."
+msgstr "Impossibile eliminare il modello."
+
+#: lib/Controller/AdminController.php:398
+msgid "All checks passed."
+msgstr "Tutti i controlli sono riusciti."
+
+#: lib/Controller/AdminController.php:399
+msgid "Check finished. Some settings need attention."
+msgstr "Controllo completato. Alcune impostazioni richiedono attenzione."
+
+#: lib/Controller/AdminControllerErrorMapper.php:41
+#: lib/Controller/EmbedControllerErrorMapper.php:56
+#: lib/Controller/PadControllerErrorMapper.php:89
+#: lib/Controller/ViewerControllerErrorMapper.php:47
+msgid "Authentication required."
+msgstr "Autenticazione richiesta."
+
+#: lib/Controller/AdminControllerErrorMapper.php:46
+msgid "Admin permissions required."
+msgstr "Sono necessari i permessi di amministratore."
+
+#: lib/Controller/AdminControllerErrorMapper.php:88
+#: lib/Controller/PadControllerErrorMapper.php:188
+#: lib/Settings/AdminSettings.php:181
+msgid "Request failed."
+msgstr "Richiesta non riuscita."
+
+#: lib/Controller/EmbedController.php:53
+#: lib/Controller/EmbedControllerErrorMapper.php:69
+#: lib/Controller/PadControllerErrorMapper.php:100
+msgid "Selected file is not a .pad file."
+msgstr "Il file selezionato non è un file .pad."
+
+#: lib/Controller/EmbedController.php:73 src/viewer-main.js:585
+msgid "Loading pad..."
+msgstr "Caricamento del pad..."
+
+#: lib/Controller/EmbedController.php:74 lib/Controller/EmbedController.php:92
+#: lib/Controller/EmbedControllerErrorMapper.php:82
+#: lib/Controller/PadSessionController.php:59
+#: lib/Controller/PadSessionController.php:70
+#: lib/Controller/PublicViewerControllerErrorMapper.php:105
+#: lib/Controller/ViewerControllerErrorMapper.php:61 src/viewer-main.js:503
+#: templates/noviewer.php:10
+msgid "Could not open pad"
+msgstr "Impossibile aprire il pad"
+
+#: lib/Controller/EmbedController.php:75 src/viewer-main.js:479
+msgid "This pad is still empty."
+msgstr "Questo pad è ancora vuoto."
+
+#: lib/Controller/EmbedController.php:76 src/viewer-main.js:473
+msgid "Loading pad content..."
+msgstr "Caricamento del contenuto del pad…"
+
+#: lib/Controller/EmbedController.php:77
+#: lib/Controller/PadSessionController.php:88 src/viewer-main.js:432
+#: src/viewer-main.js:444 src/viewer-main.js:464
+msgid "Could not load the pad content."
+msgstr "Impossibile caricare il contenuto del pad."
+
+#: lib/Controller/EmbedController.php:78 src/viewer-main.js:412
+msgid "The server did not say where to load this pad from."
+msgstr "Il server non ha indicato da dove caricare questo pad."
+
+#: lib/Controller/EmbedController.php:79 src/viewer-main.js:469
+#: src/viewer-main.js:519
+msgid "Try again"
+msgstr "Riprova"
+
+#: lib/Controller/EmbedController.php:80 src/viewer-main.js:450
+msgid "Refresh"
+msgstr "Aggiorna"
+
+#: lib/Controller/EmbedController.php:81 src/viewer-main.js:450
+msgid "Refreshing..."
+msgstr "Aggiornamento…"
+
+#: lib/Controller/EmbedController.php:82 src/viewer-main.js:580
+msgid "Open original pad"
+msgstr "Apri il pad originale"
+
+#: lib/Controller/EmbedController.php:83 src/viewer-main.js:536
+msgid "Checking for the original pad..."
+msgstr "Ricerca del pad originale..."
+
+#: lib/Controller/EmbedController.php:84 src/viewer-main.js:541
+msgid "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file."
+msgstr "Questo file sembra una copia di un file .pad già esistente nel tuo account. Apri l'originale per continuare a modificare il pad collegato, oppure crea un nuovo pad per creare una copia indipendente del contenuto memorizzato in questo file."
+
+#: lib/Controller/EmbedController.php:85 src/viewer-main.js:555
+msgid "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad."
+msgstr "Non è stato trovato alcun pad corrispondente in questo Nextcloud. Puoi creare un nuovo pad dal testo memorizzato in questo file; da quel momento, l'apertura di questo file caricherà il nuovo pad."
+
+#: lib/Controller/EmbedController.php:86 src/viewer-main.js:545
+msgid "Open the original .pad file"
+msgstr "Apri il file .pad originale"
+
+#: lib/Controller/EmbedController.php:87 src/viewer-main.js:529
+#: src/viewer-main.js:550 src/viewer-main.js:560
+msgid "Create new pad from this file"
+msgstr "Crea un nuovo pad da questo file"
+
+#: lib/Controller/EmbedController.php:88 src/viewer-main.js:529
+#: src/viewer-main.js:550 src/viewer-main.js:560
+msgid "Creating new pad..."
+msgstr "Creazione del nuovo pad..."
+
+#: lib/Controller/EmbedController.php:89 src/viewer-main.js:23
+msgid "Nextcloud did not answer. Check your connection and try again."
+msgstr "Nextcloud non ha risposto. Controlla la connessione e riprova."
+
+#: lib/Controller/EmbedController.php:102
+msgid "Invalid parent folder ID."
+msgstr "ID della cartella di destinazione non valido."
+
+#: lib/Controller/EmbedController.php:111
+msgid "Creating pad..."
+msgstr "Creazione del pad..."
+
+#: lib/Controller/EmbedController.php:112
+#: lib/Controller/EmbedController.php:121
+#: lib/Controller/PadCreateController.php:48
+#: lib/Controller/PadCreateController.php:69
+msgid "Could not create pad"
+msgstr "Impossibile creare il pad"
+
+#: lib/Controller/EmbedController.php:113
+msgid "Pad name is required."
+msgstr "Il nome del pad è obbligatorio."
+
+#: lib/Controller/EmbedController.php:114
+msgid "Invalid access mode."
+msgstr "Modalità di accesso non valida."
+
+#: lib/Controller/EmbedController.php:115
+msgid "Embed configuration is incomplete."
+msgstr "La configurazione di incorporamento è incompleta."
+
+#: lib/Controller/EmbedController.php:116
+msgid "This page creates a pad only inside the page that embeds it."
+msgstr "Questa pagina crea un pad solo all'interno della pagina che la incorpora."
+
+#: lib/Controller/EmbedController.php:117
+msgid "Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again."
+msgstr "Nextcloud non ha risposto. Il pad potrebbe essere stato creato comunque; controlla la cartella prima di riprovare."
+
+#: lib/Controller/EmbedController.php:118
+msgid "Pad creation failed."
+msgstr "Si è verificato un errore durante la creazione del pad."
+
+#: lib/Controller/EmbedController.php:122
+#: lib/Controller/PadControllerErrorMapper.php:124
+#: lib/Controller/PadCreateController.php:66
+msgid "Cannot resolve selected parent folder."
+msgstr "Impossibile risolvere la cartella di destinazione selezionata."
+
+#: lib/Controller/EmbedControllerErrorMapper.php:59
+#: lib/Controller/PadControllerErrorMapper.php:93
+#: lib/Controller/PadCreateController.php:87
+#: lib/Controller/ViewerControllerErrorMapper.php:50
+msgid "Invalid input."
+msgstr "Input non valido."
+
+#: lib/Controller/EmbedControllerErrorMapper.php:64
+#: lib/Controller/ViewerControllerErrorMapper.php:54
+msgid "Cannot open selected .pad file."
+msgstr "Impossibile aprire il file .pad selezionato."
+
+#: lib/Controller/EmbedControllerErrorMapper.php:74
+#: lib/Controller/PadControllerErrorMapper.php:126
+msgid "Selected parent folder is not writable."
+msgstr "La cartella di destinazione selezionata non è scrivibile."
+
+#: lib/Controller/PadControllerErrorMapper.php:103
+#: lib/Controller/ViewerController.php:106
+msgid "Invalid file path."
+msgstr "Percorso file non valido."
+
+#: lib/Controller/PadControllerErrorMapper.php:107
+msgid ".pad file not found."
+msgstr "File .pad non trovato."
+
+#: lib/Controller/PadControllerErrorMapper.php:111
+#: lib/Controller/PublicViewerControllerErrorMapper.php:97
+msgid "Pad file is temporarily locked. Please retry."
+msgstr "Il file .pad è temporaneamente bloccato. Riprova."
+
+#: lib/Controller/PadControllerErrorMapper.php:117
+msgid "The file changed while its pad was being set up. Try again."
+msgstr "Il file è cambiato mentre il suo pad veniva configurato. Riprova."
+
+#: lib/Controller/PadControllerErrorMapper.php:120
+#: lib/Controller/PadCreateController.php:46
+#: lib/Controller/PadCreateController.php:67
+#: lib/Controller/PadCreateController.php:89
+msgid "A file with this name already exists."
+msgstr "Esiste già un file con questo nome."
+
+#: lib/Controller/PadControllerErrorMapper.php:122
+msgid "This .pad file is already linked to a pad."
+msgstr "Questo file .pad è già collegato a un pad."
+
+#: lib/Controller/PadControllerErrorMapper.php:128
+msgid "Only someone who may edit this .pad file can do that."
+msgstr "Solo chi può modificare questo file .pad può farlo."
+
+#: lib/Controller/PadControllerErrorMapper.php:130
+msgid "This pad type is disabled on this instance."
+msgstr "Questo tipo di pad è disattivato su questa istanza."
+
+#: lib/Controller/PadControllerErrorMapper.php:149
+msgid "This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator."
+msgstr "Questo file è un collegamento Ownpad legacy a un pad protetto e l'importazione di questi pad è disattivata su questo server. Contatta l'amministrazione."
+
+#: lib/Controller/PadControllerErrorMapper.php:155
+msgid "This pad is already linked to another file you do not have access to."
+msgstr "Questo pad è già collegato a un altro file a cui non hai accesso."
+
+#: lib/Controller/PadControllerErrorMapper.php:161
+#: lib/Controller/PublicViewerControllerErrorMapper.php:100
+msgid "This pad is too large to show here. Open it in Etherpad instead."
+msgstr "Questo pad è troppo grande per essere mostrato qui. Aprilo in Etherpad."
+
+#: lib/Controller/PadControllerErrorMapper.php:166
+msgid "This .pad file has no pad metadata yet."
+msgstr "Questo file .pad non ha ancora metadati del pad."
+
+#: lib/Controller/PadControllerErrorMapper.php:169
+msgid "This .pad file names a pad that cannot be linked to it."
+msgstr "Questo file .pad indica un pad che non può essere collegato ad esso."
+
+#: lib/Controller/PadControllerErrorMapper.php:171
+#: lib/Controller/PublicViewerControllerErrorMapper.php:90
+msgid "The selected .pad file has an invalid format."
+msgstr "Il file .pad selezionato ha un formato non valido."
+
+#: lib/Controller/PadControllerErrorMapper.php:175
+msgid "Etherpad refused the request. Please contact your administrator."
+msgstr "Etherpad ha rifiutato la richiesta. Contatta l'amministrazione."
+
+#: lib/Controller/PadControllerErrorMapper.php:184
+msgid "Etherpad cannot be reached right now. Try again later."
+msgstr "Etherpad non è raggiungibile in questo momento. Riprova più tardi."
+
+#: lib/Controller/PadControllerErrorMapper.php:200
+msgid "The link to the pad on another server is not a valid https address."
+msgstr "Il link al pad su un altro server non è un indirizzo https valido."
+
+#: lib/Controller/PadControllerErrorMapper.php:201
+msgid "The link to the pad on another server must not contain a user name or password."
+msgstr "Il link al pad su un altro server non deve contenere né un nome utente né una password."
+
+#: lib/Controller/PadControllerErrorMapper.php:202
+msgid "The link to the pad on another server must end in /p/ and the name of the pad."
+msgstr "Il link al pad su un altro server deve terminare con /p/ e il nome del pad."
+
+#: lib/Controller/PadControllerErrorMapper.php:203
+msgid "Only public pads on another server can be linked."
+msgstr "Si possono collegare solo pad pubblici di un altro server."
+
+#: lib/Controller/PadControllerErrorMapper.php:204
+msgid "This .pad file names a pad on another server but has no valid link to it."
+msgstr "Questo file .pad indica un pad su un altro server, ma non contiene un link valido."
+
+#: lib/Controller/PadControllerErrorMapper.php:205
+msgid "Pads on other servers are switched off on this Nextcloud."
+msgstr "I pad di altri server sono disattivati in questo Nextcloud."
+
+#: lib/Controller/PadControllerErrorMapper.php:206
+msgid "This Nextcloud may not link to pads on that server. Your administrator can add it to the allowed servers."
+msgstr "Questo Nextcloud non può collegare pad di quel server. L'amministrazione può aggiungerlo ai server consentiti."
+
+#: lib/Controller/PadControllerErrorMapper.php:207
+msgid "That server is on a local or private network, which this Nextcloud does not link to."
+msgstr "Quel server si trova in una rete locale o privata, che questo Nextcloud non collega."
+
+#: lib/Controller/PadControllerErrorMapper.php:208
+msgid "The server of the pad could not be found."
+msgstr "Il server del pad non è stato trovato."
+
+#: lib/Controller/PadControllerErrorMapper.php:209
+msgid "This Nextcloud cannot read pads on other servers: the PHP cURL extension is missing. Please contact your administrator."
+msgstr "Questo Nextcloud non può leggere pad di altri server: manca l'estensione PHP cURL. Contatta l'amministrazione."
+
+#: lib/Controller/PadControllerErrorMapper.php:210
+msgid "The server of the pad could not be reached. Try again later."
+msgstr "Il server del pad non è raggiungibile. Riprova più tardi."
+
+#: lib/Controller/PadControllerErrorMapper.php:211
+msgid "The server of the pad has no certificate this Nextcloud trusts."
+msgstr "Il server del pad non ha un certificato di cui questo Nextcloud si fidi."
+
+#: lib/Controller/PadControllerErrorMapper.php:212
+msgid "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked."
+msgstr "Il server del pad ha reindirizzato la richiesta, di solito a una pagina di accesso. Si possono collegare solo pad leggibili senza effettuare l'accesso."
+
+#: lib/Controller/PadControllerErrorMapper.php:213
+msgid "The server of the pad answered with an error ({status})."
+msgstr "Il server del pad ha risposto con un errore ({status})."
+
+#: lib/Controller/PadControllerErrorMapper.php:214
+msgid "The pad was not found on the other server, or it cannot be exported there."
+msgstr "Il pad non è stato trovato sull'altro server, oppure lì non può essere esportato."
+
+#: lib/Controller/PadControllerErrorMapper.php:215
+msgid "The server of the pad did not answer with the content of the pad."
+msgstr "Il server del pad non ha risposto con il contenuto del pad."
+
+#: lib/Controller/PadCreateController.php:65
+msgid "Invalid pad name."
+msgstr "Nome del pad non valido."
+
+#: lib/Controller/PadCreateController.php:88
+msgid "Template file not found."
+msgstr "File modello non trovato."
+
+#: lib/Controller/PadCreateController.php:91
+msgid "Could not create pad from template."
+msgstr "Impossibile creare il pad dal modello."
+
+#: lib/Controller/PadCreateController.php:103
+msgid "Could not import external pad."
+msgstr "Impossibile importare il pad esterno."
+
+#: lib/Controller/PadLifecycleController.php:54
+msgid "Could not recover pad from this file."
+msgstr "Impossibile recuperare il pad da questo file."
+
+#: lib/Controller/PadLifecycleController.php:95
+msgid "Could not sync pad content."
+msgstr "Impossibile sincronizzare il contenuto del pad."
+
+#: lib/Controller/PadLifecycleController.php:108
+msgid "Could not check pad sync status."
+msgstr "Impossibile controllare lo stato di sincronizzazione del pad."
+
+#: lib/Controller/PadLifecycleController.php:124
+msgid "Could not look up the original pad."
+msgstr "Impossibile trovare il pad originale."
+
+#: lib/Controller/PadSessionController.php:99
+#: lib/Controller/PadSessionController.php:111
+msgid "Could not initialize .pad file."
+msgstr "Impossibile inizializzare il file .pad."
+
+#: lib/Controller/PadSessionController.php:124
+msgid "Could not read pad metadata."
+msgstr "Impossibile leggere i metadati del pad."
+
+#: lib/Controller/PadSessionController.php:142
+msgid "Could not resolve .pad file."
+msgstr "Impossibile risolvere il file .pad."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:78
+msgid "This share link is invalid or has expired."
+msgstr "Questo link di condivisione non è valido o è scaduto."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:79
+#: lib/Controller/PublicViewerControllerErrorMapper.php:82
+msgid "This shared item is no longer available."
+msgstr "Questo elemento condiviso non è più disponibile."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:80
+msgid "The selected file is not part of this share."
+msgstr "Il file selezionato non fa parte di questa condivisione."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:83
+msgid "This share link does not allow reading files."
+msgstr "Questo link di condivisione non consente di leggere i file."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:85
+msgid "This link does not point to a valid file."
+msgstr "Questo link non punta a un file valido."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:86
+msgid "No .pad file selected. Open a .pad file from this shared folder."
+msgstr "Nessun file .pad selezionato. Apri un file .pad da questa cartella condivisa."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:88
+msgid "The selected item is not a .pad document."
+msgstr "L'elemento selezionato non è un documento .pad."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:89
+msgid "The selected .pad file is missing required metadata."
+msgstr "Nel file .pad selezionato mancano i metadati richiesti."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:93
+msgid "This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad."
+msgstr "Questo file .pad non ha alcun pad in questo Nextcloud. Il proprietario può aprirlo per ripristinare il pad."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:94
+msgid "This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content."
+msgstr "Questo pad non è più sul server Etherpad. Il proprietario può aprire il file per creare un nuovo pad dal suo contenuto."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:95
+msgid "Pad binding is inconsistent. Please contact the share owner."
+msgstr "Il collegamento del pad è incoerente. Contatta chi lo ha condiviso."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:101
+msgid "Etherpad refused to open this shared pad. Please contact the share owner."
+msgstr "Etherpad ha rifiutato di aprire questo pad condiviso. Contatta chi lo ha condiviso."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:102
+msgid "The pad this file links to on another server could not be read."
+msgstr "Non è stato possibile leggere il pad su un altro server a cui rimanda questo file."
+
+#: lib/Controller/PublicViewerControllerErrorMapper.php:104
+msgid "Etherpad is currently unavailable for this shared pad."
+msgstr "Etherpad non è al momento disponibile per questo pad condiviso."
+
+#: lib/Controller/ViewerController.php:86
+msgid "Cannot resolve file path for file ID."
+msgstr "Impossibile risolvere il percorso del file per l'ID file."
+
+#: lib/Listeners/RegisterTemplateCreatorListener.php:49
+#: lib/Listeners/RegisterTemplateCreatorListener.php:51
+msgid "New pad"
+msgstr "Nuovo pad"
+
+#: lib/Service/AdminConsistencyCheckResponseBuilder.php:27
+msgid "Consistency check finished with issues."
+msgstr "Controllo di coerenza completato con problemi."
+
+#: lib/Service/AdminConsistencyCheckResponseBuilder.php:28
+msgid "Consistency check successful. No issues found."
+msgstr "Controllo di coerenza riuscito. Nessun problema trovato."
+
+#: lib/Service/AdminSettingsValidator.php:105
+msgid "Etherpad API key is required."
+msgstr "È richiesta una chiave API Etherpad."
+
+#: lib/Service/AdminSettingsValidator.php:116
+msgid "Etherpad Base URL is required."
+msgstr "È richiesto l'URL base Etherpad."
+
+#: lib/Service/AdminSettingsValidator.php:119
+msgid "Etherpad Base URL must use https."
+msgstr "L'URL base Etherpad deve usare HTTPS."
+
+#: lib/Service/AdminSettingsValidator.php:124
+msgid "Invalid Etherpad Base URL."
+msgstr "URL base Etherpad non valido."
+
+#: lib/Service/AdminSettingsValidator.php:127
+msgid "Etherpad Base URL must not include query or fragment."
+msgstr "L'URL base Etherpad non deve contenere una stringa di query né un frammento."
+
+#: lib/Service/AdminSettingsValidator.php:141
+msgid "Invalid Etherpad API URL."
+msgstr "URL API Etherpad non valido."
+
+#: lib/Service/AdminSettingsValidator.php:144
+msgid "Etherpad API URL must not include query or fragment."
+msgstr "L'URL API Etherpad non deve contenere una stringa di query né un frammento."
+
+#: lib/Service/AdminSettingsValidator.php:149
+msgid "Etherpad API URL must use http or https."
+msgstr "L'URL API Etherpad deve usare HTTP o HTTPS."
+
+#: lib/Service/AdminSettingsValidator.php:183
+msgid "Cookie domain must be a hostname, not a URL."
+msgstr "Il dominio del cookie deve essere un nome dell'host, non un URL."
+
+#: lib/Service/AdminSettingsValidator.php:189
+#: lib/Service/AdminSettingsValidator.php:194
+msgid "Cookie domain must be a valid shared hostname."
+msgstr "Il dominio del cookie deve essere un nome dell'host condiviso valido."
+
+#: lib/Service/AdminSettingsValidator.php:207
+msgid "Invalid Etherpad API version format."
+msgstr "Formato della versione API Etherpad non valido."
+
+#: lib/Service/AdminSettingsValidator.php:219
+msgid "Sync interval must be between 5 and 3600 seconds."
+msgstr "L'intervallo di sincronizzazione deve essere compreso tra 5 e 3600 secondi."
+
+#: lib/Service/AllowlistNormalizer.php:46
+#: lib/Service/AllowlistNormalizer.php:60
+msgid "External allowlist URL must use https: {host}"
+msgstr "L'URL dell'elenco consentiti esterno deve usare HTTPS: {host}"
+
+#: lib/Service/AllowlistNormalizer.php:82
+msgid "External allowlist contains invalid host: {host}"
+msgstr "L'elenco consentiti esterno contiene un host non valido: {host}"
+
+#: lib/Service/BaseUrlReachabilityCheck.php:53
+msgid "Etherpad base URL reachable"
+msgstr "URL base Etherpad raggiungibile"
+
+#: lib/Service/BaseUrlReachabilityCheck.php:83
+msgid "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address."
+msgstr "{url} non è stato contattato: Nextcloud blocca le richieste verso la propria rete. Controlla che i browser dei tuoi utenti possano raggiungere questo indirizzo."
+
+#: lib/Service/BaseUrlReachabilityCheck.php:101
+msgid "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it."
+msgstr "{url} non ha risposto: {error}. Se Nextcloud non può raggiungere l'URL pubblico per scelta progettuale, ignora l'avviso – ma controlla che l'URL non contenga errori di battitura, perché i collegamenti ai pad nel browser lo usano."
+
+#: lib/Service/BaseUrlReachabilityCheck.php:118
+msgid "{url} answered with HTTP {status}."
+msgstr "{url} ha risposto con HTTP {status}."
+
+#: lib/Service/CookieDomainMessages.php:32
+msgid "{domain} would cover both."
+msgstr "{domain} li coprirebbe entrambi."
+
+#: lib/Service/CookieDomainMessages.php:37
+msgid "Nextcloud and Etherpad share no parent domain, so the browser cannot send the session cookie to Etherpad and protected pads will not open. If a proxy exposes Etherpad under the Nextcloud domain, use that address as the base URL. Otherwise, place both services under a shared parent domain or switch protected pads off."
+msgstr "Nextcloud ed Etherpad non condividono alcun parent domain, quindi il browser non può inviare il cookie di sessione a Etherpad e i pad protetti non si apriranno. Se un proxy espone Etherpad sotto il dominio di Nextcloud, usa quell'indirizzo come URL base. Altrimenti colloca entrambi i servizi sotto un parent domain comune, oppure disattiva i pad protetti."
+
+#: lib/Service/CookieDomainMessages.php:40
+msgid "IP addresses and single-label hosts cannot share a cookie domain. Use hostnames under a common domain, or serve both from the same host."
+msgstr "Gli indirizzi IP e gli host con nome a etichetta singola non possono condividere un dominio del cookie. Usa nomi host sotto un dominio comune, oppure distribuisci entrambi i servizi dallo stesso host."
+
+#: lib/Service/CookieDomainMessages.php:43
+msgid "The configured cookie domain {domain} does not cover both of them, so the browser will reject the session cookie."
+msgstr "Il dominio del cookie configurato {domain} non copre entrambi, quindi il browser rifiuterà il cookie di sessione."
+
+#: lib/Service/CookieDomainMessages.php:47
+msgid "The cookie domain is empty, so the session cookie stays on the Nextcloud host and never reaches Etherpad."
+msgstr "Il dominio del cookie è vuoto, quindi il cookie di sessione resta sull'host Nextcloud e non raggiunge mai Etherpad."
+
+#: lib/Service/CookieDomainMessages.php:50
+msgid "{domain} looks like a public suffix such as co.uk, which browsers refuse as a cookie domain. If it is one, protected pads will not open."
+msgstr "{domain} sembra un suffisso pubblico come co.uk, che i browser rifiutano come dominio del cookie. Se lo è, i pad protetti non si apriranno."
+
+#: lib/Service/CookieDomainMessages.php:54
+msgid "The Etherpad base URL could not be read as a hostname, so the session cookie domain cannot be checked."
+msgstr "Non è stato possibile interpretare l'URL base Etherpad come nome dell'host, quindi il dominio del cookie di sessione non può essere verificato."
+
+#: lib/Service/CookieDomainMessages.php:62
+msgid "Protected pads: session cookie"
+msgstr "Pad protetti: cookie di sessione"
+
+#: lib/Service/CookieDomainMessages.php:65
+msgid "Protected pads are switched off."
+msgstr "I pad protetti sono disattivati."
+
+#: lib/Service/CookieDomainMessages.php:70
+msgid "Host-only cookie, Nextcloud and Etherpad share a host."
+msgstr "Cookie valido solo per questo host – Nextcloud ed Etherpad sono sullo stesso host."
+
+#: lib/Service/CookieDomainMessages.php:78
+msgid "The session cookie domain could not be verified."
+msgstr "Non è stato possibile verificare il dominio del cookie di sessione."
+
+#: lib/Service/CookieDomainMessages.php:85
+msgid "Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}."
+msgstr "Nextcloud è in esecuzione su {nextcloud_host}, Etherpad su {etherpad_host}."
+
+#: lib/Service/EtherpadHealthCheckService.php:89
+msgid "Etherpad connection test failed: {detail}"
+msgstr "Impossibile verificare la connessione a Etherpad: {detail}"
+
+#: lib/Service/EtherpadHealthCheckService.php:128
+msgid "Etherpad API reachable"
+msgstr "API Etherpad raggiungibile"
+
+#: lib/Service/EtherpadHealthCheckService.php:130
+msgid "{target} — {latency} ms"
+msgstr "{target} – {latency} ms"
+
+#: lib/Service/EtherpadHealthCheckService.php:138
+msgid "API key accepted"
+msgstr "Chiave API accettata"
+
+#: lib/Service/EtherpadHealthCheckService.php:139
+msgid "API version {version}"
+msgstr "Versione API {version}"
+
+#: lib/Service/EtherpadHealthCheckService.php:181
+msgid "Session cookie: not checked, protected pads are off"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:196
+#: lib/Service/EtherpadHealthCheckService.php:269
+#: lib/Service/EtherpadHealthCheckService.php:432
+msgid "Etherpad session cookie"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:198
+msgid "\"{value}\" is not one of auto, yes or no, so it is being ignored and the release decides. Set one of those three, or remove the setting."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:229
+msgid "Session cookie: readable by scripts"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:230
+msgid "The Etherpad release could not be read from /health, so the cookie is left readable."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:246
+msgid "Session cookie: this address reports Etherpad {release} and would be sent an HttpOnly cookie"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:247
+msgid "Session cookie: this address reports Etherpad {release} and would be sent a script-readable cookie"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:250
+msgid "Not the address currently in use — save the settings to switch pads over to it."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:259
+msgid "Session cookie: Etherpad {release}, checked on the first protected pad open"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:272
+msgid "Pads are being sent an HttpOnly cookie, from Etherpad {known} seen earlier, but this server reports {release}, which reads the cookie in the browser. Protected pads will not open until that is checked again."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:273
+msgid "This server reports Etherpad {release}, which reads the session server-side, but pads are still being sent a script-readable cookie from Etherpad {known} seen earlier."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:283
+msgid "Session cookie kept from scripts (Etherpad {release})"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:284
+msgid "Session cookie readable by scripts (Etherpad {release})"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:326
+msgid "\"{value}\" is not one of lax or none, so the session cookie stays same-site. Set one of those two, or remove the setting."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:335
+msgid "The session cookie is also sent to other sites (SameSite=None), set by hand so a foreign site can frame the embed routes. It only works where Nextcloud authenticates without a cookie — proxy REMOTE_USER, Kerberos, SAML in environment mode."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:339
+msgid "Nextcloud sends its own session cookie as {samesite}, so a cross-site frame is not logged in through it."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:378
+msgid "{origins} may frame the embed routes but is not covered by the session cookie domain {domain}. If it is on another site, the embedded pad gets no Etherpad session unless etherpad_session_cookie_samesite is set to none."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:414
+msgid "The pad server did not report its release."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:417
+msgid "This server reports Etherpad {release}, which reads the session server-side — automatic detection would set the same thing."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:418
+msgid "This server reports Etherpad {release}, which reads the session in the browser."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:425
+msgid "Session cookie readable by scripts (set by hand)"
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:433
+msgid "HttpOnly is switched on by hand. An Etherpad below 3.0 cannot read the cookie, and no protected pad will open."
+msgstr ""
+
+#: lib/Service/EtherpadHealthCheckService.php:506
+msgid "Hint: Etherpad rejected the API key. Check that the key matches Etherpad's APIKEY.txt and that Etherpad's settings.json has \"authenticationMethod\": \"apikey\"."
+msgstr "Suggerimento: Etherpad ha rifiutato la chiave API. Controlla che la chiave corrisponda al file APIKEY.txt di Etherpad e che il file settings.json di Etherpad contenga \"authenticationMethod\": \"apikey\"."
+
+#: lib/Service/EtherpadHealthCheckService.php:507
+msgid "Hint: The request was refused, but not with Etherpad's answer to a wrong key. Check the access rules of Etherpad and of any proxy or firewall in front of it, then the API key."
+msgstr "Suggerimento: la richiesta è stata rifiutata, ma non con la risposta di Etherpad a una chiave errata. Controlla le regole di accesso di Etherpad e di eventuali proxy o firewall davanti a esso, poi la chiave API."
+
+#: lib/Service/EtherpadHealthCheckService.php:508
+msgid "Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad."
+msgstr "Suggerimento: endpoint API non trovato. Controlla l'host dell'API e verifica che la versione configurata sia supportata dal tuo Etherpad."
+
+#: lib/Service/EtherpadHealthCheckService.php:509
+msgid "Hint: Etherpad returned a server error. Check the Etherpad server logs."
+msgstr "Suggerimento: Etherpad ha restituito un errore del server. Controlla i log del server Etherpad."
+
+#: lib/Service/EtherpadHealthCheckService.php:510
+msgid "Hint: The configured Etherpad host did not resolve. Check the hostname for typos and that DNS reaches it from this server."
+msgstr "Suggerimento: impossibile risolvere l'host Etherpad configurato. Controlla che il nome dell'host non contenga errori di battitura e che possa essere risolto via DNS da questo server."
+
+#: lib/Service/EtherpadHealthCheckService.php:511
+msgid "Hint: Connection refused. Etherpad does not appear to be running on the configured host and port."
+msgstr "Suggerimento: connessione rifiutata. Etherpad non sembra essere in esecuzione sull'host e sulla porta configurati."
+
+#: lib/Service/EtherpadHealthCheckService.php:512
+msgid "Hint: Connection timed out. Check that this server can reach the Etherpad host (firewall, network)."
+msgstr "Suggerimento: connessione scaduta. Controlla che questo server possa raggiungere l'host Etherpad (firewall, rete)."
+
+#: lib/Service/EtherpadHealthCheckService.php:513
+msgid "Hint: TLS handshake failed. Check the Etherpad certificate and that the configured URL uses the right scheme."
+msgstr "Suggerimento: handshake TLS non riuscito. Controlla il certificato Etherpad e verifica che l'URL configurato usi lo schema corretto."
+
+#: lib/Service/EtherpadHealthCheckService.php:514
+msgid "Hint: Could not reach Etherpad. Check the API host and that this server can connect to it."
+msgstr "Suggerimento: impossibile raggiungere Etherpad. Controlla l'host dell'API e verifica che questo server possa connettersi."
+
+#: lib/Service/EtherpadHealthCheckService.php:515
+msgid "Hint: Etherpad returned non-JSON. Likely a reverse proxy or HTML error page in front of the API host."
+msgstr "Suggerimento: Etherpad ha restituito contenuto non JSON. Probabilmente c'è un reverse proxy o una pagina di errore HTML davanti all'host dell'API."
+
+#: lib/Service/PadFileCreator.php:223
+msgid "That file name is not allowed on this server."
+msgstr "Questo nome di file non è consentito su questo server."
+
+#: lib/Service/PadResponseService.php:234
+msgid "This .pad file has no matching pad in this Nextcloud."
+msgstr "Questo file .pad non ha alcun pad corrispondente in questo Nextcloud."
+
+#: lib/Service/PadResponseService.php:237
+msgid "This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file."
+msgstr "Questo pad non è più sul server Etherpad. Si può creare un nuovo pad dal contenuto salvato in questo file."
+
+#: lib/Service/PadResponseService.php:242
+msgid "This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening."
+msgstr "Non è stato possibile abbinare questo file .pad al suo pad. Riprova oppure, se il problema persiste, contatta l'amministrazione."
+
+#: lib/Service/PadTemplateAdminService.php:64
+#: lib/Settings/AdminSettings.php:124
+msgid "Template file is too large."
+msgstr "Il file del modello è troppo grande."
+
+#: lib/Service/PadTemplateAdminService.php:67
+msgid "Template file is empty."
+msgstr "Il file del modello è vuoto."
+
+#: lib/Service/PadTemplateAdminService.php:75
+msgid "Not a pad file: the frontmatter could not be read."
+msgstr "Non è un file pad: impossibile leggere il frontmatter."
+
+#: lib/Service/PadTemplateAdminService.php:78
+msgid "A pad on another Etherpad server cannot be used as a template."
+msgstr "Un pad su un altro server Etherpad non può essere usato come modello."
+
+#: lib/Service/PadTemplateAdminService.php:89
+msgid "A template of that name already exists."
+msgstr "Esiste già un modello con questo nome."
+
+#: lib/Service/PadTemplateAdminService.php:109
+msgid "No such template."
+msgstr "Modello inesistente."
+
+#: lib/Service/PadTemplateAdminService.php:122
+msgid "Template name is required."
+msgstr "Il nome del modello è obbligatorio."
+
+#: lib/Service/PadTemplateAdminService.php:125
+msgid "Template name is too long."
+msgstr "Il nome del modello è troppo lungo."
+
+#: lib/Service/PadTemplateAdminService.php:128
+msgid "A template must be a .pad file."
+msgstr "Un modello deve essere un file .pad."
+
+#: lib/Service/PadTemplateAdminService.php:131
+msgid "Template name must not contain a path."
+msgstr "Il nome del modello non deve contenere un percorso."
+
+#: lib/Service/PadTemplateAdminService.php:136
+msgid "That name is reserved for the app's own tiles."
+msgstr "Questo nome è riservato ai modelli propri dell'app."
+
+#: lib/Service/PadTemplateAdminService.php:149
+msgid "That template name is not allowed on this server."
+msgstr "Questo nome di modello non è consentito su questo server."
+
+#: lib/Settings/AdminSection.php:30 lib/Settings/AdminSettings.php:108
+msgid "Pads"
+msgstr "Pad"
+
+#: lib/Settings/AdminSettings.php:109
+msgid "Configure the Etherpad server and external pad security policy for the Etherpad Nextcloud app."
+msgstr "Configura il server Etherpad e la politica di sicurezza per i pad esterni dell'app Etherpad per Nextcloud."
+
+#: lib/Settings/AdminSettings.php:110
+msgid "Etherpad server"
+msgstr "Server Etherpad"
+
+#: lib/Settings/AdminSettings.php:111
+msgid "Pad types and behaviour"
+msgstr "Tipi di pad e comportamento"
+
+#: lib/Settings/AdminSettings.php:112
+msgid "External pads and embedding"
+msgstr "Pad esterni e incorporamento"
+
+#: lib/Settings/AdminSettings.php:113
+msgid "Shared pad templates"
+msgstr "Modelli di pad condivisi"
+
+#: lib/Settings/AdminSettings.php:114
+msgid "Templates offered to everyone when creating a pad. Upload a .pad file: its content becomes the new pad, and placeholders such as {{date}} are resolved on creation. The pad type of the template is used when that type is enabled; otherwise the pad is created with the type that is available, which can turn a protected template into a public pad."
+msgstr "Modelli offerti a tutti durante la creazione di un pad. Carica un file .pad: il suo contenuto diventa il nuovo pad e i segnaposto come {{date}} vengono risolti al momento della creazione. Viene usato il tipo di pad del modello, se quel tipo è attivo; altrimenti il pad viene creato con il tipo disponibile – così un modello protetto può diventare un pad pubblico."
+
+#: lib/Settings/AdminSettings.php:115
+msgid "No shared templates yet."
+msgstr "Non ci sono ancora modelli condivisi."
+
+#: lib/Settings/AdminSettings.php:116
+msgid "Upload template"
+msgstr "Carica modello"
+
+#: lib/Settings/AdminSettings.php:117 lib/Settings/AdminSettings.php:139
+msgid "Delete"
+msgstr "Elimina"
+
+#: lib/Settings/AdminSettings.php:121
+msgid "Delete template {name}"
+msgstr "Elimina il modello {name}"
+
+#: lib/Settings/AdminSettings.php:125
+msgid "Uploading template..."
+msgstr "Caricamento del modello..."
+
+#: lib/Settings/AdminSettings.php:126
+msgid "Delete this template for everyone?"
+msgstr "Eliminare questo modello per tutti?"
+
+#: lib/Settings/AdminSettings.php:127
+msgid "Replace the existing template of that name?"
+msgstr "Sostituire il modello esistente con questo nome?"
+
+#: lib/Settings/AdminSettings.php:128
+msgid "Template request failed."
+msgstr "Richiesta del modello non riuscita."
+
+#: lib/Settings/AdminSettings.php:129
+msgid "Diagnostics"
+msgstr "Diagnostica"
+
+#: lib/Settings/AdminSettings.php:130
+msgid "Checks that Nextcloud reaches the Etherpad API with the values above."
+msgstr "Verifica che Nextcloud raggiunga l'API Etherpad con i valori indicati sopra."
+
+#: lib/Settings/AdminSettings.php:131
+msgid "Looks for pad links whose .pad file no longer exists."
+msgstr "Cerca collegamenti a pad il cui file .pad non esiste più."
+
+#: lib/Settings/AdminSettings.php:132
+msgid "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place until you delete them here. Delete them only when no .pad file names them any more: after the file cache was rebuilt, or files were restored from a backup, a file may still be there under a new id, and its pad would go with the others. A public pad imported from a .pad file in Ownpad's format can only be forgotten: the app does not delete it."
+msgstr "Pad il cui file .pad è scomparso senza che l'app vedesse un'eliminazione, per esempio eliminato fuori da Nextcloud e rimosso da una scansione. L'app li lascia dove sono finché non li elimini qui. Eliminali solo quando nessun file .pad li nomina più: dopo che la cache dei file è stata ricostruita, o i file sono stati ripristinati da un backup, un file può essere ancora lì con un nuovo id, e il suo pad se ne andrebbe con gli altri. Un pad pubblico importato da un file .pad in formato Ownpad può solo essere dimenticato: l'app non lo elimina."
+
+#: lib/Settings/AdminSettings.php:133
+msgid "Showing {shown} of {total}:"
+msgstr "Mostrati {shown} di {total}:"
+
+#: lib/Settings/AdminSettings.php:134
+msgid "Delete the pads of all vanished files"
+msgstr "Elimina i pad di tutti i file scomparsi"
+
+#: lib/Settings/AdminSettings.php:135
+msgid "Delete the pads of all {count} vanished files? Etherpad deletes them for good. A public pad imported from a .pad file in Ownpad's format stays there and only leaves this list."
+msgstr "Eliminare i pad di tutti i {count} file scomparsi? Etherpad li elimina definitivamente. Un pad pubblico importato da un file .pad in formato Ownpad resta lì ed esce solo da questo elenco."
+
+#: lib/Settings/AdminSettings.php:136
+msgid "Delete the pad of the one vanished file? Etherpad deletes it for good. A public pad imported from a .pad file in Ownpad's format stays there and only leaves this list."
+msgstr "Eliminare il pad dell'unico file scomparso? Etherpad lo elimina definitivamente. Un pad pubblico importato da un file .pad in formato Ownpad resta lì ed esce solo da questo elenco."
+
+#: lib/Settings/AdminSettings.php:137
+msgid "Marking the pads of the vanished files for deletion..."
+msgstr "Contrassegno dei pad dei file scomparsi per l'eliminazione..."
+
+#: lib/Settings/AdminSettings.php:140
+msgid "Forget"
+msgstr "Dimentica"
+
+#: lib/Settings/AdminSettings.php:141
+msgid "Delete pad {pad}"
+msgstr "Elimina il pad {pad}"
+
+#: lib/Settings/AdminSettings.php:142
+msgid "Forget pad {pad}"
+msgstr "Dimentica il pad {pad}"
+
+#: lib/Settings/AdminSettings.php:143
+msgid "Delete the pad {pad}? Etherpad deletes it for good."
+msgstr "Eliminare il pad {pad}? Etherpad lo elimina definitivamente."
+
+#: lib/Settings/AdminSettings.php:144
+msgid "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and anyone with its link can still open it."
+msgstr "Togliere {pad} da questa lista e lasciarlo in Etherpad? L'app non lo ripulirà mai più, e chi ha il suo link può ancora aprirlo."
+
+#: lib/Settings/AdminSettings.php:146
+msgid "Marking the pad for deletion..."
+msgstr "Contrassegno del pad per l'eliminazione..."
+
+#: lib/Settings/AdminSettings.php:147
+msgid "Forgetting the pad..."
+msgstr "Il pad viene dimenticato..."
+
+#: lib/Settings/AdminSettings.php:148
+msgid "Etherpad Base URL"
+msgstr "URL base Etherpad"
+
+#: lib/Settings/AdminSettings.php:149
+msgid "Etherpad API URL (optional)"
+msgstr "URL API Etherpad (facoltativo)"
+
+#: lib/Settings/AdminSettings.php:150
+msgid "Optional internal URL for server-side API calls. Leave empty to use Etherpad Base URL."
+msgstr "URL interno opzionale per le chiamate API lato server. Lascia vuoto per usare l'URL base Etherpad."
+
+#: lib/Settings/AdminSettings.php:151
+msgid "Etherpad session cookie domain"
+msgstr "Dominio del cookie di sessione Etherpad"
+
+#: lib/Settings/AdminSettings.php:152
+msgid "Required for protected pads unless Nextcloud and Etherpad run on the same host: the session cookie must be valid for both. Auto-filled from the two hosts when they share a parent domain. Leave empty for a host-only cookie."
+msgstr "Necessario per i pad protetti, a meno che Nextcloud ed Etherpad non siano sullo stesso host: il cookie di sessione deve essere valido per entrambi. Compilato automaticamente dai due host quando condividono un parent domain. Lascia vuoto per un cookie valido solo per l'host."
+
+#: lib/Settings/AdminSettings.php:153
+msgid "Etherpad API key"
+msgstr "Chiave API Etherpad"
+
+#: lib/Settings/AdminSettings.php:154
+msgid "Detected API version:"
+msgstr "Versione API rilevata:"
+
+#: lib/Settings/AdminSettings.php:155
+msgid ".pad file sync interval (seconds)"
+msgstr "Intervallo di sincronizzazione del file .pad (secondi)"
+
+#: lib/Settings/AdminSettings.php:156
+msgid "Controls how often pad content is copied from Etherpad into the .pad file while the pad is open."
+msgstr "Controlla con quale frequenza il contenuto del pad viene copiato da Etherpad nel file .pad mentre il pad è aperto."
+
+#: lib/Settings/AdminSettings.php:157
+msgid "Protected pads"
+msgstr "Pad protetti"
+
+#: lib/Settings/AdminSettings.php:158
+msgid "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud."
+msgstr "Solo chi può aprire il file .pad in Nextcloud può aprire il pad. Vengono creati come pad di gruppo Etherpad, che richiedono una sessione emessa da Nextcloud."
+
+#: lib/Settings/AdminSettings.php:159
+msgid "Public pads"
+msgstr "Pad pubblici"
+
+#: lib/Settings/AdminSettings.php:160
+msgid "Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads."
+msgstr "Chiunque abbia il collegamento al pad può aprirlo, senza un account Nextcloud. Vengono creati come normali pad Etherpad."
+
+#: lib/Settings/AdminSettings.php:161
+msgid "With both types switched off, no new pads can be created. Existing pads keep working."
+msgstr "Con entrambi i tipi disattivati non è possibile creare nuovi pad. I pad esistenti continuano a funzionare."
+
+#: lib/Settings/AdminSettings.php:162
+msgid "Allow importing protected pads from legacy Ownpad files"
+msgstr "Consenti l'importazione dei pad protetti dai file Ownpad legacy"
+
+#: lib/Settings/AdminSettings.php:163
+msgid "Safe only where this Nextcloud alone creates group pads on your Etherpad server. Anywhere else, a hand-written .pad file can reach another group while this is on."
+msgstr "Sicuro solo se questo Nextcloud è l'unico a creare pad di gruppo sul tuo server Etherpad. Altrimenti un file .pad scritto a mano può raggiungere un altro gruppo finché questa opzione è attiva."
+
+#: lib/Settings/AdminSettings.php:164
+msgid "Delete the Etherpad pad when its .pad file is deleted permanently"
+msgstr "Elimina il pad Etherpad quando il suo file .pad viene eliminato definitivamente"
+
+#: lib/Settings/AdminSettings.php:165
+msgid "The trash keeps a pad. If enabled, the pad is deleted once its file is deleted permanently: from the trash, past it, or with its account. A public pad imported from a .pad file in Ownpad's format stays in Etherpad."
+msgstr "Il cestino conserva il pad. Se attivato, il pad viene eliminato quando il suo file viene eliminato definitivamente: dal cestino, senza passare dal cestino o con il suo account. Un pad pubblico importato da un file .pad in formato Ownpad resta in Etherpad."
+
+#: lib/Settings/AdminSettings.php:166
+msgid "Allow linking external public pads"
+msgstr "Consenti il collegamento di pad pubblici esterni"
+
+#: lib/Settings/AdminSettings.php:167
+msgid "External Etherpad host allowlist (optional)"
+msgstr "Elenco degli host Etherpad esterni consentiti (facoltativo)"
+
+#: lib/Settings/AdminSettings.php:168
+msgid "Add trusted Etherpad hostnames or HTTPS origins. Leave empty only if all public HTTPS hosts should be trusted."
+msgstr "Aggiungi nomi host Etherpad o origini HTTPS attendibili. Lascia vuoto solo se tutti gli host HTTPS pubblici devono essere considerati attendibili."
+
+#: lib/Settings/AdminSettings.php:169
+msgid "Trusted embed origins (optional)"
+msgstr "Origini di incorporamento attendibili (facoltativo)"
+
+#: lib/Settings/AdminSettings.php:170
+msgid "Absolute https origins allowed to embed the /embed/by-id and /embed/create-by-parent routes. Leave empty to disable external embedding. An origin on another registrable domain also needs Nextcloud to authenticate without a cookie (proxy REMOTE_USER, Kerberos, SAML in environment mode) and the app setting etherpad_session_cookie_samesite=none; without both, the embedded pad has no Etherpad session."
+msgstr ""
+
+#: lib/Settings/AdminSettings.php:171
+msgid "Save settings"
+msgstr "Salva impostazioni"
+
+#: lib/Settings/AdminSettings.php:172
+msgid "Test Etherpad connection"
+msgstr "Testa la connessione a Etherpad"
+
+#: lib/Settings/AdminSettings.php:173
+msgid "Consistency check"
+msgstr "Controllo di coerenza"
+
+#: lib/Settings/AdminSettings.php:174
+msgid "Check pending pads"
+msgstr "Controlla i pad in sospeso"
+
+#: lib/Settings/AdminSettings.php:175
+msgid "Pending Etherpad deletes"
+msgstr "Eliminazioni Etherpad in sospeso"
+
+#: lib/Settings/AdminSettings.php:176
+msgid "Saving settings..."
+msgstr "Salvataggio delle impostazioni..."
+
+#: lib/Settings/AdminSettings.php:178
+msgid "Testing Etherpad connection..."
+msgstr "Verifica della connessione a Etherpad..."
+
+#: lib/Settings/AdminSettings.php:179
+msgid "Running consistency check..."
+msgstr "Controllo di coerenza in corso..."
+
+#: lib/Settings/AdminSettings.php:180
+msgid "Consistency check successful."
+msgstr "Controllo di coerenza riuscito."
+
+#: lib/Template/PadTemplateProvider.php:116
+msgid "Address of the pad on the other server, for example https://pad.example.org/p/notes"
+msgstr "Indirizzo del pad sull'altro server, ad esempio https://pad.example.org/p/notes"
+
+#: specialAppInfoFakeDummyForL10nScript.php:2
+msgid "Etherpad Integration for Nextcloud"
+msgstr ""
+
+#: specialAppInfoFakeDummyForL10nScript.php:3
+msgid "Standalone Etherpad integration for Nextcloud"
+msgstr ""
+
+#: specialAppInfoFakeDummyForL10nScript.php:4
+msgid "Standalone Etherpad integration for Nextcloud with binding-based lifecycle and secure viewer flows."
+msgstr ""
+
+#: src/viewer-main.js:22
+msgid "Too many requests. Try again later."
+msgstr "Troppe richieste. Riprova più tardi."
+
+#: src/viewer-main.js:245
+msgid "No .pad file selected."
+msgstr "Nessun file .pad selezionato."
+
+#: src/viewer-main.js:510
+msgid "This file may have been moved or replaced since the list was loaded. Reload the page and open it again."
+msgstr "Questo file potrebbe essere stato spostato o sostituito da quando l’elenco è stato caricato. Ricarica la pagina e riapri il file."
+
+#: templates/noviewer.php:11
+msgid "Unknown error."
+msgstr "Errore sconosciuto."
