@@ -1,0 +1,9 @@
+# Paths the Nextcloud translationtool must not scan for t()/n() calls.
+# js/ is the Vite build of src/, which is scanned instead.
+js/
+vendor/
+tests/
+scripts/
+docs/
+dist/
+translationfiles/

@@ -360,6 +360,13 @@ existing name asks for confirmation because the previous file is gone for good.
 - UI icons: [docs/ui-icons.md](docs/ui-icons.md)
 - Release process: [docs/release-process.md](docs/release-process.md)
 
+## Translations
+
+Translations are managed on [translatewiki.net](https://translatewiki.net/),
+alongside Etherpad and its plugins. Please translate there rather than
+opening pull requests against `l10n/`. Developers: see
+[docs/i18n.md](docs/i18n.md) for how strings reach translators.
+
 ## License
 
 - App code: AGPL-3.0-or-later (full text: [LICENSES/AGPL-3.0.txt](LICENSES/AGPL-3.0.txt))

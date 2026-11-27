@@ -19,7 +19,7 @@ import { jsonResponse } from './responses.js'
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
 	ocRequestToken: () => 'csrf-token',
-	translate: vi.fn((text) => text),
+	t: vi.fn((app, text) => text),
 }))
 vi.mock('../../src/lib/pad-sync.js', () => ({
 	createPadSync: vi.fn(() => ({
@@ -50,15 +50,15 @@ vi.mock('../../src/lib/urls.js', async (importOriginal) => ({
 }))
 
 const { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
-const { translate } = await import('../../src/lib/oc-compat.js')
+const { t } = await import('../../src/lib/oc-compat.js')
 
-/** Runs $check with translate() marking what it translates. */
+/** Runs $check with t() marking what it translates. */
 const marked = async (check) => {
-	translate.mockImplementation((text) => '«' + text + '»')
+	t.mockImplementation((app, text) => '«' + text + '»')
 	try {
 		await check()
 	} finally {
-		translate.mockImplementation((text) => text)
+		t.mockImplementation((app, text) => text)
 	}
 }
 const { loadPadContent } = await import('../../src/lib/pad-content.js')

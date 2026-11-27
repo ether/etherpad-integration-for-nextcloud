@@ -3,8 +3,6 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
-import { APP_ID } from './constants.js'
-
 export const ocGenerateUrl = (path) => {
 	if (window.OC && typeof window.OC.generateUrl === 'function') {
 		return window.OC.generateUrl(path)
@@ -20,4 +18,6 @@ export const ocRequestToken = (fallback = '') => {
 	return String((window.OC && window.OC.requestToken) || '')
 }
 
-export const translate = (text) => (typeof window.t === 'function' ? window.t(APP_ID, text) : text)
+// Called as t(APP_ID, 'literal') so the Nextcloud translationtool (xgettext
+// --keyword=t:2) extracts the string into the gettext template.
+export const t = (app, text) => (typeof window.t === 'function' ? window.t(app, text) : text)
